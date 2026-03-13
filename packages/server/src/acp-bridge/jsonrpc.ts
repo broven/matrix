@@ -7,11 +7,18 @@ export interface JsonRpcMessage {
   error?: { code: number; message: string; data?: unknown };
 }
 
+/**
+ * Encode a JSON-RPC message for ACP stdio transport.
+ * ACP spec: messages are newline-delimited JSON, MUST NOT contain embedded newlines.
+ */
 export function encodeJsonRpc(message: JsonRpcMessage): string {
-  const body = JSON.stringify(message);
-  return `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
+  return JSON.stringify(message) + "\n";
 }
 
+/**
+ * Parse newline-delimited JSON-RPC messages from a buffer.
+ * Returns parsed messages and any remaining incomplete data.
+ */
 export function parseJsonRpcMessages(buffer: string): {
   messages: JsonRpcMessage[];
   remainder: string;
@@ -20,22 +27,19 @@ export function parseJsonRpcMessages(buffer: string): {
   let pos = 0;
 
   while (pos < buffer.length) {
-    const headerEnd = buffer.indexOf("\r\n\r\n", pos);
-    if (headerEnd === -1) break;
+    const newlineIndex = buffer.indexOf("\n", pos);
+    if (newlineIndex === -1) break;
 
-    const header = buffer.slice(pos, headerEnd);
-    const match = header.match(/Content-Length:\s*(\d+)/i);
-    if (!match) break;
+    const line = buffer.slice(pos, newlineIndex).trim();
+    pos = newlineIndex + 1;
 
-    const contentLength = parseInt(match[1], 10);
-    const bodyStart = headerEnd + 4;
-    const bodyEnd = bodyStart + contentLength;
+    if (line.length === 0) continue;
 
-    if (bodyEnd > buffer.length) break;
-
-    const body = buffer.slice(bodyStart, bodyEnd);
-    messages.push(JSON.parse(body));
-    pos = bodyEnd;
+    try {
+      messages.push(JSON.parse(line));
+    } catch {
+      // Skip malformed lines
+    }
   }
 
   return { messages, remainder: buffer.slice(pos) };
