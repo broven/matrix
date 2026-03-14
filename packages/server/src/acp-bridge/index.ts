@@ -12,6 +12,7 @@ export type BridgeEventHandler = {
 export class AcpBridge {
   private buffer = "";
   private nextId = 1;
+  private permissionRequests = new Map<string, number | string>();
   private pendingRequests = new Map<number | string, {
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
@@ -73,7 +74,12 @@ export class AcpBridge {
     return this.request("session/prompt", { sessionId, prompt });
   }
 
-  respondPermission(requestId: number | string, outcome: { outcome: string; optionId?: string }): void {
+  respondPermission(toolCallId: string, outcome: { outcome: string; optionId?: string }): void {
+    const requestId = this.permissionRequests.get(toolCallId);
+    if (requestId === undefined) {
+      throw new Error(`Unknown permission request for tool call ${toolCallId}`);
+    }
+    this.permissionRequests.delete(toolCallId);
     const message: JsonRpcMessage = {
       jsonrpc: "2.0",
       id: requestId,
@@ -121,6 +127,8 @@ export class AcpBridge {
     }
 
     if (msg.method === "session/request_permission" && msg.id !== undefined) {
+      const toolCallId = (msg.params as { toolCall: { toolCallId: string } }).toolCall.toolCallId;
+      this.permissionRequests.set(toolCallId, msg.id);
       this.handlers.onPermissionRequest(
         (msg.params as { sessionId: string }).sessionId,
         msg,

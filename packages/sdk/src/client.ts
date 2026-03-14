@@ -40,6 +40,12 @@ export class MatrixClient {
     this.transport.connect({
       onMessage: (msg) => this.handleServerMessage(msg),
       onStatusChange: (status) => {
+        if (status === "connected") {
+          const lastEventId = this.transport?.getLastEventId();
+          for (const session of this.sessions.values()) {
+            session.subscribe(lastEventId);
+          }
+        }
         for (const listener of this.statusListeners) {
           listener(status);
         }
@@ -90,6 +96,25 @@ export class MatrixClient {
     return session;
   }
 
+  attachSession(sessionId: string): MatrixSession {
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+
+    if (!this.transport) {
+      throw new Error("MatrixClient must be connected before attaching a session");
+    }
+
+    const session = new MatrixSession(
+      sessionId,
+      this.transport,
+      (path, init) => this.fetch(path, init),
+    );
+    this.sessions.set(sessionId, session);
+    return session;
+  }
+
   private async fetch(path: string, init?: RequestInit): Promise<Response> {
     return globalThis.fetch(`${this.serverUrl}${path}`, {
       ...init,
@@ -105,6 +130,11 @@ export class MatrixClient {
       case "session:update": {
         const session = this.sessions.get(msg.sessionId);
         session?.handleUpdate(msg.update);
+        break;
+      }
+      case "session:snapshot": {
+        const session = this.sessions.get(msg.sessionId);
+        session?.handleSnapshot(msg.history);
         break;
       }
       case "session:closed": {

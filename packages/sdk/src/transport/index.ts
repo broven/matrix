@@ -17,6 +17,7 @@ export interface Transport {
   connect(handlers: TransportEventHandler): void;
   send(message: ClientMessage): void;
   disconnect(): void;
+  getLastEventId(): string | undefined;
 }
 
 export function createTransport(config: TransportConfig): Transport {
@@ -58,6 +59,10 @@ class WebSocketTransport implements Transport {
     this.stopHeartbeat();
     this.ws?.close();
     this.ws = null;
+  }
+
+  getLastEventId(): string | undefined {
+    return this.lastEventId > 0 ? String(this.lastEventId) : undefined;
   }
 
   private doConnect(): void {
@@ -145,6 +150,10 @@ class SseTransport implements Transport {
     this.eventSource?.close();
     this.eventSource = null;
   }
+
+  getLastEventId(): string | undefined {
+    return undefined;
+  }
 }
 
 class PollingTransport implements Transport {
@@ -174,6 +183,10 @@ class PollingTransport implements Transport {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+  }
+
+  getLastEventId(): string | undefined {
+    return this.lastEventId > 0 ? String(this.lastEventId) : undefined;
   }
 
   private async poll(): Promise<void> {

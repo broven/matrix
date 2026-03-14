@@ -10,8 +10,11 @@ import { AcpBridge } from "./acp-bridge/index.js";
 import { createRestRoutes } from "./api/rest/index.js";
 import { setupWebSocket } from "./api/ws/index.js";
 import { ConnectionManager } from "./api/ws/connection-manager.js";
+import { createTransportRoutes } from "./api/transport/index.js";
 import type { CreateSessionRequest } from "@matrix/protocol";
 import { nanoid } from "nanoid";
+import qrcode from "qrcode-terminal";
+import { buildConnectionUri } from "./connect-info.js";
 
 const config = loadConfig();
 const serverToken = generateToken();
@@ -27,6 +30,39 @@ for (const agent of config.agents) {
 // Track active bridges per session
 const bridges = new Map<string, AcpBridge>();
 
+function buildSnapshots(sessionId?: string) {
+  const sessions = store
+    .listSessions()
+    .filter((session) => session.status === "active")
+    .filter((session) => !sessionId || session.sessionId === sessionId);
+
+  return sessions.map((session) => ({
+    type: "session:snapshot" as const,
+    sessionId: session.sessionId,
+    history: store.getHistory(session.sessionId),
+    eventId: String(connectionManager.getCurrentEventId()),
+  }));
+}
+
+function handlePrompt(sessionId: string, prompt: Array<{ type: string; text: string }>) {
+  const bridge = bridges.get(sessionId);
+  if (bridge) {
+    for (const item of prompt) {
+      if (item.type === "text") {
+        store.appendHistory(sessionId, "user", item.text);
+      }
+    }
+    bridge.sendPrompt(sessionId, prompt);
+  }
+}
+
+function handlePermissionResponse(sessionId: string, toolCallId: string, outcome: { outcome: string; optionId?: string }) {
+  const bridge = bridges.get(sessionId);
+  if (bridge) {
+    bridge.respondPermission(toolCallId, outcome);
+  }
+}
+
 const app = new Hono();
 
 // CORS for web client
@@ -38,6 +74,13 @@ app.use("/sessions/*", authMiddleware(serverToken));
 
 // REST routes
 app.route("/", createRestRoutes(agentManager, store));
+app.route("/", createTransportRoutes({
+  connectionManager,
+  serverToken,
+  snapshotProvider: buildSnapshots,
+  onPrompt: handlePrompt,
+  onPermissionResponse: handlePermissionResponse,
+}));
 
 // Session creation (needs special handling — spawns agent)
 app.post("/sessions", async (c) => {
@@ -108,18 +151,9 @@ app.post("/sessions", async (c) => {
 const { injectWebSocket } = setupWebSocket(app as any, {
   connectionManager,
   serverToken,
-  onPrompt(sessionId, prompt) {
-    const bridge = bridges.get(sessionId);
-    if (bridge) {
-      bridge.sendPrompt(sessionId, prompt);
-    }
-  },
-  onPermissionResponse(sessionId, toolCallId, outcome) {
-    const bridge = bridges.get(sessionId);
-    if (bridge) {
-      bridge.respondPermission(toolCallId, outcome);
-    }
-  },
+  snapshotProvider: buildSnapshots,
+  onPrompt: handlePrompt,
+  onPermissionResponse: handlePermissionResponse,
 });
 
 // Start server
@@ -133,4 +167,9 @@ injectWebSocket(server);
 
 console.log(`\n  Matrix Server running on http://${config.host}:${config.port}`);
 console.log(`\n  Auth token: ${serverToken}`);
+const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
+const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
+console.log(`\n  Connect URI: ${connectionUri}`);
+console.log("\n  Scan QR:");
+qrcode.generate(connectionUri, { small: true });
 console.log(`\n  Registered agents: ${config.agents.map((a) => a.name).join(", ")}\n`);

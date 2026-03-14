@@ -4,10 +4,18 @@ import type { ClientMessage, PermissionOutcome } from "@matrix/protocol";
 import type { ConnectionManager } from "./connection-manager.js";
 import { nanoid } from "nanoid";
 import { validateToken } from "../../auth/token.js";
+import type { ServerMessage } from "@matrix/protocol";
+
+type SubscribeMessage = {
+  type: "session:subscribe";
+  sessionId: string;
+  lastEventId?: string;
+};
 
 export interface WsHandlerDeps {
   connectionManager: ConnectionManager;
   serverToken: string;
+  snapshotProvider: (sessionId?: string) => Array<Extract<ServerMessage, { type: "session:snapshot" }>>;
   onPrompt: (sessionId: string, prompt: Array<{ type: string; text: string }>) => void;
   onPermissionResponse: (sessionId: string, toolCallId: string, outcome: PermissionOutcome) => void;
 }
@@ -33,12 +41,28 @@ export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
 
         onMessage(event, ws) {
           try {
-            const msg: ClientMessage = JSON.parse(event.data as string);
+            const msg: ClientMessage | SubscribeMessage = JSON.parse(event.data as string);
 
             switch (msg.type) {
               case "session:prompt":
                 deps.connectionManager.subscribeToSession(connectionId, msg.sessionId);
                 deps.onPrompt(msg.sessionId, msg.prompt);
+                break;
+
+              case "session:subscribe":
+                deps.connectionManager.subscribeToSession(connectionId, msg.sessionId);
+                if (msg.lastEventId) {
+                  const replayed = deps.connectionManager.replayMissed(
+                    connectionId,
+                    msg.sessionId,
+                    Number.parseInt(msg.lastEventId, 10),
+                  );
+                  if (!replayed) {
+                    for (const snapshot of deps.snapshotProvider(msg.sessionId)) {
+                      ws.send(JSON.stringify(snapshot));
+                    }
+                  }
+                }
                 break;
 
               case "session:permission_response":

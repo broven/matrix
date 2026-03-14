@@ -8,14 +8,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@matrix/sdk": "workspace:*",
     "@matrix/protocol": "workspace:*",
+    "@matrix/sdk": "workspace:*",
+    "nanoid": "^5.1.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0",
-    "nanoid": "^5.1.0"
+    "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
