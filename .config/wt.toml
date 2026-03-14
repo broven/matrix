@@ -29,9 +29,21 @@ WORKSPACE_NAME=$WORKSPACE
 CLIENT_PORT=$CLIENT_PORT
 HMR_PORT=$HMR_PORT
 MATRIX_PORT=$MATRIX_PORT
+VITE_MATRIX_PORT=$MATRIX_PORT
 EOF
 
 echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT"
+"""
+
+patch-tauri = """
+# env fallback: Worktrunk -> Conductor -> Superset
+BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
+CLIENT_PORT=$((BASE_PORT))
+TAURI_CONF="packages/client/src-tauri/tauri.conf.json"
+if [ -f "$TAURI_CONF" ]; then
+  sed -i '' "s|http://localhost:[0-9]*|http://localhost:$CLIENT_PORT|g" "$TAURI_CONF"
+  echo "Patched tauri.conf.json devUrl to port $CLIENT_PORT"
+fi
 """
 
 [pre-remove]
