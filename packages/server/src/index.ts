@@ -66,6 +66,7 @@ function emitSessionError(sessionId: string, code: string, message: string): voi
 }
 
 async function handlePrompt(sessionId: string, prompt: Array<{ type: string; text: string }>) {
+  console.log(`[session ${sessionId}] handlePrompt:`, JSON.stringify(prompt).slice(0, 200));
   const session = store.getSession(sessionId);
   if (!session) {
     emitSessionError(sessionId, "session_not_found", "Session not found");
@@ -127,6 +128,7 @@ async function createBridge(
 
   const bridge = new AcpBridge(handle.process, {
     onSessionUpdate(sid, update) {
+      console.log(`[session ${sessionId}] update: ${update.sessionUpdate}`, JSON.stringify(update).slice(0, 200));
       store.touchSession(sessionId);
       connectionManager.broadcastToSession(sessionId, {
         type: "session:update",
@@ -159,6 +161,7 @@ async function createBridge(
       }
     },
     onPermissionRequest(sid, request) {
+      console.log(`[session ${sessionId}] permission_request:`, JSON.stringify(request.params).slice(0, 300));
       store.touchSession(sessionId);
       const permUpdate = {
         sessionUpdate: "permission_request" as const,
@@ -183,6 +186,7 @@ async function createBridge(
       });
     },
     onClose() {
+      console.log(`[session ${sessionId}] agent process closed`);
       console.log(`[session ${sessionId}] Agent process closed`);
       // Flush any buffered agent message chunks before closing
       flushAgentMessageBuffer(sessionId);
@@ -209,15 +213,18 @@ sessionManager.setBridgeFactory(createBridge);
 const app = new Hono();
 
 // CORS for web client — restrict to known origins
-app.use("/*", cors({
-  origin: [
-    "http://localhost:5173",  // Vite dev server
-    "http://localhost:1420",  // Tauri dev
-    "tauri://localhost",      // Tauri production
-  ],
-}));
+const corsOrigins = [
+  "http://localhost:5173",  // Vite dev server
+  "http://localhost:1420",  // Tauri dev
+  "tauri://localhost",      // Tauri production
+];
+if (process.env.CLIENT_PORT) {
+  corsOrigins.push(`http://localhost:${process.env.CLIENT_PORT}`);
+}
+app.use("/*", cors({ origin: corsOrigins }));
 
 // Auth middleware for REST (WebSocket handles auth separately)
+app.use("/agents", authMiddleware(serverToken));
 app.use("/agents/*", authMiddleware(serverToken));
 app.use("/sessions", authMiddleware(serverToken));
 app.use("/sessions/*", authMiddleware(serverToken));
