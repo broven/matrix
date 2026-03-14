@@ -37,10 +37,31 @@ function isUserMessage(text: string): boolean {
   return text.startsWith("> ");
 }
 
+/**
+ * Normalize ACP content format to protocol ToolCallContent format.
+ * ACP sends: {type: "content", content: {type: "text", text: "..."}}
+ * Protocol expects: {type: "text", text: "..."}
+ */
+function normalizeContent(content?: ToolCallContent[]): ToolCallContent[] | undefined {
+  if (!content?.length) return content;
+  return content.map((item) => {
+    if (item.type === "text" || item.type === "diff") return item;
+    // Handle ACP wrapped format: {type: "content", content: {type: "text", text: "..."}}
+    const wrapped = item as unknown as { type: string; content?: ToolCallContent };
+    if (wrapped.content && typeof wrapped.content === "object") {
+      return wrapped.content;
+    }
+    return item;
+  });
+}
+
 function mergeToolCall(
   existing: RenderableToolCall | undefined,
   update: Extract<SessionUpdate, { sessionUpdate: "tool_call" | "tool_call_update" }>,
 ): RenderableToolCall {
+  // Pick up content from raw data (ACP sends content on tool_call too)
+  const rawContent = normalizeContent((update as unknown as { content?: ToolCallContent[] }).content);
+
   if (update.sessionUpdate === "tool_call") {
     return {
       toolCallId: update.toolCallId,
@@ -48,7 +69,7 @@ function mergeToolCall(
       kind: update.kind,
       status: update.status,
       locations: update.locations,
-      content: existing?.content,
+      content: rawContent ?? existing?.content,
     };
   }
 
@@ -58,7 +79,7 @@ function mergeToolCall(
     kind: existing?.kind,
     status: update.status,
     locations: existing?.locations,
-    content: update.content ?? existing?.content,
+    content: rawContent ?? existing?.content,
   };
 }
 

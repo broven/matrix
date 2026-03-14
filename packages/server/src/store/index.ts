@@ -261,7 +261,14 @@ export class Store {
     type: HistoryEntryType,
     data: Record<string, unknown>,
   ): void {
-    const content = data.content != null ? String(data.content) : "";
+    let content = "";
+    if (data.content == null) {
+      content = "";
+    } else if (typeof data.content === "string") {
+      content = data.content;
+    } else {
+      content = JSON.stringify(data.content);
+    }
     this.appendHistory(sessionId, "agent", content, type, data);
   }
 
