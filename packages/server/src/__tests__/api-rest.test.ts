@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { createRestRoutes } from "../api/rest/index.js";
 import { AgentManager } from "../agent-manager/index.js";
 import { Store } from "../store/index.js";
+import { SessionManager } from "../session-manager/index.js";
 import { unlinkSync } from "node:fs";
 
 const DB_PATH = "/tmp/matrix-rest-test.db";
@@ -10,6 +11,7 @@ const DB_PATH = "/tmp/matrix-rest-test.db";
 describe("REST API", () => {
   let app: Hono;
   let store: Store;
+  let sessionManager: SessionManager;
 
   beforeEach(() => {
     try { unlinkSync(DB_PATH); } catch {}
@@ -23,8 +25,9 @@ describe("REST API", () => {
       args: [],
     });
     store = new Store(DB_PATH);
+    sessionManager = new SessionManager();
     app = new Hono();
-    app.route("/", createRestRoutes(agentManager, store));
+    app.route("/", createRestRoutes(agentManager, store, sessionManager));
   });
 
   afterEach(() => {

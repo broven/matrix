@@ -35,7 +35,7 @@ export function DashboardPage() {
   };
 
   return (
-    <div style={{ maxWidth: 700, margin: "40px auto", padding: 20 }}>
+    <div className="page-container">
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1>Matrix Dashboard</h1>
         <span style={{
@@ -67,7 +67,7 @@ export function DashboardPage() {
 
       <section style={{ marginTop: 24 }}>
         <h2>New Session</h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "end" }}>
+        <div className="dashboard-new-session" style={{ display: "flex", gap: 8, alignItems: "end" }}>
           <select
             value={selectedAgent}
             onChange={(e) => setSelectedAgent(e.target.value)}

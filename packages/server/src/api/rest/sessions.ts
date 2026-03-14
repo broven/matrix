@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import type { Store } from "../../store/index.js";
+import type { SessionManager } from "../../session-manager/index.js";
 
-export function sessionRoutes(store: Store) {
+export function sessionRoutes(store: Store, sessionManager: SessionManager) {
   const app = new Hono();
 
   app.get("/sessions", (c) => {
@@ -20,7 +21,7 @@ export function sessionRoutes(store: Store) {
 
   app.delete("/sessions/:id", (c) => {
     const sessionId = c.req.param("id");
-    store.closeSession(sessionId);
+    sessionManager.closeSession(sessionId, store);
     return c.json({ ok: true });
   });
 

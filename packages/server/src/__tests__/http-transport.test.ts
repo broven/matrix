@@ -25,8 +25,10 @@ describe("HTTP transport routes", () => {
               {
                 id: "h1",
                 sessionId: sessionId ?? "sess_1",
-                role: "agent",
+                role: "agent" as const,
                 content: "snapshot text",
+                type: "text" as const,
+                metadata: null,
                 timestamp: new Date().toISOString(),
               },
             ],

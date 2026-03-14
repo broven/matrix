@@ -29,6 +29,15 @@ export interface AgentListItem {
   available: boolean;
 }
 
+/** History entry type discriminator */
+export type HistoryEntryType =
+  | "text"
+  | "tool_call"
+  | "tool_call_update"
+  | "permission_request"
+  | "plan"
+  | "completed";
+
 /** GET /sessions/:id/history response item */
 export interface HistoryEntry {
   id: string;
@@ -36,6 +45,8 @@ export interface HistoryEntry {
   timestamp: string;
   role: "user" | "agent";
   content: string;
+  type: HistoryEntryType;
+  metadata?: Record<string, unknown> | null;
 }
 
 /** Auth token response */

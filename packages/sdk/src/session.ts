@@ -17,9 +17,18 @@ export interface PromptCallbacks {
   onHistorySync?: (history: HistoryEntry[]) => void;
 }
 
-export class MatrixSession {
+interface QueuedResolver {
+  resolve: (result: IteratorResult<SessionUpdate>) => void;
+}
+
+export class MatrixSession implements AsyncIterable<SessionUpdate> {
   private callbacks: PromptCallbacks | null = null;
   private listeners = new Set<PromptCallbacks>();
+
+  /** Async iterator state */
+  private iteratorBuffer: SessionUpdate[] = [];
+  private iteratorWaiters: QueuedResolver[] = [];
+  private iteratorDone = false;
 
   constructor(
     public readonly sessionId: SessionId,
@@ -90,6 +99,8 @@ export class MatrixSession {
   }
 
   handleUpdate(update: SessionUpdate): void {
+    this.pushToIterator(update);
+
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
         this.dispatch((callbacks) => callbacks.onMessage?.(update.content));
@@ -110,6 +121,57 @@ export class MatrixSession {
         this.dispatch((callbacks) => callbacks.onComplete?.({ stopReason: update.stopReason }));
         this.callbacks = null;
         break;
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<SessionUpdate> {
+    // Reset completion state but preserve any buffered updates
+    this.iteratorWaiters = [];
+    this.iteratorDone = false;
+
+    return {
+      next: (): Promise<IteratorResult<SessionUpdate>> => {
+        if (this.iteratorBuffer.length > 0) {
+          const value = this.iteratorBuffer.shift()!;
+          const done = value.sessionUpdate === "completed";
+          if (done) {
+            this.iteratorDone = true;
+          }
+          return Promise.resolve({ value, done: false });
+        }
+
+        if (this.iteratorDone) {
+          return Promise.resolve({ value: undefined, done: true });
+        }
+
+        return new Promise<IteratorResult<SessionUpdate>>((resolve) => {
+          this.iteratorWaiters.push({ resolve });
+        });
+      },
+
+      return: (): Promise<IteratorResult<SessionUpdate>> => {
+        this.iteratorDone = true;
+        // Resolve any pending waiters
+        for (const waiter of this.iteratorWaiters) {
+          waiter.resolve({ value: undefined, done: true });
+        }
+        this.iteratorWaiters = [];
+        return Promise.resolve({ value: undefined, done: true });
+      },
+    };
+  }
+
+  private pushToIterator(update: SessionUpdate): void {
+    if (this.iteratorDone) return;
+
+    if (this.iteratorWaiters.length > 0) {
+      const waiter = this.iteratorWaiters.shift()!;
+      if (update.sessionUpdate === "completed") {
+        this.iteratorDone = true;
+      }
+      waiter.resolve({ value: update, done: false });
+    } else {
+      this.iteratorBuffer.push(update);
     }
   }
 

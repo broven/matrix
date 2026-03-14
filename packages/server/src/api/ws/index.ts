@@ -27,38 +27,53 @@ export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
     "/ws",
     upgradeWebSocket((c) => {
       const connectionId = nanoid();
+      let authenticated = false;
 
       return {
-        onOpen(_event, ws) {
-          const token = new URL(c.req.url, "http://localhost").searchParams.get("token");
-          if (!token || !validateToken(token, deps.serverToken)) {
-            ws.send(JSON.stringify({ type: "error", code: "unauthorized", message: "Invalid token" }));
-            ws.close(4001, "Unauthorized");
-            return;
-          }
-          deps.connectionManager.addConnection(connectionId, ws as any);
+        onOpen(_event, _ws) {
+          // Wait for auth message — do not add to connection manager yet
         },
 
         onMessage(event, ws) {
           try {
-            const msg: ClientMessage | SubscribeMessage = JSON.parse(event.data as string);
+            const msg = JSON.parse(event.data as string);
 
-            switch (msg.type) {
+            // First message must be an auth message
+            if (!authenticated) {
+              if (msg.type !== "auth" || !msg.token) {
+                ws.send(JSON.stringify({ type: "error", code: "unauthorized", message: "First message must be auth" }));
+                ws.close(4001, "Unauthorized");
+                return;
+              }
+              if (!validateToken(msg.token, deps.serverToken)) {
+                ws.send(JSON.stringify({ type: "error", code: "unauthorized", message: "Invalid token" }));
+                ws.close(4001, "Unauthorized");
+                return;
+              }
+              authenticated = true;
+              deps.connectionManager.addConnection(connectionId, ws as any);
+              ws.send(JSON.stringify({ type: "authenticated" }));
+              return;
+            }
+
+            const clientMsg: ClientMessage | SubscribeMessage = msg;
+
+            switch (clientMsg.type) {
               case "session:prompt":
-                deps.connectionManager.subscribeToSession(connectionId, msg.sessionId);
-                deps.onPrompt(msg.sessionId, msg.prompt);
+                deps.connectionManager.subscribeToSession(connectionId, clientMsg.sessionId);
+                deps.onPrompt(clientMsg.sessionId, clientMsg.prompt);
                 break;
 
               case "session:subscribe":
-                deps.connectionManager.subscribeToSession(connectionId, msg.sessionId);
-                if (msg.lastEventId) {
+                deps.connectionManager.subscribeToSession(connectionId, clientMsg.sessionId);
+                if (clientMsg.lastEventId) {
                   const replayed = deps.connectionManager.replayMissed(
                     connectionId,
-                    msg.sessionId,
-                    Number.parseInt(msg.lastEventId, 10),
+                    clientMsg.sessionId,
+                    Number.parseInt(clientMsg.lastEventId, 10),
                   );
                   if (!replayed) {
-                    for (const snapshot of deps.snapshotProvider(msg.sessionId)) {
+                    for (const snapshot of deps.snapshotProvider(clientMsg.sessionId)) {
                       ws.send(JSON.stringify(snapshot));
                     }
                   }
@@ -66,7 +81,7 @@ export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
                 break;
 
               case "session:permission_response":
-                deps.onPermissionResponse(msg.sessionId, msg.toolCallId, msg.outcome);
+                deps.onPermissionResponse(clientMsg.sessionId, clientMsg.toolCallId, clientMsg.outcome);
                 break;
 
               case "ping":

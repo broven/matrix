@@ -103,7 +103,7 @@ export function SessionPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
-      <header style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 12 }}>
+      <header className="session-header" style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => navigate("/dashboard")} style={{ cursor: "pointer" }}>Back</button>
         <span style={{ fontFamily: "monospace", fontSize: 14 }}>Session: {sessionId}</span>
         {sessionInfo && (

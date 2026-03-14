@@ -33,6 +33,8 @@ export function createTransport(config: TransportConfig): Transport {
   }
 }
 
+export const MAX_QUEUED_MESSAGES = 50;
+
 class WebSocketTransport implements Transport {
   type = "websocket" as const;
   private ws: WebSocket | null = null;
@@ -41,6 +43,7 @@ class WebSocketTransport implements Transport {
   private maxReconnectDelay = 30000;
   private lastEventId = 0;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private pendingMessages: ClientMessage[] = [];
 
   constructor(private config: TransportConfig) {}
 
@@ -52,11 +55,17 @@ class WebSocketTransport implements Transport {
   send(message: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
+    } else {
+      if (this.pendingMessages.length >= MAX_QUEUED_MESSAGES) {
+        this.pendingMessages.shift(); // drop oldest
+      }
+      this.pendingMessages.push(message);
     }
   }
 
   disconnect(): void {
     this.stopHeartbeat();
+    this.pendingMessages = [];
     this.ws?.close();
     this.ws = null;
   }
@@ -67,18 +76,24 @@ class WebSocketTransport implements Transport {
 
   private doConnect(): void {
     this.handlers?.onStatusChange(this.reconnectAttempt > 0 ? "reconnecting" : "connecting");
-    const wsUrl = this.config.serverUrl.replace(/^http/, "ws") + `/ws?token=${this.config.token}`;
+    const wsUrl = this.config.serverUrl.replace(/^http/, "ws") + "/ws";
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      this.reconnectAttempt = 0;
-      this.handlers?.onStatusChange("connected");
-      this.startHeartbeat();
+      // Send auth token as first message instead of in query string
+      this.ws!.send(JSON.stringify({ type: "auth", token: this.config.token }));
     };
 
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data as string);
+        if (msg.type === "authenticated") {
+          this.reconnectAttempt = 0;
+          this.handlers?.onStatusChange("connected");
+          this.startHeartbeat();
+          this.flushPendingMessages();
+          return;
+        }
         if (msg.eventId) this.lastEventId = parseInt(msg.eventId, 10);
         if (msg.type === "pong") return;
         this.handlers?.onMessage(msg);
@@ -114,6 +129,14 @@ class WebSocketTransport implements Transport {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
+    }
+  }
+
+  private flushPendingMessages(): void {
+    const messages = this.pendingMessages;
+    this.pendingMessages = [];
+    for (const msg of messages) {
+      this.send(msg);
     }
   }
 }

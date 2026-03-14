@@ -9,6 +9,15 @@ export type BridgeEventHandler = {
   onClose: () => void;
 };
 
+export class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TimeoutError";
+  }
+}
+
+export const REQUEST_TIMEOUT_MS = 60_000;
+
 export class AcpBridge {
   private buffer = "";
   private nextId = 1;
@@ -16,6 +25,7 @@ export class AcpBridge {
   private pendingRequests = new Map<number | string, {
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
   }>();
 
   constructor(
@@ -32,6 +42,7 @@ export class AcpBridge {
     });
 
     this.process.on("close", () => {
+      this.rejectAllPending(new Error("Agent process closed"));
       this.handlers.onClose();
     });
 
@@ -46,7 +57,11 @@ export class AcpBridge {
     this.write(message);
 
     return new Promise((resolve, reject) => {
-      this.pendingRequests.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new TimeoutError(`Request ${method} (id=${id}) timed out after ${REQUEST_TIMEOUT_MS}ms`));
+      }, REQUEST_TIMEOUT_MS);
+      this.pendingRequests.set(id, { resolve, reject, timer });
     });
   }
 
@@ -67,7 +82,7 @@ export class AcpBridge {
   }
 
   async createSession(cwd: string): Promise<unknown> {
-    return this.request("session/new", { cwd });
+    return this.request("session/new", { cwd, mcpServers: {} });
   }
 
   async sendPrompt(sessionId: SessionId, prompt: Array<{ type: string; text: string }>): Promise<unknown> {
@@ -89,7 +104,16 @@ export class AcpBridge {
   }
 
   destroy(): void {
+    this.rejectAllPending(new Error("Bridge destroyed"));
     this.process.kill();
+  }
+
+  private rejectAllPending(error: Error): void {
+    for (const [id, pending] of this.pendingRequests) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pendingRequests.clear();
   }
 
   private write(message: JsonRpcMessage): void {
@@ -110,6 +134,7 @@ export class AcpBridge {
     if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
       const pending = this.pendingRequests.get(msg.id);
       if (pending) {
+        clearTimeout(pending.timer);
         this.pendingRequests.delete(msg.id);
         if (msg.error) {
           pending.reject(new Error(msg.error.message));

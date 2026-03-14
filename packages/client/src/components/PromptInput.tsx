@@ -22,7 +22,7 @@ export function PromptInput({ onSend, disabled }: Props) {
   };
 
   return (
-    <div style={{ display: "flex", gap: 8, padding: 16, borderTop: "1px solid #e5e7eb" }}>
+    <div className="prompt-bar" style={{ display: "flex", gap: 8, padding: 16, borderTop: "1px solid #e5e7eb" }}>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}

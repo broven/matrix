@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { SessionInfo, HistoryEntry } from "@matrix/protocol";
+import type { SessionInfo, HistoryEntry, HistoryEntryType } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 
 export class Store {
@@ -26,10 +26,25 @@ export class Store {
         session_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'text',
+        metadata TEXT,
         timestamp TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (session_id) REFERENCES sessions(session_id)
       );
     `);
+
+    // Migration: add type and metadata columns if they don't exist (for existing databases)
+    const columns = this.db
+      .prepare("PRAGMA table_info(history)")
+      .all() as Array<{ name: string }>;
+    const columnNames = columns.map((c) => c.name);
+
+    if (!columnNames.includes("type")) {
+      this.db.exec(`ALTER TABLE history ADD COLUMN type TEXT NOT NULL DEFAULT 'text'`);
+    }
+    if (!columnNames.includes("metadata")) {
+      this.db.exec(`ALTER TABLE history ADD COLUMN metadata TEXT`);
+    }
   }
 
   createSession(sessionId: string, agentId: string, cwd: string): SessionInfo {
@@ -67,22 +82,50 @@ export class Store {
     stmt.run(sessionId);
   }
 
-  appendHistory(sessionId: string, role: "user" | "agent", content: string): void {
+  appendHistory(
+    sessionId: string,
+    role: "user" | "agent",
+    content: string,
+    type: HistoryEntryType = "text",
+    metadata?: Record<string, unknown> | null,
+  ): void {
     const stmt = this.db.prepare(
-      "INSERT INTO history (id, session_id, role, content) VALUES (?, ?, ?, ?)"
+      "INSERT INTO history (id, session_id, role, content, type, metadata) VALUES (?, ?, ?, ?, ?, ?)"
     );
-    stmt.run(nanoid(), sessionId, role, content);
+    stmt.run(
+      nanoid(),
+      sessionId,
+      role,
+      content,
+      type,
+      metadata ? JSON.stringify(metadata) : null,
+    );
+  }
+
+  /**
+   * Store a full session event (tool_call, plan, permission_request, etc.)
+   * as a history entry with structured metadata.
+   */
+  appendEvent(
+    sessionId: string,
+    type: HistoryEntryType,
+    data: Record<string, unknown>,
+  ): void {
+    const content = data.content != null ? String(data.content) : "";
+    this.appendHistory(sessionId, "agent", content, type, data);
   }
 
   getHistory(sessionId: string): HistoryEntry[] {
     const stmt = this.db.prepare(
-      "SELECT id, session_id, role, content, timestamp FROM history WHERE session_id = ? ORDER BY timestamp ASC"
+      "SELECT id, session_id, role, content, type, metadata, timestamp FROM history WHERE session_id = ? ORDER BY timestamp ASC"
     );
     return stmt.all(sessionId).map((row: any) => ({
       id: row.id,
       sessionId: row.session_id,
       role: row.role,
       content: row.content,
+      type: row.type || "text",
+      metadata: row.metadata ? JSON.parse(row.metadata) : null,
       timestamp: row.timestamp,
     }));
   }

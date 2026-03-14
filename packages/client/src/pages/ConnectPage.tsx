@@ -18,7 +18,7 @@ export function ConnectPage() {
 
   useEffect(() => {
     restoreLastConnection();
-    const saved = localStorage.getItem("matrix:lastConnection");
+    const saved = sessionStorage.getItem("matrix:lastConnection");
     if (saved) {
       const { serverUrl: url, token: tok } = JSON.parse(saved);
       setServerUrl(url);
@@ -62,7 +62,7 @@ export function ConnectPage() {
   };
 
   return (
-    <div style={{ maxWidth: 560, margin: "80px auto", padding: 20 }}>
+    <div className="page-container page-container--narrow" style={{ marginTop: 80 }}>
       <h1>Matrix</h1>
       <p>Connect to your ACP Server</p>
 
@@ -104,6 +104,7 @@ export function ConnectPage() {
         </div>
 
         <section
+          className="connect-qr-section"
           style={{
             display: "flex",
             gap: 16,
@@ -113,7 +114,7 @@ export function ConnectPage() {
             padding: 16,
           }}
         >
-          <div style={{ minWidth: 180, minHeight: 180, display: "grid", placeItems: "center", background: "#f8fafc", borderRadius: 8 }}>
+          <div className="qr-image-box" style={{ minWidth: 180, minHeight: 180, display: "grid", placeItems: "center", background: "#f8fafc", borderRadius: 8 }}>
             {qrDataUrl ? (
               <img src={qrDataUrl} alt="Connection QR" width={180} height={180} />
             ) : (

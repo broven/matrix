@@ -58,14 +58,14 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
     setClient(newClient);
     setConnectionInfo(buildConnectionInfo(config, "manual"));
 
-    localStorage.setItem("matrix:lastConnection", JSON.stringify({
+    sessionStorage.setItem("matrix:lastConnection", JSON.stringify({
       serverUrl: config.serverUrl,
       token: config.token,
     }));
   }, [buildConnectionInfo]);
 
   const restoreLastConnection = useCallback(() => {
-    const saved = localStorage.getItem("matrix:lastConnection");
+    const saved = sessionStorage.getItem("matrix:lastConnection");
     if (!saved) return;
 
     const parsed = JSON.parse(saved) as { serverUrl: string; token: string };
