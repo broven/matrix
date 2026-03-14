@@ -224,7 +224,7 @@ export class SessionManager {
       });
 
       try {
-        const { bridge, agentSessionId } = await this.bridgeFactory(
+        const { bridge, agentSessionId } = await this.bridgeFactory!(
           sessionId,
           session.agentId,
           session.cwd,
