@@ -19,6 +19,12 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager) {
     return c.json(store.getHistory(sessionId));
   });
 
+  app.post("/sessions/:id/cancel", (c) => {
+    const sessionId = c.req.param("id");
+    sessionManager.cancelPrompt(sessionId);
+    return c.json({ ok: true });
+  });
+
   app.delete("/sessions/:id", (c) => {
     const sessionId = c.req.param("id");
     sessionManager.closeSession(sessionId, store);

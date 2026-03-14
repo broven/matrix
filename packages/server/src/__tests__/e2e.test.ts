@@ -326,6 +326,7 @@ function createTestApp() {
       serverToken,
       snapshotProvider: buildSnapshots,
       onPrompt: handlePrompt,
+      onCancel: () => {},
       onPermissionResponse: handlePermissionResponse,
     }),
   );

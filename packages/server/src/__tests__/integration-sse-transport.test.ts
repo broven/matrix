@@ -26,6 +26,7 @@ describe("Integration: SSE transport", () => {
           },
         ],
         onPrompt: () => {},
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );

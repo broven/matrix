@@ -16,6 +16,7 @@ export interface TransportRouteDeps {
   serverToken: string;
   snapshotProvider: (sessionId?: string) => SnapshotMessage[];
   onPrompt: (sessionId: string, prompt: Array<{ type: string; text: string }>) => void;
+  onCancel: (sessionId: string) => void;
   onPermissionResponse: (sessionId: string, toolCallId: string, outcome: PermissionOutcome) => void;
 }
 
@@ -92,6 +93,9 @@ function handleClientMessage(msg: ClientMessage | SubscribeMessage, deps: Transp
   switch (msg.type) {
     case "session:prompt":
       deps.onPrompt(msg.sessionId, msg.prompt);
+      break;
+    case "session:cancel":
+      deps.onCancel(msg.sessionId);
       break;
     case "session:permission_response":
       deps.onPermissionResponse(msg.sessionId, msg.toolCallId, msg.outcome);

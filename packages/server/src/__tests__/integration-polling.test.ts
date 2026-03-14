@@ -35,6 +35,7 @@ describe("Integration: polling transport", () => {
           },
         ],
         onPrompt: () => {},
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );

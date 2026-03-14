@@ -139,6 +139,10 @@ export class AcpBridge {
     });
   }
 
+  cancelPrompt(sessionId: string): void {
+    this.notify("session/cancel", { sessionId: this.agentSessionId || sessionId });
+  }
+
   respondPermission(toolCallId: string, outcome: { outcome: string; optionId?: string }): void {
     const requestId = this.permissionRequests.get(toolCallId);
     if (requestId === undefined) {

@@ -179,6 +179,11 @@ export class SessionManager {
     return this.sessions.has(sessionId);
   }
 
+  cancelPrompt(sessionId: string): void {
+    const entry = this.sessions.get(sessionId);
+    entry?.bridge.cancelPrompt(sessionId);
+  }
+
   markPromptStarted(sessionId: string): void {
     const entry = this.sessions.get(sessionId);
     if (!entry) return;
@@ -202,7 +207,8 @@ export class SessionManager {
       return pending;
     }
 
-    if (!this.bridgeFactory) {
+    const factory = this.bridgeFactory;
+    if (!factory) {
       return null;
     }
 
@@ -224,7 +230,7 @@ export class SessionManager {
       });
 
       try {
-        const { bridge, agentSessionId } = await this.bridgeFactory(
+        const { bridge, agentSessionId } = await factory(
           sessionId,
           session.agentId,
           session.cwd,
