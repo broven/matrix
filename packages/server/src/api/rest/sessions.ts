@@ -28,6 +28,7 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager) {
   app.delete("/sessions/:id", (c) => {
     const sessionId = c.req.param("id");
     sessionManager.closeSession(sessionId, store);
+    store.deleteSession(sessionId);
     return c.json({ ok: true });
   });
 

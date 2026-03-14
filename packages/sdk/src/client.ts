@@ -96,6 +96,14 @@ export class MatrixClient {
     return session;
   }
 
+  async deleteSession(sessionId: string): Promise<void> {
+    const res = await this.fetch(`/sessions/${sessionId}`, { method: "DELETE" });
+    if (!res.ok) {
+      throw new Error(`Failed to delete session ${sessionId}: ${res.status}`);
+    }
+    this.sessions.delete(sessionId);
+  }
+
   attachSession(sessionId: string): MatrixSession {
     const existing = this.sessions.get(sessionId);
     if (existing) {

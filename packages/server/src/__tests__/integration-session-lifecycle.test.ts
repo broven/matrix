@@ -145,10 +145,10 @@ describe("Integration: session lifecycle", () => {
     });
     expect(deleteRes.status).toBe(200);
 
-    // 8. Verify session is closed
+    // 8. Verify session is deleted
     const finalListRes = await app.request("/sessions", { headers: authHeaders });
     const finalSessions = await finalListRes.json();
-    expect(finalSessions[0].status).toBe("closed");
+    expect(finalSessions).toHaveLength(0);
   });
 
   it("restores a suspended recoverable session before forwarding the prompt", async () => {
