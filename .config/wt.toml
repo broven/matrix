@@ -24,15 +24,22 @@ CLIENT_PORT=$((BASE_PORT))
 HMR_PORT=$((BASE_PORT + 1))
 MATRIX_PORT=$((BASE_PORT + 2))
 
+MATRIX_TOKEN=$(head -c 36 /dev/urandom | base64 | tr -d '/+=' | head -c 48)
+
 cat > .env.local << EOF
 WORKSPACE_NAME=$WORKSPACE
 CLIENT_PORT=$CLIENT_PORT
 HMR_PORT=$HMR_PORT
 MATRIX_PORT=$MATRIX_PORT
 VITE_MATRIX_PORT=$MATRIX_PORT
+MATRIX_TOKEN=$MATRIX_TOKEN
 EOF
 
 echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT"
+"""
+
+build-protocol = """
+pnpm --filter @matrix/protocol build
 """
 
 patch-tauri = """

@@ -32,7 +32,7 @@ test("tauri config points at the existing Vite frontend", () => {
 
   assert.equal(config.build?.beforeDevCommand, "pnpm dev");
   assert.equal(config.build?.beforeBuildCommand, "pnpm build");
-  assert.equal(config.build?.devUrl, "http://localhost:5173");
+  assert.match(config.build?.devUrl, /^http:\/\/localhost:\d+$/);
   assert.equal(config.build?.frontendDist, "../dist");
   assert.equal(config.app?.windows?.[0]?.label, "main");
 });

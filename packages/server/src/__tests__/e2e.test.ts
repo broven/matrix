@@ -296,7 +296,7 @@ function createTestApp() {
     });
 
     await bridge.initialize({ name: "matrix-test", version: "0.1.0" });
-    const sessionResult = restoreAgentSessionId
+    const sessionResult: any = restoreAgentSessionId
       ? await bridge.loadSession(restoreAgentSessionId, cwd)
       : await bridge.createSession(cwd);
 
