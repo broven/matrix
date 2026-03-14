@@ -42,10 +42,17 @@ export function ConnectPage() {
     const params = new URLSearchParams(window.location.search);
     const paramUrl = params.get("serverUrl");
     const paramToken = params.get("token");
+    const autoConnect = params.get("autoConnect") === "1";
 
     if (paramUrl) setServerUrl(paramUrl);
     if (paramToken) setToken(paramToken);
-  }, []);
+
+    if (autoConnect && paramUrl && paramToken) {
+      connect({ serverUrl: paramUrl, token: paramToken });
+      // Clean URL after auto-connect
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [connect]);
 
   useEffect(() => {
     if (!serverUrl || !token) {
