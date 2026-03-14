@@ -11,7 +11,8 @@ function buildConnectionUri(serverUrl: string, token: string): string {
 export function ConnectPage() {
   const navigate = useNavigate();
   const { connect, status, connectionInfo, restoreLastConnection } = useMatrixClient();
-  const [serverUrl, setServerUrl] = useState("http://localhost:8080");
+  const defaultPort = import.meta.env.VITE_MATRIX_PORT || "8080";
+  const [serverUrl, setServerUrl] = useState(`http://localhost:${defaultPort}`);
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
