@@ -1,0 +1,44 @@
+[post-create]
+install = """
+# env fallback: Worktrunk -> Conductor -> Superset
+ROOT="${WT_ROOT:-${CONDUCTOR_ROOT_PATH:-${SUPERSET_ROOT_PATH}}}"
+pnpm install
+"""
+
+copy-env = """
+# env fallback: Worktrunk -> Conductor -> Superset
+ROOT="${WT_ROOT:-${CONDUCTOR_ROOT_PATH:-${SUPERSET_ROOT_PATH}}}"
+cp "$ROOT/.env" .env 2>/dev/null || echo 'No .env found in root, skipping'
+"""
+
+env-local = """
+# env fallback: Worktrunk -> Conductor -> Superset
+BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
+WORKSPACE="${WT_NAME:-${CONDUCTOR_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_NAME}}}"
+
+# Derive 3 unique ports from base port:
+#   CLIENT_PORT  = base      (Vite dev server)
+#   HMR_PORT     = base + 1  (Tauri HMR WebSocket)
+#   MATRIX_PORT  = base + 2  (Matrix server)
+CLIENT_PORT=$((BASE_PORT))
+HMR_PORT=$((BASE_PORT + 1))
+MATRIX_PORT=$((BASE_PORT + 2))
+
+cat > .env.local << EOF
+WORKSPACE_NAME=$WORKSPACE
+CLIENT_PORT=$CLIENT_PORT
+HMR_PORT=$HMR_PORT
+MATRIX_PORT=$MATRIX_PORT
+EOF
+
+echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT"
+"""
+
+[pre-remove]
+kill-ports = """
+BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
+for offset in 0 1 2; do
+  PORT=$((BASE_PORT + offset))
+  lsof -ti :$PORT -sTCP:LISTEN | xargs kill 2>/dev/null || true
+done
+"""
