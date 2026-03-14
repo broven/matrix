@@ -567,14 +567,13 @@ describe("E2E Integration Tests", () => {
       expect(deleteRes.status).toBe(200);
       expect((await deleteRes.json()).ok).toBe(true);
 
-      // Verify closed
+      // Verify deleted
       const listRes2 = await ctx.app.request("/sessions", {
         headers: authHeaders(ctx.serverToken),
       });
       const sessions2 = await listRes2.json();
-      const closed = sessions2.find((s: any) => s.sessionId === sessionId);
-      expect(closed).toBeDefined();
-      expect(closed.status).toBe("closed");
+      const deleted = sessions2.find((s: any) => s.sessionId === sessionId);
+      expect(deleted).toBeUndefined();
     });
 
     it("GET /sessions/:id/history returns 404 for unknown session", async () => {
@@ -780,7 +779,7 @@ describe("E2E Integration Tests", () => {
       expect(ctx.sessionManager.getBridge("sess_suspended")).toBeDefined();
     });
 
-    it("POST /messages emits an explicit error for a closed session", async () => {
+    it("POST /messages emits an explicit error for a deleted session", async () => {
       const sessionId = await createSession(ctx);
       await ctx.app.request(`/sessions/${sessionId}`, {
         method: "DELETE",
@@ -807,8 +806,8 @@ describe("E2E Integration Tests", () => {
         expect.arrayContaining([
           expect.objectContaining({
             type: "error",
-            code: "session_closed",
-            message: "Session is closed",
+            code: "session_not_found",
+            message: "Session not found",
           }),
         ]),
       );
@@ -882,7 +881,7 @@ describe("E2E Integration Tests", () => {
         headers: authHeaders(ctx.serverToken),
       });
       const session = (await listRes.json()).find((s: any) => s.sessionId === sessionId);
-      expect(session.status).toBe("closed");
+      expect(session).toBeUndefined();
     });
   });
 

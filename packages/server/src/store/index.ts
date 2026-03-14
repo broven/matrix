@@ -150,6 +150,11 @@ export class Store {
     });
   }
 
+  deleteSession(sessionId: string): void {
+    this.db.prepare("DELETE FROM history WHERE session_id = ?").run(sessionId);
+    this.db.prepare("DELETE FROM sessions WHERE session_id = ?").run(sessionId);
+  }
+
   getSession(sessionId: string): SessionInfo | null {
     const stmt = this.db.prepare(
       `SELECT

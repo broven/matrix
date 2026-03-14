@@ -22,6 +22,7 @@ interface SidebarProps {
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
   onCreateSession: (agentId: string, cwd: string) => Promise<string | null>;
+  onDeleteSession: (sessionId: string) => void;
 }
 
 export function Sidebar({
@@ -31,6 +32,7 @@ export function Sidebar({
   selectedSessionId,
   onSelectSession,
   onCreateSession,
+  onDeleteSession,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -123,6 +125,7 @@ export function Sidebar({
                 session={session}
                 selected={session.sessionId === selectedSessionId}
                 onSelect={() => onSelectSession(session.sessionId)}
+                onDelete={onDeleteSession}
               />
             ))
           )}

@@ -353,9 +353,9 @@ describe("SessionManager", () => {
       // Session should no longer be tracked
       expect(sessionManager.has("sess_1")).toBe(false);
 
-      // Store should show closed
+      // Store should no longer contain the session
       const sessions = store.listSessions();
-      expect(sessions[0].status).toBe("closed");
+      expect(sessions).toHaveLength(0);
     });
   });
 });

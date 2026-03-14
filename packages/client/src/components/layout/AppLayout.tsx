@@ -111,6 +111,23 @@ export function AppLayout() {
     }
   };
 
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!client) return;
+
+    setSessions((previous) => previous.filter((s) => s.sessionId !== sessionId));
+
+    if (selectedSessionId === sessionId) {
+      setSelectedSessionId(null);
+    }
+
+    try {
+      await client.deleteSession(sessionId);
+    } catch (error) {
+      console.error("Failed to delete session:", error);
+      void handleRefreshSessions();
+    }
+  };
+
   const handleCreateSession = async (agentId: string, cwd: string) => {
     if (!client) return null;
 
@@ -150,6 +167,7 @@ export function AppLayout() {
           selectedSessionId={selectedSessionId}
           onSelectSession={(sessionId) => setSelectedSessionId(sessionId)}
           onCreateSession={handleCreateSession}
+          onDeleteSession={handleDeleteSession}
         />
       </aside>
 
@@ -165,6 +183,7 @@ export function AppLayout() {
               setMobileSidebarOpen(false);
             }}
             onCreateSession={handleCreateSession}
+            onDeleteSession={handleDeleteSession}
           />
         </SheetContent>
       </Sheet>
