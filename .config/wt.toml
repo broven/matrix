@@ -35,6 +35,10 @@ EOF
 echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT"
 """
 
+build-protocol = """
+pnpm --filter @matrix/protocol build
+"""
+
 patch-tauri = """
 # env fallback: Worktrunk -> Conductor -> Superset
 BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
