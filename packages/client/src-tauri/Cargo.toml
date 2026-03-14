@@ -1,0 +1,16 @@
+[package]
+name = "matrix-client"
+version = "0.1.0"
+description = "Matrix remote ACP client"
+authors = ["Matrix"]
+edition = "2021"
+
+[lib]
+name = "matrix_client_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "=2.0.0", features = [] }
