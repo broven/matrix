@@ -62,6 +62,7 @@ describe("Integration: session lifecycle", () => {
         onPrompt(sessionId, prompt) {
           promptsReceived.push({ sessionId, prompt });
         },
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );
@@ -220,6 +221,7 @@ describe("Integration: session lifecycle", () => {
           sessionManager.markPromptStarted(sessionId);
           bridge.sendPrompt(sessionId, prompt);
         },
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );
@@ -280,6 +282,7 @@ describe("Integration: session lifecycle", () => {
             });
           }
         },
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );

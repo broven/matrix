@@ -178,6 +178,10 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
     [addEvent, session, viewStatus],
   );
 
+  const handleCancel = useCallback(() => {
+    session?.cancel();
+  }, [session]);
+
   const handleApprove = useCallback(
     (toolCallId: string, optionId: string) => {
       session?.approveToolCall(toolCallId, optionId);
@@ -222,7 +226,7 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
         <MessageList events={events} onApprove={handleApprove} onReject={handleReject} />
         <div ref={messagesEndRef} />
       </ScrollArea>
-      <StatusBar status={statusBarStatus} message={statusMessage} />
+      <StatusBar status={statusBarStatus} message={statusMessage} onCancel={handleCancel} />
       <PromptInput
         onSend={handleSend}
         disabled={inputDisabled}

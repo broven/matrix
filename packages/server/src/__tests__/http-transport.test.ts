@@ -35,6 +35,7 @@ describe("HTTP transport routes", () => {
           },
         ],
         onPrompt: () => {},
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );
@@ -55,6 +56,7 @@ describe("HTTP transport routes", () => {
           receivedSessionId = sessionId;
           receivedText = prompt[0]?.text ?? "";
         },
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );

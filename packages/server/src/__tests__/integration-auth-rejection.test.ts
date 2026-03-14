@@ -44,6 +44,7 @@ describe("Integration: auth rejection", () => {
         serverToken: TOKEN,
         snapshotProvider: () => [],
         onPrompt: () => {},
+        onCancel: () => {},
         onPermissionResponse: () => {},
       }),
     );

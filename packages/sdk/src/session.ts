@@ -74,6 +74,13 @@ export class MatrixSession implements AsyncIterable<SessionUpdate> {
     };
   }
 
+  cancel(): void {
+    this.transport.send({
+      type: "session:cancel",
+      sessionId: this.sessionId,
+    });
+  }
+
   approveToolCall(toolCallId: string, optionId = "allow-once"): void {
     this.transport.send({
       type: "session:permission_response",

@@ -97,6 +97,10 @@ async function handlePrompt(sessionId: string, prompt: Array<{ type: string; tex
   bridge.sendPrompt(sessionId, prompt);
 }
 
+function handleCancel(sessionId: string) {
+  sessionManager.cancelPrompt(sessionId);
+}
+
 function handlePermissionResponse(sessionId: string, toolCallId: string, outcome: { outcome: string; optionId?: string }) {
   const bridge = sessionManager.getBridge(sessionId);
   if (bridge) {
@@ -225,6 +229,7 @@ app.route("/", createTransportRoutes({
   serverToken,
   snapshotProvider: buildSnapshots,
   onPrompt: handlePrompt,
+  onCancel: handleCancel,
   onPermissionResponse: handlePermissionResponse,
 }));
 
@@ -256,6 +261,7 @@ const { injectWebSocket } = setupWebSocket(app as any, {
   serverToken,
   snapshotProvider: buildSnapshots,
   onPrompt: handlePrompt,
+  onCancel: handleCancel,
   onPermissionResponse: handlePermissionResponse,
 });
 

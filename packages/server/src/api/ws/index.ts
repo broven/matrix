@@ -17,6 +17,7 @@ export interface WsHandlerDeps {
   serverToken: string;
   snapshotProvider: (sessionId?: string) => Array<Extract<ServerMessage, { type: "session:snapshot" }>>;
   onPrompt: (sessionId: string, prompt: Array<{ type: string; text: string }>) => void;
+  onCancel: (sessionId: string) => void;
   onPermissionResponse: (sessionId: string, toolCallId: string, outcome: PermissionOutcome) => void;
 }
 
@@ -62,6 +63,10 @@ export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
               case "session:prompt":
                 deps.connectionManager.subscribeToSession(connectionId, clientMsg.sessionId);
                 deps.onPrompt(clientMsg.sessionId, clientMsg.prompt);
+                break;
+
+              case "session:cancel":
+                deps.onCancel(clientMsg.sessionId);
                 break;
 
               case "session:subscribe":

@@ -25,6 +25,7 @@ export type ServerMessage =
 /** WebSocket message envelope from client to server */
 export type ClientMessage =
   | { type: "session:prompt"; sessionId: string; prompt: Array<{ type: string; text: string }> }
+  | { type: "session:cancel"; sessionId: string }
   | { type: "session:subscribe"; sessionId: string; lastEventId?: string }
   | { type: "session:permission_response"; sessionId: string; toolCallId: string; outcome: PermissionOutcome }
   | { type: "ping" };
