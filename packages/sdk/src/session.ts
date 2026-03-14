@@ -15,6 +15,9 @@ export interface PromptCallbacks {
   onPlan?: (plan: Extract<SessionUpdate, { sessionUpdate: "plan" }>) => void;
   onComplete?: (result: { stopReason: StopReason }) => void;
   onHistorySync?: (history: HistoryEntry[]) => void;
+  onSuspended?: () => void;
+  onRestoring?: () => void;
+  onError?: (error: { code: string; message: string }) => void;
 }
 
 interface QueuedResolver {
@@ -37,8 +40,8 @@ export class MatrixSession implements AsyncIterable<SessionUpdate> {
   ) {}
 
   prompt(text: string, callbacks: PromptCallbacks): void {
-    this.callbacks = callbacks;
     this.subscribe();
+    this.callbacks = callbacks;
     this.transport.send({
       type: "session:prompt",
       sessionId: this.sessionId,
@@ -47,8 +50,8 @@ export class MatrixSession implements AsyncIterable<SessionUpdate> {
   }
 
   promptWithContent(content: PromptContent[], callbacks: PromptCallbacks): void {
-    this.callbacks = callbacks;
     this.subscribe();
+    this.callbacks = callbacks;
     this.transport.send({
       type: "session:prompt",
       sessionId: this.sessionId,
@@ -177,6 +180,19 @@ export class MatrixSession implements AsyncIterable<SessionUpdate> {
 
   handleSnapshot(history: HistoryEntry[]): void {
     this.dispatch((callbacks) => callbacks.onHistorySync?.(history));
+  }
+
+  handleSuspended(): void {
+    this.dispatch((callbacks) => callbacks.onSuspended?.());
+  }
+
+  handleRestoring(): void {
+    this.dispatch((callbacks) => callbacks.onRestoring?.());
+  }
+
+  handleError(error: { code: string; message: string }): void {
+    this.dispatch((callbacks) => callbacks.onError?.(error));
+    this.callbacks = null;
   }
 
   private dispatch(fn: (callbacks: PromptCallbacks) => void): void {

@@ -48,5 +48,15 @@ describe("AcpBridge permission flow", () => {
 
     expect(writes.at(-1)).toContain('"id":77');
     expect(writes.at(-1)).toContain('"optionId":"allow_once"');
+    expect(JSON.parse(String(writes.at(-1)).trim())).toMatchObject({
+      jsonrpc: "2.0",
+      id: 77,
+      result: {
+        outcome: {
+          outcome: "selected",
+          optionId: "allow_once",
+        },
+      },
+    });
   });
 });

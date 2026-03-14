@@ -245,6 +245,87 @@ describe("SessionManager", () => {
     });
   });
 
+  describe("idle suspension", () => {
+    it("suspends an idle recoverable active session", () => {
+      const bridge = createMockBridge();
+      sessionManager.register("sess_idle", bridge, "agent-1", "/tmp");
+      store.createSession("sess_idle", "agent-1", "/tmp", {
+        recoverable: true,
+        lastActiveAt: "2026-03-14T00:00:00.000Z",
+      });
+
+      sessionManager.suspendIdleSessions(
+        store,
+        Date.parse("2026-03-14T00:31:00.000Z"),
+        30 * 60 * 1000,
+      );
+
+      expect(bridge.destroy).toHaveBeenCalledOnce();
+      expect(sessionManager.has("sess_idle")).toBe(false);
+      expect(store.getSession("sess_idle")?.status).toBe("suspended");
+      expect(store.getSession("sess_idle")?.suspendedAt).toBe("2026-03-14T00:31:00.000Z");
+      expect(store.getSession("sess_idle")?.closeReason).toBeNull();
+    });
+
+    it("does not suspend non-recoverable sessions", () => {
+      const bridge = createMockBridge();
+      sessionManager.register("sess_nonrecoverable", bridge, "agent-1", "/tmp");
+      store.createSession("sess_nonrecoverable", "agent-1", "/tmp", {
+        recoverable: false,
+        lastActiveAt: "2026-03-14T00:00:00.000Z",
+      });
+
+      sessionManager.suspendIdleSessions(
+        store,
+        Date.parse("2026-03-14T00:31:00.000Z"),
+        30 * 60 * 1000,
+      );
+
+      expect(bridge.destroy).not.toHaveBeenCalled();
+      expect(sessionManager.has("sess_nonrecoverable")).toBe(true);
+      expect(store.getSession("sess_nonrecoverable")?.status).toBe("active");
+    });
+
+    it("does not suspend sessions that are not idle long enough", () => {
+      const bridge = createMockBridge();
+      sessionManager.register("sess_recent", bridge, "agent-1", "/tmp");
+      store.createSession("sess_recent", "agent-1", "/tmp", {
+        recoverable: true,
+        lastActiveAt: "2026-03-14T00:20:00.000Z",
+      });
+
+      sessionManager.suspendIdleSessions(
+        store,
+        Date.parse("2026-03-14T00:31:00.000Z"),
+        30 * 60 * 1000,
+      );
+
+      expect(bridge.destroy).not.toHaveBeenCalled();
+      expect(sessionManager.has("sess_recent")).toBe(true);
+      expect(store.getSession("sess_recent")?.status).toBe("active");
+    });
+
+    it("does not suspend sessions with an in-flight prompt", () => {
+      const bridge = createMockBridge();
+      sessionManager.register("sess_inflight", bridge, "agent-1", "/tmp");
+      store.createSession("sess_inflight", "agent-1", "/tmp", {
+        recoverable: true,
+        lastActiveAt: "2026-03-14T00:00:00.000Z",
+      });
+
+      sessionManager.markPromptStarted("sess_inflight");
+      sessionManager.suspendIdleSessions(
+        store,
+        Date.parse("2026-03-14T00:31:00.000Z"),
+        30 * 60 * 1000,
+      );
+
+      expect(bridge.destroy).not.toHaveBeenCalled();
+      expect(sessionManager.has("sess_inflight")).toBe(true);
+      expect(store.getSession("sess_inflight")?.status).toBe("active");
+    });
+  });
+
   describe("DELETE /sessions/:id integration", () => {
     it("kills bridge and updates store when session is deleted via REST", async () => {
       const { Hono } = await import("hono");

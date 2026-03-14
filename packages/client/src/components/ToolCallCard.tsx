@@ -1,4 +1,11 @@
-import type { ToolCallStatus, ToolCallLocation, ToolCallContent } from "@matrix/protocol";
+import { useState } from "react";
+import type { ToolCallContent, ToolCallLocation, ToolCallStatus } from "@matrix/protocol";
+import { ChevronDown, WandSparkles } from "lucide-react";
+import { ToolContentList } from "@/components/ToolContent";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 
 interface Props {
   toolCall: {
@@ -11,40 +18,57 @@ interface Props {
   };
 }
 
-const statusColors: Record<string, string> = {
-  pending: "#f59e0b",
-  running: "#3b82f6",
-  completed: "#22c55e",
-  error: "#ef4444",
+const statusVariant: Record<ToolCallStatus, "secondary" | "default" | "destructive" | "outline"> = {
+  pending: "outline",
+  running: "secondary",
+  completed: "default",
+  error: "destructive",
 };
 
 export function ToolCallCard({ toolCall }: Props) {
+  const [open, setOpen] = useState(Boolean(toolCall.content?.length));
+
   return (
-    <div style={{
-      border: "1px solid #e5e7eb",
-      borderRadius: 8,
-      padding: 12,
-      margin: "8px 0",
-      borderLeft: `4px solid ${statusColors[toolCall.status] || "#9ca3af"}`,
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ fontWeight: 600 }}>{toolCall.kind || "tool"}: {toolCall.title || toolCall.toolCallId}</span>
-        <span style={{ fontSize: 12, color: statusColors[toolCall.status] }}>{toolCall.status}</span>
-      </div>
-      {toolCall.locations?.map((loc, i) => (
-        <div key={i} style={{ fontSize: 13, color: "#6b7280", fontFamily: "monospace" }}>{loc.path}</div>
-      ))}
-      {toolCall.content?.map((c, i) => (
-        <div key={i} style={{ marginTop: 8 }}>
-          {c.type === "diff" ? (
-            <pre style={{ background: "#f3f4f6", padding: 8, borderRadius: 4, fontSize: 12, overflow: "auto" }}>
-              {`--- ${c.path}\n+++ ${c.path}\n- ${c.oldText}\n+ ${c.newText}`}
-            </pre>
-          ) : (
-            <span style={{ fontSize: 13 }}>{c.text}</span>
-          )}
-        </div>
-      ))}
-    </div>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Card className="gap-0 overflow-hidden py-0">
+        <CollapsibleTrigger className="w-full text-left">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <WandSparkles className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={statusVariant[toolCall.status]}>
+                    {toolCall.status}
+                  </Badge>
+                  <span className="truncate text-sm font-medium">
+                    {toolCall.kind ?? "tool"}: {toolCall.title ?? toolCall.toolCallId}
+                  </span>
+                </div>
+                {toolCall.locations?.length ? (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {toolCall.locations.map((location) => (
+                      <code
+                        key={location.path}
+                        className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                      >
+                        {location.path}
+                      </code>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <ChevronDown
+              className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")}
+            />
+          </div>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-t border-border px-4 py-4">
+          <ToolContentList content={toolCall.content} />
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 }

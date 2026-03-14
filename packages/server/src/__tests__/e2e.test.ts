@@ -40,7 +40,7 @@ function handleMockMessage(msg: any, stdout: PassThrough): void {
         id: msg.id,
         result: {
           protocolVersion: 1,
-          serverCapabilities: { session: true },
+          serverCapabilities: { session: true, loadSession: true },
           serverInfo: { name: "mock-agent", version: "0.0.1" },
         },
       }) + "\n");
@@ -52,6 +52,20 @@ function handleMockMessage(msg: any, stdout: PassThrough): void {
         id: msg.id,
         result: {
           sessionId: "mock-session-1",
+          modes: {
+            currentModeId: "code",
+            availableModes: [{ id: "code", name: "Code" }],
+          },
+        },
+      }) + "\n");
+    });
+  } else if (msg.method === "session/load") {
+    setImmediate(() => {
+      stdout.write(JSON.stringify({
+        jsonrpc: "2.0",
+        id: msg.id,
+        result: {
+          sessionId: msg.params.sessionId,
           modes: {
             currentModeId: "code",
             availableModes: [{ id: "code", name: "Code" }],
@@ -155,6 +169,7 @@ function createTestApp() {
   const serverToken = generateToken();
   const agentManager = new AgentManager();
   const store = new Store(DB_PATH);
+  store.normalizeSessionsOnStartup();
   const connectionManager = new ConnectionManager();
   const sessionManager = new SessionManager();
 
@@ -178,19 +193,48 @@ function createTestApp() {
       }));
   }
 
-  function handlePrompt(
+  function emitSessionError(sessionId: string, code: string, message: string) {
+    connectionManager.broadcastToSession(sessionId, {
+      type: "error",
+      code,
+      message,
+    });
+  }
+
+  async function handlePrompt(
     sessionId: string,
     prompt: Array<{ type: string; text: string }>,
   ) {
-    const bridge = sessionManager.getBridge(sessionId);
-    if (bridge) {
-      for (const item of prompt) {
-        if (item.type === "text") {
-          store.appendHistory(sessionId, "user", item.text);
-        }
-      }
-      bridge.sendPrompt(sessionId, prompt);
+    const session = store.getSession(sessionId);
+    if (!session) {
+      emitSessionError(sessionId, "session_not_found", "Session not found");
+      return;
     }
+
+    if (session.status === "closed") {
+      emitSessionError(sessionId, "session_closed", "Session is closed");
+      return;
+    }
+
+    let bridge = sessionManager.getBridge(sessionId);
+    if (!bridge && session.status === "suspended" && session.recoverable) {
+      bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
+    }
+
+    if (!bridge) {
+      emitSessionError(sessionId, "session_unavailable", "Session is unavailable");
+      return;
+    }
+
+    for (const item of prompt) {
+      if (item.type === "text") {
+        store.appendHistory(sessionId, "user", item.text);
+      }
+    }
+
+    store.touchSession(sessionId);
+    sessionManager.markPromptStarted(sessionId);
+    bridge.sendPrompt(sessionId, prompt);
   }
 
   function handlePermissionResponse(
@@ -204,27 +248,13 @@ function createTestApp() {
     }
   }
 
-  const app = new Hono();
-  app.use("/*", cors());
-  app.use("/agents/*", authMiddleware(serverToken));
-  app.use("/sessions/*", authMiddleware(serverToken));
-
-  app.route("/", createRestRoutes(agentManager, store, sessionManager));
-  app.route(
-    "/",
-    createTransportRoutes({
-      connectionManager,
-      serverToken,
-      snapshotProvider: buildSnapshots,
-      onPrompt: handlePrompt,
-      onPermissionResponse: handlePermissionResponse,
-    }),
-  );
-
-  // Session creation endpoint (mirrors index.ts but uses mock process)
-  app.post("/sessions", async (c) => {
-    const body = await c.req.json<{ agentId: string; cwd: string }>();
-    const sessionId = `sess_e2e_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  async function createBridge(
+    sessionId: string,
+    agentId: string,
+    cwd: string,
+    restoreAgentSessionId?: string | null,
+  ) {
+    void agentId;
     const mockProcess = createMockAgentProcess();
 
     const bridge = new AcpBridge(mockProcess as any, {
@@ -240,6 +270,10 @@ function createTestApp() {
           if (content?.text) {
             store.appendHistory(sessionId, "agent", content.text);
           }
+        }
+        if (update.sessionUpdate === "completed") {
+          sessionManager.markPromptCompleted(sessionId);
+          store.touchSession(sessionId);
         }
       },
       onPermissionRequest(_sid, request) {
@@ -262,14 +296,59 @@ function createTestApp() {
     });
 
     await bridge.initialize({ name: "matrix-test", version: "0.1.0" });
-    await bridge.createSession(body.cwd);
+    const sessionResult = restoreAgentSessionId
+      ? await bridge.loadSession(restoreAgentSessionId, cwd)
+      : await bridge.createSession(cwd);
+
+    return {
+      bridge,
+      modes: sessionResult.modes || {
+        currentModeId: "code",
+        availableModes: [{ id: "code", name: "Code" }],
+      },
+      recoverable: Boolean(bridge.capabilities?.loadSession),
+      agentSessionId: bridge.agentSessionId,
+    };
+  }
+
+  sessionManager.setBridgeFactory(createBridge);
+
+  const app = new Hono();
+  app.use("/*", cors());
+  app.use("/agents/*", authMiddleware(serverToken));
+  app.use("/sessions/*", authMiddleware(serverToken));
+
+  app.route("/", createRestRoutes(agentManager, store, sessionManager));
+  app.route(
+    "/",
+    createTransportRoutes({
+      connectionManager,
+      serverToken,
+      snapshotProvider: buildSnapshots,
+      onPrompt: handlePrompt,
+      onPermissionResponse: handlePermissionResponse,
+    }),
+  );
+
+  // Session creation endpoint (mirrors index.ts but uses mock process)
+  app.post("/sessions", async (c) => {
+    const body = await c.req.json<{ agentId: string; cwd: string }>();
+    const sessionId = `sess_e2e_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const { bridge, modes, recoverable, agentSessionId } = await createBridge(
+      sessionId,
+      body.agentId,
+      body.cwd,
+    );
 
     sessionManager.register(sessionId, bridge, body.agentId, body.cwd);
-    store.createSession(sessionId, body.agentId, body.cwd);
+    store.createSession(sessionId, body.agentId, body.cwd, {
+      recoverable,
+      agentSessionId,
+    });
 
     return c.json({
       sessionId,
-      modes: { currentModeId: "code", availableModes: [{ id: "code", name: "Code" }] },
+      modes,
     });
   });
 
@@ -361,6 +440,15 @@ describe("E2E Integration Tests", () => {
     it("POST /sessions with valid token creates a session", async () => {
       const sessionId = await createSession(ctx);
       expect(sessionId).toMatch(/^sess_e2e_/);
+
+      const stored = ctx.store.getSession(sessionId);
+      expect(stored).not.toBeNull();
+      expect(stored?.recoverable).toBe(true);
+      expect(stored?.agentSessionId).toBe("mock-session-1");
+      expect(stored?.status).toBe("active");
+      expect(stored?.lastActiveAt).toBeDefined();
+      expect(stored?.suspendedAt).toBeNull();
+      expect(stored?.closeReason).toBeNull();
     });
   });
 
@@ -457,6 +545,11 @@ describe("E2E Integration Tests", () => {
       expect(found).toBeDefined();
       expect(found.status).toBe("active");
       expect(found.agentId).toBe("test-agent");
+      expect(found.recoverable).toBe(true);
+      expect(found.agentSessionId).toBe("mock-session-1");
+      expect(found.lastActiveAt).toBeTruthy();
+      expect(found.suspendedAt).toBeNull();
+      expect(found.closeReason).toBeNull();
 
       // History (empty)
       const histRes = await ctx.app.request(`/sessions/${sessionId}/history`, {
@@ -500,6 +593,54 @@ describe("E2E Integration Tests", () => {
       const ids = (await listRes.json()).map((s: any) => s.sessionId);
       expect(ids).toContain(sid1);
       expect(ids).toContain(sid2);
+    });
+
+    it("startup normalization suspends recoverable sessions and closes non-recoverable sessions", async () => {
+      ctx.cleanup();
+
+      const preRestartStore = new Store(DB_PATH);
+      preRestartStore.createSession("sess_recoverable", "test-agent", "/tmp/recoverable", {
+        recoverable: true,
+        agentSessionId: "agent-recoverable",
+      });
+      preRestartStore.createSession("sess_unrecoverable", "test-agent", "/tmp/unrecoverable");
+      preRestartStore.appendHistory("sess_recoverable", "user", "recoverable history");
+      preRestartStore.appendHistory("sess_unrecoverable", "agent", "unrecoverable history");
+      preRestartStore.close();
+
+      ctx = createTestApp();
+
+      const listRes = await ctx.app.request("/sessions", {
+        headers: authHeaders(ctx.serverToken),
+      });
+      expect(listRes.status).toBe(200);
+      const sessions = await listRes.json();
+
+      const recoverable = sessions.find((s: any) => s.sessionId === "sess_recoverable");
+      expect(recoverable).toBeDefined();
+      expect(recoverable.status).toBe("suspended");
+      expect(recoverable.closeReason).toBeNull();
+
+      const unrecoverable = sessions.find((s: any) => s.sessionId === "sess_unrecoverable");
+      expect(unrecoverable).toBeDefined();
+      expect(unrecoverable.status).toBe("closed");
+      expect(unrecoverable.closeReason).toBe("server_restart_unrecoverable");
+
+      const recoverableHistoryRes = await ctx.app.request("/sessions/sess_recoverable/history", {
+        headers: authHeaders(ctx.serverToken),
+      });
+      expect(recoverableHistoryRes.status).toBe(200);
+      const recoverableHistory = await recoverableHistoryRes.json();
+      expect(recoverableHistory).toHaveLength(1);
+      expect(recoverableHistory[0].content).toBe("recoverable history");
+
+      const unrecoverableHistoryRes = await ctx.app.request("/sessions/sess_unrecoverable/history", {
+        headers: authHeaders(ctx.serverToken),
+      });
+      expect(unrecoverableHistoryRes.status).toBe(200);
+      const unrecoverableHistory = await unrecoverableHistoryRes.json();
+      expect(unrecoverableHistory).toHaveLength(1);
+      expect(unrecoverableHistory[0].content).toBe("unrecoverable history");
     });
   });
 
@@ -599,6 +740,77 @@ describe("E2E Integration Tests", () => {
         (h: any) => h.role === "agent" && h.content === "Hello from mock agent!",
       );
       expect(agentEntry).toBeDefined();
+    });
+
+    it("POST /messages restores a suspended recoverable session before forwarding the prompt", async () => {
+      ctx.store.createSession("sess_suspended", "test-agent", "/tmp/suspended", {
+        recoverable: true,
+        agentSessionId: "agent-suspended-1",
+      });
+      ctx.store.updateSessionState("sess_suspended", {
+        status: "suspended",
+        suspendedAt: "2026-03-14T12:00:00.000Z",
+      });
+
+      const msgRes = await ctx.app.request("/messages", {
+        method: "POST",
+        headers: authHeaders(ctx.serverToken, { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          type: "session:prompt",
+          sessionId: "sess_suspended",
+          prompt: [{ type: "text", text: "resume me" }],
+        }),
+      });
+      expect(msgRes.status).toBe(202);
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      const session = ctx.store.getSession("sess_suspended");
+      expect(session?.status).toBe("active");
+      expect(session?.suspendedAt).toBeNull();
+
+      const history = ctx.store.getHistory("sess_suspended");
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: "user", content: "resume me" }),
+          expect.objectContaining({ role: "agent", content: "Hello from mock agent!" }),
+        ]),
+      );
+      expect(ctx.sessionManager.getBridge("sess_suspended")).toBeDefined();
+    });
+
+    it("POST /messages emits an explicit error for a closed session", async () => {
+      const sessionId = await createSession(ctx);
+      await ctx.app.request(`/sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: authHeaders(ctx.serverToken),
+      });
+
+      const msgRes = await ctx.app.request("/messages", {
+        method: "POST",
+        headers: authHeaders(ctx.serverToken, { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          type: "session:prompt",
+          sessionId,
+          prompt: [{ type: "text", text: "can you still answer?" }],
+        }),
+      });
+      expect(msgRes.status).toBe(202);
+
+      const pollRes = await ctx.app.request("/poll?lastEventId=0", {
+        headers: authHeaders(ctx.serverToken),
+      });
+      expect(pollRes.status).toBe(200);
+      const events = await pollRes.json();
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "error",
+            code: "session_closed",
+            message: "Session is closed",
+          }),
+        ]),
+      );
     });
   });
 

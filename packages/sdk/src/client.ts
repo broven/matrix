@@ -137,11 +137,25 @@ export class MatrixClient {
         session?.handleSnapshot(msg.history);
         break;
       }
+      case "session:suspended": {
+        const session = this.sessions.get(msg.sessionId);
+        session?.handleSuspended();
+        break;
+      }
+      case "session:restoring": {
+        const session = this.sessions.get(msg.sessionId);
+        session?.handleRestoring();
+        break;
+      }
       case "session:closed": {
         this.sessions.delete(msg.sessionId);
         break;
       }
       case "error": {
+        if (msg.sessionId) {
+          const session = this.sessions.get(msg.sessionId);
+          session?.handleError({ code: msg.code, message: msg.message });
+        }
         console.error("[MatrixClient] Server error:", msg.message);
         break;
       }

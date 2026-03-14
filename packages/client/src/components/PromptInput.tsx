@@ -1,12 +1,25 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Props {
   onSend: (text: string) => void;
   disabled?: boolean;
+  placeholder?: string;
 }
 
-export function PromptInput({ onSend, disabled }: Props) {
+export function PromptInput({ onSend, disabled, placeholder = "Message the active session..." }: Props) {
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+  }, [text]);
 
   const handleSend = () => {
     if (!text.trim()) return;
@@ -14,31 +27,36 @@ export function PromptInput({ onSend, disabled }: Props) {
     setText("");
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       handleSend();
     }
   };
 
   return (
-    <div className="prompt-bar" style={{ display: "flex", gap: 8, padding: 16, borderTop: "1px solid #e5e7eb" }}>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Enter message..."
-        disabled={disabled}
-        rows={3}
-        style={{ flex: 1, padding: 8, resize: "vertical", fontFamily: "inherit" }}
-      />
-      <button
-        onClick={handleSend}
-        disabled={disabled || !text.trim()}
-        style={{ padding: "8px 20px", cursor: "pointer", alignSelf: "end" }}
-      >
-        Send
-      </button>
+    <div className="border-t border-border bg-background/95 px-4 py-4 backdrop-blur md:px-6">
+      <div className="mx-auto flex max-w-5xl items-end gap-3">
+        <Textarea
+          ref={textareaRef}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={disabled}
+          rows={1}
+          className="max-h-60 min-h-12 resize-none rounded-2xl border-border/80 bg-card px-4 py-3 shadow-sm"
+        />
+        <Button
+          onClick={handleSend}
+          disabled={disabled || !text.trim()}
+          size="icon-lg"
+          className="rounded-2xl"
+        >
+          <ArrowUp className="size-5" />
+          <span className="sr-only">Send prompt</span>
+        </Button>
+      </div>
     </div>
   );
 }

@@ -172,6 +172,53 @@ describe("SDK error handling", () => {
     client.disconnect();
   });
 
+  it("MatrixClient routes session lifecycle and scoped errors to attached sessions", () => {
+    const client = new MatrixClient({
+      serverUrl: "http://localhost:8080",
+      token: "test",
+      transport: "polling",
+    });
+
+    (client as any).transport = {
+      send: vi.fn(),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      getLastEventId: vi.fn(),
+      type: "polling",
+    };
+
+    const session = client.attachSession("sess_1");
+    const onSuspended = vi.fn();
+    const onRestoring = vi.fn();
+    const onError = vi.fn();
+
+    session.subscribeToUpdates({ onSuspended, onRestoring, onError });
+
+    (client as any).handleServerMessage({
+      type: "session:suspended",
+      sessionId: "sess_1",
+      eventId: "1",
+    });
+    (client as any).handleServerMessage({
+      type: "session:restoring",
+      sessionId: "sess_1",
+      eventId: "2",
+    });
+    (client as any).handleServerMessage({
+      type: "error",
+      sessionId: "sess_1",
+      code: "restore_failed",
+      message: "restore failed",
+    });
+
+    expect(onSuspended).toHaveBeenCalledTimes(1);
+    expect(onRestoring).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith({
+      code: "restore_failed",
+      message: "restore failed",
+    });
+  });
+
   it("MatrixClient.onStatusChange returns working unsubscribe function", async () => {
     class MockWebSocket {
       static OPEN = 1;

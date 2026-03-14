@@ -23,6 +23,12 @@ function createBridge() {
   return { process, handlers, bridge };
 }
 
+function readJsonRpcFromStdin(process: MockChildProcess): any {
+  const raw = process.stdin.read()?.toString();
+  expect(raw).toBeTruthy();
+  return JSON.parse(String(raw).trim());
+}
+
 describe("AcpBridge request timeout", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -97,5 +103,158 @@ describe("AcpBridge request timeout", () => {
 
     // Close should not cause errors
     process.emit("close");
+  });
+
+  it("synthesizes a completed update when session/prompt resolves without one", async () => {
+    const { process, bridge, handlers } = createBridge();
+
+    const promptPromise = bridge.sendPrompt("sess_1", [{ type: "text", text: "hello" }]);
+
+    process.stdout.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { ok: true } })}\n`,
+    );
+
+    await expect(promptPromise).resolves.toEqual({ ok: true });
+    expect(handlers.onSessionUpdate).toHaveBeenCalledWith(
+      "sess_1",
+      expect.objectContaining({
+        sessionUpdate: "completed",
+        stopReason: "end_turn",
+      }),
+    );
+  });
+
+  it("stores initialize capabilities for later use", async () => {
+    const { process, bridge } = createBridge();
+
+    const promise = bridge.initialize({ name: "matrix-test", version: "0.1.0" });
+    const request = readJsonRpcFromStdin(process);
+
+    expect(request.method).toBe("initialize");
+
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: {
+          capabilities: {
+            loadSession: true,
+          },
+        },
+      })}\n`,
+    );
+
+    await expect(promise).resolves.toEqual({
+      capabilities: {
+        loadSession: true,
+      },
+    });
+    expect((bridge as any).capabilities).toEqual({
+      loadSession: true,
+    });
+  });
+
+  it("stores initialize serverCapabilities for later use", async () => {
+    const { process, bridge } = createBridge();
+
+    const promise = bridge.initialize({ name: "matrix-test", version: "0.1.0" });
+    const request = readJsonRpcFromStdin(process);
+
+    expect(request.method).toBe("initialize");
+
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: {
+          serverCapabilities: {
+            loadSession: true,
+          },
+        },
+      })}\n`,
+    );
+
+    await expect(promise).resolves.toEqual({
+      serverCapabilities: {
+        loadSession: true,
+      },
+    });
+    expect((bridge as any).capabilities).toEqual({
+      loadSession: true,
+    });
+  });
+
+  it("loads an existing session and updates the agent session id", async () => {
+    const { process, bridge } = createBridge();
+
+    const promise = (bridge as any).loadSession("agent_existing", "/tmp/project");
+    const request = readJsonRpcFromStdin(process);
+
+    expect(request.method).toBe("session/load");
+    expect(request.params).toEqual({
+      sessionId: "agent_existing",
+      cwd: "/tmp/project",
+      mcpServers: [],
+    });
+
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: {
+          sessionId: "agent_existing",
+        },
+      })}\n`,
+    );
+
+    await expect(promise).resolves.toEqual({
+      sessionId: "agent_existing",
+    });
+    expect(bridge.agentSessionId).toBe("agent_existing");
+  });
+
+  it("does not synthesize a duplicate completed update after loading an existing agent session", async () => {
+    const { process, bridge, handlers } = createBridge();
+
+    const loadPromise = bridge.loadSession("agent_existing", "/tmp/project");
+    const loadRequest = readJsonRpcFromStdin(process);
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: loadRequest.id,
+        result: {
+          sessionId: "agent_existing",
+        },
+      })}\n`,
+    );
+    await expect(loadPromise).resolves.toEqual({ sessionId: "agent_existing" });
+
+    const promptPromise = bridge.sendPrompt("sess_matrix", [{ type: "text", text: "hello" }]);
+    const promptRequest = readJsonRpcFromStdin(process);
+    expect(promptRequest.params.sessionId).toBe("agent_existing");
+
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "agent_existing",
+          update: {
+            sessionUpdate: "completed",
+            stopReason: "end_turn",
+          },
+        },
+      })}\n`,
+    );
+    process.stdout.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id: promptRequest.id, result: { ok: true } })}\n`,
+    );
+
+    await expect(promptPromise).resolves.toEqual({ ok: true });
+    expect(
+      handlers.onSessionUpdate.mock.calls.filter(
+        ([, update]) => update.sessionUpdate === "completed",
+      ),
+    ).toHaveLength(1);
   });
 });

@@ -251,4 +251,47 @@ describe("MatrixSession prompt lifecycle", () => {
       expect.objectContaining({ role: "agent", content: "hello" }),
     ]);
   });
+
+  it("handleSuspended dispatches to onSuspended listeners", () => {
+    const transport = createMockTransport();
+    const session = new MatrixSession("sess_1", transport, vi.fn());
+    const onSuspended = vi.fn();
+
+    session.subscribeToUpdates({ onSuspended });
+    session.handleSuspended();
+
+    expect(onSuspended).toHaveBeenCalledTimes(1);
+  });
+
+  it("handleRestoring dispatches to onRestoring listeners", () => {
+    const transport = createMockTransport();
+    const session = new MatrixSession("sess_1", transport, vi.fn());
+    const onRestoring = vi.fn();
+
+    session.subscribeToUpdates({ onRestoring });
+    session.handleRestoring();
+
+    expect(onRestoring).toHaveBeenCalledTimes(1);
+  });
+
+  it("handleError dispatches onError and clears current prompt callbacks", () => {
+    const transport = createMockTransport();
+    const session = new MatrixSession("sess_1", transport, vi.fn());
+    const onError = vi.fn();
+    const onMessage = vi.fn();
+    const persistentOnMessage = vi.fn();
+
+    session.subscribeToUpdates({ onMessage: persistentOnMessage });
+    session.prompt("test", { onError, onMessage });
+
+    session.handleError({ code: "session_closed", message: "session closed" });
+    session.handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "after error" },
+    });
+
+    expect(onError).toHaveBeenCalledWith({ code: "session_closed", message: "session closed" });
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(persistentOnMessage).toHaveBeenCalledWith({ type: "text", text: "after error" });
+  });
 });

@@ -18,7 +18,12 @@ export interface SessionInfo {
   agentId: string;
   cwd: string;
   createdAt: string;
-  status: "active" | "closed";
+  status: "active" | "suspended" | "restoring" | "closed";
+  recoverable: boolean;
+  agentSessionId: string | null;
+  lastActiveAt: string;
+  suspendedAt: string | null;
+  closeReason: string | null;
 }
 
 /** GET /agents response item */

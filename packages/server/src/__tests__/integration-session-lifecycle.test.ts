@@ -8,6 +8,7 @@ import { Store } from "../store/index.js";
 import { SessionManager } from "../session-manager/index.js";
 import { ConnectionManager } from "../api/ws/connection-manager.js";
 import { unlinkSync } from "node:fs";
+import { vi } from "vitest";
 
 const DB_PATH = "/tmp/matrix-integration-lifecycle.db";
 const TOKEN = "test-token-lifecycle";
@@ -147,5 +148,170 @@ describe("Integration: session lifecycle", () => {
     const finalListRes = await app.request("/sessions", { headers: authHeaders });
     const finalSessions = await finalListRes.json();
     expect(finalSessions[0].status).toBe("closed");
+  });
+
+  it("restores a suspended recoverable session before forwarding the prompt", async () => {
+    const restoreCalls: string[] = [];
+    const sendPrompt = vi.fn();
+    const agentManager = new AgentManager();
+    agentManager.register({
+      id: "test-agent",
+      name: "Test Agent",
+      command: "echo",
+      args: [],
+    });
+    const sessionManager = new SessionManager();
+    sessionManager.setBridgeFactory(async (_sessionId, _agentId, _cwd, restoreAgentSessionId) => {
+      restoreCalls.push(restoreAgentSessionId ?? "");
+      return {
+        bridge: {
+          sendPrompt,
+          destroy() {},
+        } as any,
+        modes: { currentModeId: "code", availableModes: [] },
+      };
+    });
+
+    app = new Hono();
+    app.use("/agents/*", authMiddleware(TOKEN));
+    app.use("/sessions/*", authMiddleware(TOKEN));
+    app.route("/", createRestRoutes(agentManager, store, sessionManager));
+    app.route(
+      "/",
+      createTransportRoutes({
+        connectionManager,
+        serverToken: TOKEN,
+        snapshotProvider: () => [],
+        async onPrompt(sessionId, prompt) {
+          const session = store.getSession(sessionId);
+          if (!session) {
+            connectionManager.broadcastToSession(sessionId, {
+              type: "error",
+              code: "session_not_found",
+              message: "Session not found",
+            });
+            return;
+          }
+
+          if (session.status === "closed") {
+            connectionManager.broadcastToSession(sessionId, {
+              type: "error",
+              code: "session_closed",
+              message: "Session is closed",
+            });
+            return;
+          }
+
+          let bridge = sessionManager.getBridge(sessionId);
+          if (!bridge && session.status === "suspended" && session.recoverable) {
+            bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
+          }
+
+          if (!bridge) {
+            connectionManager.broadcastToSession(sessionId, {
+              type: "error",
+              code: "session_unavailable",
+              message: "Session is unavailable",
+            });
+            return;
+          }
+
+          store.touchSession(sessionId);
+          sessionManager.markPromptStarted(sessionId);
+          bridge.sendPrompt(sessionId, prompt);
+        },
+        onPermissionResponse: () => {},
+      }),
+    );
+
+    store.createSession("sess_restore", "test-agent", "/tmp/project", {
+      recoverable: true,
+      agentSessionId: "agent-existing-session",
+    });
+    store.updateSessionState("sess_restore", {
+      status: "suspended",
+      suspendedAt: "2026-03-14T12:00:00.000Z",
+    });
+
+    const promptRes = await app.request("/messages", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "session:prompt",
+        sessionId: "sess_restore",
+        prompt: [{ type: "text", text: "resume work" }],
+      }),
+    });
+
+    expect(promptRes.status).toBe(202);
+    expect(restoreCalls).toEqual(["agent-existing-session"]);
+    expect(sendPrompt).toHaveBeenCalledWith("sess_restore", [{ type: "text", text: "resume work" }]);
+    expect(store.getSession("sess_restore")?.status).toBe("active");
+    expect(store.getSession("sess_restore")?.suspendedAt).toBeNull();
+  });
+
+  it("broadcasts an explicit error when prompting a closed session", async () => {
+    const agentManager = new AgentManager();
+    agentManager.register({
+      id: "test-agent",
+      name: "Test Agent",
+      command: "echo",
+      args: [],
+    });
+    const sessionManager = new SessionManager();
+
+    app = new Hono();
+    app.use("/agents/*", authMiddleware(TOKEN));
+    app.use("/sessions/*", authMiddleware(TOKEN));
+    app.route("/", createRestRoutes(agentManager, store, sessionManager));
+    app.route(
+      "/",
+      createTransportRoutes({
+        connectionManager,
+        serverToken: TOKEN,
+        snapshotProvider: () => [],
+        async onPrompt(sessionId) {
+          const session = store.getSession(sessionId);
+          if (session?.status === "closed") {
+            connectionManager.broadcastToSession(sessionId, {
+              type: "error",
+              code: "session_closed",
+              message: "Session is closed",
+            });
+          }
+        },
+        onPermissionResponse: () => {},
+      }),
+    );
+
+    store.createSession("sess_closed", "test-agent", "/tmp/project");
+    store.closeSession("sess_closed");
+
+    const promptRes = await app.request("/messages", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "session:prompt",
+        sessionId: "sess_closed",
+        prompt: [{ type: "text", text: "still there?" }],
+      }),
+    });
+
+    expect(promptRes.status).toBe(202);
+
+    const pollRes = await app.request("/poll?lastEventId=0", {
+      headers: authHeaders,
+    });
+    expect(pollRes.status).toBe(200);
+    const events = await pollRes.json();
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          code: "session_closed",
+          message: "Session is closed",
+        }),
+      ]),
+    );
   });
 });

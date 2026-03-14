@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Store } from "../store/index.js";
 import { unlinkSync } from "node:fs";
+import Database from "better-sqlite3";
 
 const DB_PATH = "/tmp/matrix-test.db";
 
@@ -25,6 +26,11 @@ describe("Store", () => {
     const session = store.createSession("sess_1", "echo-agent", "/tmp/project");
     expect(session.sessionId).toBe("sess_1");
     expect(session.status).toBe("active");
+    expect(session.recoverable).toBe(false);
+    expect(session.agentSessionId).toBeNull();
+    expect(session.lastActiveAt).toBeDefined();
+    expect(session.suspendedAt).toBeNull();
+    expect(session.closeReason).toBeNull();
   });
 
   it("lists active sessions", () => {
@@ -39,6 +45,103 @@ describe("Store", () => {
     store.closeSession("sess_1");
     const sessions = store.listSessions();
     expect(sessions[0].status).toBe("closed");
+    expect(sessions[0].closeReason).toBe("user_closed");
+  });
+
+  it("gets a session with lifecycle metadata", () => {
+    store.createSession("sess_1", "echo-agent", "/tmp/a", {
+      recoverable: true,
+      agentSessionId: "agent_sess_1",
+    });
+
+    const session = store.getSession("sess_1");
+    expect(session).not.toBeNull();
+    expect(session?.recoverable).toBe(true);
+    expect(session?.agentSessionId).toBe("agent_sess_1");
+    expect(session?.status).toBe("active");
+    expect(session?.lastActiveAt).toBeDefined();
+    expect(session?.suspendedAt).toBeNull();
+    expect(session?.closeReason).toBeNull();
+  });
+
+  it("updates session state with a partial patch", () => {
+    store.createSession("sess_1", "echo-agent", "/tmp/a", {
+      recoverable: true,
+      agentSessionId: "agent_sess_1",
+    });
+
+    store.updateSessionState("sess_1", {
+      status: "suspended",
+      suspendedAt: "2026-03-14T12:00:00.000Z",
+      closeReason: "idle_timeout",
+    });
+
+    const session = store.getSession("sess_1");
+    expect(session?.status).toBe("suspended");
+    expect(session?.suspendedAt).toBe("2026-03-14T12:00:00.000Z");
+    expect(session?.closeReason).toBe("idle_timeout");
+    expect(session?.recoverable).toBe(true);
+  });
+
+  it("touches a session activity timestamp", () => {
+    store.createSession("sess_1", "echo-agent", "/tmp/a");
+
+    store.touchSession("sess_1", "2026-03-14T13:00:00.000Z");
+
+    const session = store.getSession("sess_1");
+    expect(session?.lastActiveAt).toBe("2026-03-14T13:00:00.000Z");
+  });
+
+  it("normalizes lifecycle state on startup", () => {
+    store.createSession("sess_recoverable", "echo-agent", "/tmp/a", {
+      recoverable: true,
+      agentSessionId: "agent_recoverable",
+    });
+    store.createSession("sess_unrecoverable", "echo-agent", "/tmp/b");
+
+    store.normalizeSessionsOnStartup();
+
+    expect(store.getSession("sess_recoverable")?.status).toBe("suspended");
+    expect(store.getSession("sess_recoverable")?.closeReason).toBeNull();
+    expect(store.getSession("sess_unrecoverable")?.status).toBe("closed");
+    expect(store.getSession("sess_unrecoverable")?.closeReason).toBe("server_restart_unrecoverable");
+  });
+
+  it("migrates older session tables without failing on lifecycle columns", () => {
+    store.close();
+
+    const legacyDb = new Database(DB_PATH);
+    legacyDb.exec(`
+      DROP TABLE IF EXISTS history;
+      DROP TABLE IF EXISTS sessions;
+      CREATE TABLE sessions (
+        session_id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE history (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+      );
+      INSERT INTO sessions (session_id, agent_id, cwd, status, created_at)
+      VALUES ('sess_legacy', 'echo-agent', '/tmp/legacy', 'active', '2026-03-14 13:46:26');
+    `);
+    legacyDb.close();
+
+    store = new Store(DB_PATH);
+
+    const session = store.getSession("sess_legacy");
+    expect(session).not.toBeNull();
+    expect(session?.status).toBe("active");
+    expect(session?.recoverable).toBe(false);
+    expect(session?.agentSessionId).toBeNull();
+    expect(session?.lastActiveAt).toBe("2026-03-14 13:46:26");
   });
 
   it("appends and retrieves history", () => {

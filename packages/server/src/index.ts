@@ -21,8 +21,11 @@ const config = loadConfig();
 const serverToken = process.env.MATRIX_TOKEN || generateToken();
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);
+store.normalizeSessionsOnStartup();
 const connectionManager = new ConnectionManager();
 const sessionManager = new SessionManager();
+const IDLE_SUSPEND_TIMEOUT_MS = 30 * 60 * 1000;
+const IDLE_SUSPEND_SWEEP_INTERVAL_MS = 60 * 1000;
 
 /** Per-session buffer for aggregating agent_message_chunk text */
 const agentMessageBuffers = new Map<string, string>();
@@ -54,16 +57,44 @@ function buildSnapshots(sessionId?: string) {
   }));
 }
 
-function handlePrompt(sessionId: string, prompt: Array<{ type: string; text: string }>) {
-  const bridge = sessionManager.getBridge(sessionId);
-  if (bridge) {
-    for (const item of prompt) {
-      if (item.type === "text") {
-        store.appendHistory(sessionId, "user", item.text);
-      }
-    }
-    bridge.sendPrompt(sessionId, prompt);
+function emitSessionError(sessionId: string, code: string, message: string): void {
+  connectionManager.broadcastToSession(sessionId, {
+    type: "error",
+    code,
+    message,
+  });
+}
+
+async function handlePrompt(sessionId: string, prompt: Array<{ type: string; text: string }>) {
+  const session = store.getSession(sessionId);
+  if (!session) {
+    emitSessionError(sessionId, "session_not_found", "Session not found");
+    return;
   }
+
+  if (session.status === "closed") {
+    emitSessionError(sessionId, "session_closed", "Session is closed");
+    return;
+  }
+
+  let bridge = sessionManager.getBridge(sessionId);
+  if (!bridge && session.status === "suspended" && session.recoverable) {
+    bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
+  }
+
+  if (!bridge) {
+    emitSessionError(sessionId, "session_unavailable", "Session is unavailable");
+    return;
+  }
+
+  for (const item of prompt) {
+    if (item.type === "text") {
+      store.appendHistory(sessionId, "user", item.text);
+    }
+  }
+  store.touchSession(sessionId);
+  sessionManager.markPromptStarted(sessionId);
+  bridge.sendPrompt(sessionId, prompt);
 }
 
 function handlePermissionResponse(sessionId: string, toolCallId: string, outcome: { outcome: string; optionId?: string }) {
@@ -81,14 +112,18 @@ async function createBridge(
   sessionId: string,
   agentId: string,
   cwd: string,
+  restoreAgentSessionId?: string | null,
 ): Promise<{
   bridge: AcpBridge;
   modes: { currentModeId: string; availableModes: unknown[] };
+  recoverable: boolean;
+  agentSessionId: string | null;
 }> {
   const handle = agentManager.spawn(agentId, cwd);
 
   const bridge = new AcpBridge(handle.process, {
     onSessionUpdate(sid, update) {
+      store.touchSession(sessionId);
       connectionManager.broadcastToSession(sessionId, {
         type: "session:update",
         sessionId,
@@ -113,12 +148,14 @@ async function createBridge(
           store.appendEvent(sessionId, "plan", update as unknown as Record<string, unknown>);
           break;
         case "completed":
+          sessionManager.markPromptCompleted(sessionId);
           flushAgentMessageBuffer(sessionId);
           store.appendEvent(sessionId, "completed", update as unknown as Record<string, unknown>);
           break;
       }
     },
     onPermissionRequest(sid, request) {
+      store.touchSession(sessionId);
       const permUpdate = {
         sessionUpdate: "permission_request" as const,
         toolCallId: (request.params as any).toolCall.toolCallId,
@@ -149,12 +186,16 @@ async function createBridge(
     },
   });
 
-  const initResult = await bridge.initialize({ name: "matrix-server", version: "0.1.0" });
-  const sessionResult = await bridge.createSession(cwd) as any;
+  await bridge.initialize({ name: "matrix-server", version: "0.1.0" });
+  const sessionResult = restoreAgentSessionId
+    ? await bridge.loadSession(restoreAgentSessionId, cwd) as any
+    : await bridge.createSession(cwd) as any;
 
   return {
     bridge,
     modes: sessionResult.modes || { currentModeId: "code", availableModes: [] },
+    recoverable: Boolean(bridge.capabilities?.loadSession),
+    agentSessionId: bridge.agentSessionId,
   };
 }
 
@@ -193,10 +234,13 @@ app.post("/sessions", async (c) => {
 
   const sessionId = `sess_${nanoid()}`;
   try {
-    const { bridge, modes } = await createBridge(sessionId, body.agentId, body.cwd);
+    const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, body.agentId, body.cwd);
 
     sessionManager.register(sessionId, bridge, body.agentId, body.cwd);
-    store.createSession(sessionId, body.agentId, body.cwd);
+    store.createSession(sessionId, body.agentId, body.cwd, {
+      recoverable,
+      agentSessionId,
+    });
 
     return c.json({ sessionId, modes });
   } catch (error) {
@@ -223,6 +267,11 @@ const server = serve({
 });
 
 injectWebSocket(server);
+
+const idleSuspendSweepTimer = setInterval(() => {
+  sessionManager.suspendIdleSessions(store, Date.now(), IDLE_SUSPEND_TIMEOUT_MS);
+}, IDLE_SUSPEND_SWEEP_INTERVAL_MS);
+idleSuspendSweepTimer.unref();
 
 console.log(`\n  Matrix Server running on http://${config.host}:${config.port}`);
 console.log(`\n  Auth token: ${serverToken}`);

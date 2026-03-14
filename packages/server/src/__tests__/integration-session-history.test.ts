@@ -27,6 +27,7 @@ describe("Integration: session history persistence", () => {
     });
 
     store = new Store(DB_PATH);
+    store.normalizeSessionsOnStartup();
     app = new Hono();
     app.use("/sessions/*", authMiddleware(TOKEN));
     const sessionManager = new SessionManager();
@@ -131,5 +132,47 @@ describe("Integration: session history persistence", () => {
     const historyB = await resB.json();
     expect(historyB).toHaveLength(2);
     expect(historyB[1].content).toBe("reply in B");
+  });
+
+  it("startup normalization preserves history while changing recoverable session states", async () => {
+    store.close();
+
+    const preRestartStore = new Store(DB_PATH);
+    preRestartStore.createSession("sess_recoverable", "test-agent", "/tmp/recoverable", {
+      recoverable: true,
+      agentSessionId: "agent_recoverable",
+    });
+    preRestartStore.createSession("sess_unrecoverable", "test-agent", "/tmp/unrecoverable");
+    preRestartStore.appendHistory("sess_recoverable", "user", "persist me");
+    preRestartStore.appendHistory("sess_unrecoverable", "agent", "still here");
+    preRestartStore.close();
+
+    store = new Store(DB_PATH);
+    store.normalizeSessionsOnStartup();
+
+    const sessionManager = new SessionManager();
+    app = new Hono();
+    app.use("/sessions/*", authMiddleware(TOKEN));
+    app.route("/", createRestRoutes(new AgentManager(), store, sessionManager));
+
+    expect(store.getSession("sess_recoverable")?.status).toBe("suspended");
+    expect(store.getSession("sess_unrecoverable")?.status).toBe("closed");
+    expect(store.getSession("sess_unrecoverable")?.closeReason).toBe("server_restart_unrecoverable");
+
+    const recoverableHistoryRes = await app.request("/sessions/sess_recoverable/history", {
+      headers: authHeaders,
+    });
+    expect(recoverableHistoryRes.status).toBe(200);
+    const recoverableHistory = await recoverableHistoryRes.json();
+    expect(recoverableHistory).toHaveLength(1);
+    expect(recoverableHistory[0].content).toBe("persist me");
+
+    const unrecoverableHistoryRes = await app.request("/sessions/sess_unrecoverable/history", {
+      headers: authHeaders,
+    });
+    expect(unrecoverableHistoryRes.status).toBe(200);
+    const unrecoverableHistory = await unrecoverableHistoryRes.json();
+    expect(unrecoverableHistory).toHaveLength(1);
+    expect(unrecoverableHistory[0].content).toBe("still here");
   });
 });

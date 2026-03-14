@@ -8,9 +8,16 @@ const MAX_RESTART_ATTEMPTS = 3;
 const BASE_RESTART_DELAY_MS = 1000;
 
 export interface SessionBridgeFactory {
-  (sessionId: string, agentId: string, cwd: string): Promise<{
+  (
+    sessionId: string,
+    agentId: string,
+    cwd: string,
+    restoreAgentSessionId?: string | null,
+  ): Promise<{
     bridge: AcpBridge;
     modes: { currentModeId: string; availableModes: unknown[] };
+    recoverable?: boolean;
+    agentSessionId?: string | null;
   }>;
 }
 
@@ -20,12 +27,14 @@ interface SessionEntry {
   cwd: string;
   explicitlyClosed: boolean;
   restartAttempts: number;
+  activePromptCount: number;
   restartTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class SessionManager {
   private sessions = new Map<string, SessionEntry>();
   private bridgeFactory: SessionBridgeFactory | null = null;
+  private restorePromises = new Map<string, Promise<AcpBridge | null>>();
 
   /**
    * Register the factory that creates AcpBridge instances.
@@ -45,6 +54,7 @@ export class SessionManager {
       cwd,
       explicitlyClosed: false,
       restartAttempts: 0,
+      activePromptCount: 0,
     });
   }
 
@@ -167,5 +177,117 @@ export class SessionManager {
    */
   has(sessionId: string): boolean {
     return this.sessions.has(sessionId);
+  }
+
+  markPromptStarted(sessionId: string): void {
+    const entry = this.sessions.get(sessionId);
+    if (!entry) return;
+    entry.activePromptCount += 1;
+  }
+
+  markPromptCompleted(sessionId: string): void {
+    const entry = this.sessions.get(sessionId);
+    if (!entry) return;
+    entry.activePromptCount = Math.max(0, entry.activePromptCount - 1);
+  }
+
+  async restoreSession(sessionId: string, store: Store): Promise<AcpBridge | null> {
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      return existing.bridge;
+    }
+
+    const pending = this.restorePromises.get(sessionId);
+    if (pending) {
+      return pending;
+    }
+
+    if (!this.bridgeFactory) {
+      return null;
+    }
+
+    const session = store.getSession(sessionId);
+    if (
+      !session
+      || session.status !== "suspended"
+      || !session.recoverable
+      || !session.agentSessionId
+    ) {
+      return null;
+    }
+
+    const promise = (async () => {
+      store.updateSessionState(sessionId, {
+        status: "restoring",
+        suspendedAt: null,
+        closeReason: null,
+      });
+
+      try {
+        const { bridge, agentSessionId } = await this.bridgeFactory(
+          sessionId,
+          session.agentId,
+          session.cwd,
+          session.agentSessionId,
+        );
+        this.register(sessionId, bridge, session.agentId, session.cwd);
+        store.updateSessionState(sessionId, {
+          status: "active",
+          agentSessionId: agentSessionId ?? bridge.agentSessionId,
+          suspendedAt: null,
+          closeReason: null,
+        });
+        store.touchSession(sessionId);
+        return bridge;
+      } catch {
+        store.updateSessionState(sessionId, {
+          status: "closed",
+          suspendedAt: null,
+          closeReason: "restore_failed",
+        });
+        return null;
+      } finally {
+        this.restorePromises.delete(sessionId);
+      }
+    })();
+
+    this.restorePromises.set(sessionId, promise);
+    return promise;
+  }
+
+  suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): void {
+    const cutoffMs = nowMs - idleTimeoutMs;
+
+    for (const session of store.listSessions()) {
+      if (session.status !== "active" || !session.recoverable) {
+        continue;
+      }
+
+      const entry = this.sessions.get(session.sessionId);
+      if (!entry) {
+        continue;
+      }
+
+      if (entry.activePromptCount > 0) {
+        continue;
+      }
+
+      const lastActiveMs = Date.parse(session.lastActiveAt);
+      if (Number.isNaN(lastActiveMs) || lastActiveMs > cutoffMs) {
+        continue;
+      }
+
+      entry.explicitlyClosed = true;
+      if (entry.restartTimer) {
+        clearTimeout(entry.restartTimer);
+      }
+      this.sessions.delete(session.sessionId);
+      entry.bridge.destroy();
+      store.updateSessionState(session.sessionId, {
+        status: "suspended",
+        suspendedAt: new Date(nowMs).toISOString(),
+        closeReason: null,
+      });
+    }
   }
 }
