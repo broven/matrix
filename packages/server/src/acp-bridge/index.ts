@@ -27,6 +27,8 @@ export class AcpBridge {
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
   }>();
+  /** The agent's internal session ID returned by session/new */
+  public agentSessionId: string | null = null;
 
   constructor(
     private process: ChildProcess,
@@ -82,11 +84,17 @@ export class AcpBridge {
   }
 
   async createSession(cwd: string): Promise<unknown> {
-    return this.request("session/new", { cwd, mcpServers: {} });
+    const result = await this.request("session/new", { cwd, mcpServers: [] }) as { sessionId?: string };
+    if (result?.sessionId) {
+      this.agentSessionId = result.sessionId;
+    }
+    return result;
   }
 
   async sendPrompt(sessionId: SessionId, prompt: Array<{ type: string; text: string }>): Promise<unknown> {
-    return this.request("session/prompt", { sessionId, prompt });
+    // Use the agent's internal session ID, not Matrix's session ID
+    const agentSid = this.agentSessionId || sessionId;
+    return this.request("session/prompt", { sessionId: agentSid, prompt });
   }
 
   respondPermission(toolCallId: string, outcome: { outcome: string; optionId?: string }): void {

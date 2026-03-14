@@ -18,7 +18,7 @@ import qrcode from "qrcode-terminal";
 import { buildConnectionUri } from "./connect-info.js";
 
 const config = loadConfig();
-const serverToken = generateToken();
+const serverToken = process.env.MATRIX_TOKEN || generateToken();
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);
 const connectionManager = new ConnectionManager();
