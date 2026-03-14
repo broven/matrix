@@ -1,4 +1,10 @@
+import { appendFileSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
+
+function debugLog(msg: string) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  appendFileSync("/tmp/matrix-bridge.log", line);
+}
 import type { AgentCapabilities, SessionUpdate, SessionId } from "@matrix/protocol";
 import { encodeJsonRpc, parseJsonRpcMessages, type JsonRpcMessage } from "./jsonrpc.js";
 
@@ -46,7 +52,9 @@ export class AcpBridge {
     private handlers: BridgeEventHandler,
   ) {
     this.process.stdout!.on("data", (data: Buffer) => {
-      this.buffer += data.toString();
+      const chunk = data.toString();
+      debugLog(`stdout chunk (${chunk.length} bytes): ${chunk.slice(0, 300)}`);
+      this.buffer += chunk;
       this.processBuffer();
     });
 
@@ -90,7 +98,7 @@ export class AcpBridge {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
-        terminal: true,
+        terminal: false,
       },
       clientInfo,
     }) as InitializeResult;
@@ -173,6 +181,7 @@ export class AcpBridge {
 
   private write(message: JsonRpcMessage): void {
     const encoded = encodeJsonRpc(message);
+    debugLog(`send: ${JSON.stringify(message).slice(0, 500)}`);
     this.process.stdin!.write(encoded);
   }
 
@@ -186,6 +195,7 @@ export class AcpBridge {
   }
 
   private handleMessage(msg: JsonRpcMessage): void {
+    debugLog(`recv: ${JSON.stringify(msg).slice(0, 500)}`);
     if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
       const pending = this.pendingRequests.get(msg.id);
       if (pending) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SessionInfo, SessionUpdate } from "@matrix/protocol";
+import type { HistoryEntry, SessionInfo, SessionUpdate } from "@matrix/protocol";
 import type { MatrixSession, PromptCallbacks } from "@matrix/sdk";
 import { nanoid } from "nanoid";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
@@ -65,20 +65,37 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
   }, []);
 
   const replaceEventsFromHistory = useCallback(
-    (history: Array<{ id: string; role: "user" | "agent"; content: string; timestamp: string }>) => {
+    (history: HistoryEntry[]) => {
       setEvents(
-        history.map((entry) => ({
-          id: entry.id,
-          type: "message",
-          data: {
-            sessionUpdate: "agent_message_chunk",
-            content: {
-              type: "text",
-              text: entry.role === "user" ? `> ${entry.content}` : entry.content,
-            },
-          },
-          timestamp: Date.parse(entry.timestamp) || Date.now(),
-        })),
+        history
+          .filter((entry) => entry.type !== "completed")
+          .map((entry) => {
+            const timestamp = Date.parse(entry.timestamp) || Date.now();
+
+            // Structured events: reconstruct from metadata
+            if (entry.type !== "text" && entry.metadata) {
+              return {
+                id: entry.id,
+                type: entry.type,
+                data: entry.metadata as unknown as SessionUpdate,
+                timestamp,
+              };
+            }
+
+            // Text messages
+            return {
+              id: entry.id,
+              type: "message",
+              data: {
+                sessionUpdate: "agent_message_chunk" as const,
+                content: {
+                  type: "text" as const,
+                  text: entry.role === "user" ? `> ${entry.content}` : entry.content,
+                },
+              },
+              timestamp,
+            };
+          }),
       );
     },
     [],
