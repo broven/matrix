@@ -37,11 +37,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Build workspace packages
+        run: pnpm -r build
+
       - name: Set version
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          # Update tauri.conf.json version
           cd packages/client/src-tauri
           jq --arg v "$VERSION" '.version = $v' tauri.conf.json > tmp.json && mv tmp.json tauri.conf.json
 
@@ -53,14 +55,14 @@ jobs:
       - name: Build Tauri app
         run: |
           cd packages/client
-          pnpm tauri build --target aarch64-apple-darwin
+          pnpm tauri build --target aarch64-apple-darwin --bundles app
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mac-artifacts
           path: |
-            packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
 
   build-linux-server:
     runs-on: ubuntu-latest
@@ -81,8 +83,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build web UI
-        run: cd packages/client && pnpm build
+      - name: Build workspace packages
+        run: pnpm -r build
 
       - name: Compile server (glibc for tarball)
         run: |
@@ -159,6 +161,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install
+
+      - name: Build workspace packages
+        run: pnpm -r build
 
       - name: Set version
         run: |
