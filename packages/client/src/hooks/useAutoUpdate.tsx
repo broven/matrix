@@ -164,7 +164,7 @@ function useAutoUpdateInternal(): AutoUpdateContext {
       const { listen } = await import("@tauri-apps/api/event");
       unlisten = await listen<DownloadProgress>(
         "update-download-progress",
-        (event) => {
+        (event: { payload: DownloadProgress }) => {
           setProgress(event.payload);
         }
       );
