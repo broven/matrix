@@ -12,7 +12,15 @@
       "localizedDescription": "Matrix is a remote client for managing AI agent sessions via the ACP protocol. Connect to your Matrix server to interact with Claude Code and other agents.",
       "iconURL": "https://raw.githubusercontent.com/broven/matrix/main/packages/client/src-tauri/icons/32x32.png",
       "tintColor": "#7C3AED",
-      "versions": []
+      "versions": [
+        {
+          "version": "0.1.0-rc.3",
+          "date": "2026-03-16",
+          "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.0-rc.3/Matrix_v0.1.0-rc.3.ipa",
+          "size": 0,
+          "minOSVersion": "16.0"
+        }
+      ]
     }
   ],
   "news": []
