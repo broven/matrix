@@ -55,21 +55,29 @@ jobs:
       - name: Build Tauri app
         run: |
           cd packages/client
+          pnpm tauri build --target aarch64-apple-darwin --bundles dmg || \
           pnpm tauri build --target aarch64-apple-darwin --bundles app
 
-      - name: Package app
+      - name: Package artifacts
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          cd packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
-          zip -r "Matrix_v${VERSION}_aarch64.app.zip" Matrix.app
+          # Try DMG first, fallback to zipped .app
+          if ls packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null; then
+            cp packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg .
+          else
+            cd packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+            zip -r "Matrix_v${VERSION}_aarch64.app.zip" Matrix.app
+            cp *.zip "$GITHUB_WORKSPACE/"
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mac-artifacts
           path: |
-            packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.zip
+            *.dmg
+            *.app.zip
 
   build-linux-server:
     runs-on: ubuntu-latest
