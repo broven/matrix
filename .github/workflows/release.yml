@@ -57,12 +57,19 @@ jobs:
           cd packages/client
           pnpm tauri build --target aarch64-apple-darwin --bundles app
 
+      - name: Package app
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          cd packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+          zip -r "Matrix_v${VERSION}_aarch64.app.zip" Matrix.app
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mac-artifacts
           path: |
-            packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+            packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.zip
 
   build-linux-server:
     runs-on: ubuntu-latest
