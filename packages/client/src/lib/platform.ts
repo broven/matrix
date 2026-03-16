@@ -1,5 +1,5 @@
 export function isTauri(): boolean {
-  return "__TAURI__" in window;
+  return "__TAURI_INTERNALS__" in window;
 }
 
 export function isMobilePlatform(): boolean {

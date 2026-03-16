@@ -87,37 +87,19 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
   }, [client]);
 
   // Auto-connect to local sidecar on desktop
+  // Sidecar is spawned by Tauri setup, give it a moment to start then connect directly.
+  // The MatrixClient SDK handles reconnection if the server isn't ready yet.
   useEffect(() => {
     if (!hasLocalServer()) return;
-    if (client) return;
+    if (connectedRef.current) return;
 
-    const LOCAL_URL = "http://localhost:19880";
-
-    let cancelled = false;
-    const tryConnect = async () => {
-      for (let i = 0; i < 30; i++) {
-        if (cancelled || connectedRef.current) return;
-        try {
-          const res = await fetch(`${LOCAL_URL}/agents`, {
-            headers: { Authorization: "Bearer local" },
-          });
-          if (res.ok) {
-            if (connectedRef.current) return;
-            connect({ serverUrl: LOCAL_URL, token: "local" });
-            return;
-          }
-        } catch {
-          // Server not ready yet
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
+    const timer = setTimeout(() => {
       if (!connectedRef.current) {
-        console.warn("Local sidecar did not become ready in 15s");
+        connect({ serverUrl: "http://127.0.0.1:19880", token: "local" });
       }
-    };
+    }, 1500);
 
-    tryConnect();
-    return () => { cancelled = true; };
+    return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

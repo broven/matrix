@@ -2,41 +2,63 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             #[cfg(desktop)]
             {
                 use tauri_plugin_shell::ShellExt;
 
+                let resource_dir = app
+                    .path()
+                    .resource_dir()
+                    .expect("failed to resolve resource dir");
+                let web_dir = resource_dir.join("web");
+
                 let shell = app.shell();
                 let (mut _rx, child) = shell
                     .sidecar("matrix-server")
                     .expect("failed to create sidecar command")
-                    .args(["--port", "19880", "--local", "true"])
+                    .args([
+                        "--port",
+                        "19880",
+                        "--local",
+                        "true",
+                        "--web",
+                        &web_dir.to_string_lossy(),
+                    ])
                     .spawn()
                     .expect("failed to spawn matrix-server sidecar");
 
-                // Store the child process so it lives as long as the app
                 app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
+
+                // Inject a redirect script into the webview to navigate to sidecar URL
+                let main_window = app.get_webview_window("main").unwrap();
+                std::thread::spawn(move || {
+                    use std::net::TcpStream;
+                    use std::time::Duration;
+
+                    for _ in 0..60 {
+                        if TcpStream::connect_timeout(
+                            &"127.0.0.1:19880".parse().unwrap(),
+                            Duration::from_millis(200),
+                        )
+                        .is_ok()
+                        {
+                            std::thread::sleep(Duration::from_millis(300));
+                            let _ = main_window.eval(
+                                "window.location.replace('http://127.0.0.1:19880')",
+                            );
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(250));
+                    }
+                });
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
-        .expect("error while building Matrix client");
-
-    app.run(|app, event| {
-        #[cfg(desktop)]
-        if let tauri::RunEvent::Exit = event {
-            if let Some(state) = app.try_state::<SidecarState>() {
-                if let Ok(mut guard) = state.0.lock() {
-                    if let Some(child) = guard.take() {
-                        let _ = child.kill();
-                    }
-                }
-            }
-        }
-    });
+        .run(tauri::generate_context!())
+        .expect("error while running Matrix client");
 }
 
 #[cfg(desktop)]
