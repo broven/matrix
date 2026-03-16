@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Default capability for the main Matrix client window.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "shell:allow-spawn",
+    "shell:allow-kill"
+  ]
 }
