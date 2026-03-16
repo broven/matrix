@@ -26,7 +26,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/matrix-server"],
+    "externalBin": [
+      "binaries/matrix-server"
+    ],
     "resources": {
       "../dist": "web"
     },
