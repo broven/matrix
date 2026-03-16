@@ -170,7 +170,10 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: pnpm install
@@ -185,18 +188,46 @@ jobs:
           cd packages/client/src-tauri
           jq --arg v "$VERSION" '.version = $v' tauri.conf.json > tmp.json && mv tmp.json tauri.conf.json
 
-      - name: Initialize iOS project
-        run: cd packages/client && pnpm tauri ios init
+      - name: Create sidecar placeholder
+        run: |
+          touch packages/client/src-tauri/binaries/matrix-server-aarch64-apple-ios
+          chmod +x packages/client/src-tauri/binaries/matrix-server-aarch64-apple-ios
 
-      - name: Build iOS
-        run: cd packages/client && pnpm tauri ios build --export-method release-testing
+      - name: Build Rust for iOS
+        run: |
+          cd packages/client/src-tauri
+          cargo build --release --target aarch64-apple-ios
+
+      - name: Initialize iOS project
+        run: |
+          brew install cocoapods
+          cd packages/client && pnpm tauri ios init
+
+      - name: Patch Xcode build phase
+        run: |
+          # Replace Tauri CLI xcode-script with direct library copy
+          cd packages/client/src-tauri/gen/apple
+          sed -i '' 's|pnpm tauri ios xcode-script.*${ARCHS:?}|# Copy pre-built Rust library\nSRC_DIR=\\"${SRCROOT}/../../target/aarch64-apple-ios/release\\"\nDST_DIR=\\"${SRCROOT}/Externals/arm64/${CONFIGURATION}\\"\nmkdir -p \\"${DST_DIR}\\"\ncp \\"${SRC_DIR}/libmatrix_client_lib.a\\" \\"${DST_DIR}/libapp.a\\"|' matrix-client.xcodeproj/project.pbxproj
+
+      - name: Archive with xcodebuild
+        run: |
+          cd packages/client/src-tauri/gen/apple
+          xcodebuild \
+            -project matrix-client.xcodeproj \
+            -scheme matrix-client_iOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath ./build/Matrix.xcarchive \
+            archive \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package IPA
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           mkdir -p Payload
-          cp -r packages/client/src-tauri/gen/apple/build/arm64/Matrix.app Payload/
+          cp -r packages/client/src-tauri/gen/apple/build/Matrix.xcarchive/Products/Applications/Matrix.app Payload/
           zip -r "Matrix_v${VERSION}.ipa" Payload
 
       - name: Upload artifacts
@@ -206,7 +237,7 @@ jobs:
           path: Matrix_v*.ipa
 
   create-release:
-    needs: [build-mac, build-linux-server]
+    needs: [build-mac, build-linux-server, build-ios]
     if: always() && needs.build-mac.result == 'success' && needs.build-linux-server.result == 'success'
     runs-on: ubuntu-latest
     steps:
