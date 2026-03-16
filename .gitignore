@@ -144,3 +144,7 @@ packages/client/src-tauri/binaries/matrix-server-*
 *.db
 *.db-shm
 *.db-wal
+packages/client/src-tauri/gen/apple/
+packages/client/src-tauri/gen/schemas/iOS-schema.json
+packages/client/src-tauri/gen/schemas/mobile-schema.json
+*.ipa
