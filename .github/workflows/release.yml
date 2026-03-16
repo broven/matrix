@@ -114,12 +114,10 @@ jobs:
           VERSION="${VERSION#v}"
           IMAGE="ghcr.io/${{ github.repository_owner }}/matrix-server"
 
-          # Prepare Docker context
           cp matrix-server-musl matrix-server-docker
           mkdir -p docker-web
           cp -r packages/client/dist/* docker-web/
 
-          # Build with inline Dockerfile
           cat > Dockerfile.ci <<'DOCKERFILE'
           FROM alpine:3.21
           RUN apk add --no-cache libstdc++
@@ -213,7 +211,6 @@ jobs:
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${IPA_NAME}"
           DATE=$(date +%Y-%m-%d)
 
-          # Update altstore-source.json with new version
           jq --arg v "$VERSION" \
              --arg url "$DOWNLOAD_URL" \
              --arg size "$IPA_SIZE" \
