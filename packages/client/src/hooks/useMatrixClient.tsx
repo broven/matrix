@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { MatrixClient, type MatrixClientConfig } from "@matrix/sdk";
 import type { ConnectionStatus } from "@matrix/protocol";
+import { hasLocalServer } from "@/lib/platform";
 
 interface ConnectionInfo {
   serverUrl: string;
@@ -82,6 +83,37 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
     setClient(null);
     setStatus("offline");
   }, [client]);
+
+  // Auto-connect to local sidecar on desktop
+  useEffect(() => {
+    if (!hasLocalServer()) return;
+    if (client) return;
+
+    const LOCAL_URL = "http://localhost:19880";
+
+    let cancelled = false;
+    const tryConnect = async () => {
+      for (let i = 0; i < 30; i++) {
+        if (cancelled) return;
+        try {
+          const res = await fetch(`${LOCAL_URL}/agents`, {
+            headers: { Authorization: "Bearer local" },
+          });
+          if (res.ok) {
+            connect({ serverUrl: LOCAL_URL, token: "local" });
+            return;
+          }
+        } catch {
+          // Server not ready yet
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      console.warn("Local sidecar did not become ready in 15s");
+    };
+
+    tryConnect();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <MatrixClientContext.Provider
