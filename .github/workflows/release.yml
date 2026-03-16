@@ -211,6 +211,12 @@ jobs:
           cd packages/client/src-tauri/gen/apple
           sed -i '' 's|pnpm tauri ios xcode-script.*${ARCHS:?}|# Copy pre-built Rust library\nSRC_DIR=\\"${SRCROOT}/../../target/aarch64-apple-ios/release\\"\nDST_DIR=\\"${SRCROOT}/Externals/arm64/${CONFIGURATION}\\"\nmkdir -p \\"${DST_DIR}\\"\ncp \\"${SRC_DIR}/libmatrix_client_lib.a\\" \\"${DST_DIR}/libapp.a\\"|' matrix-client.xcodeproj/project.pbxproj
 
+      - name: Copy frontend assets into iOS project
+        run: |
+          # Tauri iOS expects frontend files in gen/apple/assets/
+          mkdir -p packages/client/src-tauri/gen/apple/assets
+          cp -r packages/client/dist/* packages/client/src-tauri/gen/apple/assets/
+
       - name: Archive with xcodebuild
         run: |
           cd packages/client/src-tauri/gen/apple
