@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
+import path from "node:path";
 import { loadConfig } from "./config.js";
 import { generateToken } from "./auth/token.js";
 import { authMiddleware } from "./auth/middleware.js";
@@ -18,7 +20,9 @@ import qrcode from "qrcode-terminal";
 import { buildConnectionUri } from "./connect-info.js";
 
 const config = loadConfig();
-const serverToken = process.env.MATRIX_TOKEN || generateToken();
+const serverToken = config.localMode
+  ? "local"
+  : (process.env.MATRIX_TOKEN || generateToken());
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);
 store.normalizeSessionsOnStartup();
@@ -212,16 +216,22 @@ sessionManager.setBridgeFactory(createBridge);
 
 const app = new Hono();
 
-// CORS for web client — restrict to known origins
-const corsOrigins = [
-  "http://localhost:5173",  // Vite dev server
-  "http://localhost:1420",  // Tauri dev
-  "tauri://localhost",      // Tauri production
-];
-if (process.env.CLIENT_PORT) {
-  corsOrigins.push(`http://localhost:${process.env.CLIENT_PORT}`);
+// CORS for web client
+if (config.localMode) {
+  // Local sidecar mode: allow all origins (only accessible on loopback)
+  app.use("/*", cors({ origin: (origin) => origin || "*" }));
+} else {
+  const corsOrigins = [
+    "http://localhost:5173",  // Vite dev server
+    "http://localhost:1420",  // Tauri dev
+    "tauri://localhost",      // Tauri production (macOS)
+    "https://tauri.localhost", // Tauri production (Windows/Linux)
+  ];
+  if (process.env.CLIENT_PORT) {
+    corsOrigins.push(`http://localhost:${process.env.CLIENT_PORT}`);
+  }
+  app.use("/*", cors({ origin: corsOrigins }));
 }
-app.use("/*", cors({ origin: corsOrigins }));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -271,6 +281,33 @@ const { injectWebSocket } = setupWebSocket(app as any, {
   onCancel: handleCancel,
   onPermissionResponse: handlePermissionResponse,
 });
+
+// Serve static web UI files if configured
+if (config.webDir) {
+  const resolvedWebDir = path.resolve(config.webDir);
+
+  // Serve static assets (exclude API and WebSocket paths)
+  app.get("/*", async (c, next) => {
+    const p = c.req.path;
+    // Skip API routes and WebSocket endpoint
+    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+      return next();
+    }
+    const res = await serveStatic({ root: resolvedWebDir })(c, next);
+    return res;
+  });
+
+  // SPA fallback: serve index.html for non-API GET requests
+  app.get("/*", async (c, next) => {
+    const p = c.req.path;
+    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+      return next();
+    }
+    return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);
+  });
+
+  console.log(`  Serving web UI from ${resolvedWebDir}`);
+}
 
 // Start server
 const server = serve({

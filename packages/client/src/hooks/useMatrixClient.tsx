@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { MatrixClient, type MatrixClientConfig } from "@matrix/sdk";
 import type { ConnectionStatus } from "@matrix/protocol";
+import { hasLocalServer } from "@/lib/platform";
 
 interface ConnectionInfo {
   serverUrl: string;
@@ -36,6 +37,7 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<MatrixClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("offline");
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
+  const connectedRef = useRef(false);
 
   const buildConnectionInfo = useCallback(
     (config: MatrixClientConfig, source: ConnectionInfo["source"]): ConnectionInfo => ({
@@ -52,6 +54,7 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
   );
 
   const connect = useCallback((config: MatrixClientConfig) => {
+    connectedRef.current = true;
     const newClient = new MatrixClient(config);
     newClient.onStatusChange(setStatus);
     newClient.connect();
@@ -82,6 +85,22 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
     setClient(null);
     setStatus("offline");
   }, [client]);
+
+  // Auto-connect to local sidecar on desktop
+  // Sidecar is spawned by Tauri setup, give it a moment to start then connect directly.
+  // The MatrixClient SDK handles reconnection if the server isn't ready yet.
+  useEffect(() => {
+    if (!hasLocalServer()) return;
+    if (connectedRef.current) return;
+
+    const timer = setTimeout(() => {
+      if (!connectedRef.current) {
+        connect({ serverUrl: "http://127.0.0.1:19880", token: "local" });
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <MatrixClientContext.Provider

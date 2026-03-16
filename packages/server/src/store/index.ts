@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import type { SessionInfo, HistoryEntry, HistoryEntryType } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 
@@ -18,11 +18,11 @@ interface SessionStatePatch {
 }
 
 export class Store {
-  private db: Database.Database;
+  private db: Database;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
+    this.db.exec("PRAGMA journal_mode = WAL");
     this.migrate();
   }
 

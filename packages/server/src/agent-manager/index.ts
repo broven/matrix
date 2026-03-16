@@ -33,7 +33,7 @@ export class AgentManager {
     const child = spawn(config.command, config.args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...config.env },
+      env: { ...process.env, ...config.env, CLAUDECODE: undefined },
     });
 
     return {

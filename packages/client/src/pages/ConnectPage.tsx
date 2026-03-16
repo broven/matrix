@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Wifi, ShieldCheck, QrCode } from "lucide-react";
 import { useMatrixClient } from "../hooks/useMatrixClient";
+import { hasLocalServer } from "@/lib/platform";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,9 @@ function maskToken(token: string) {
 
 export function ConnectPage() {
   const { connect, status, connectionInfo, restoreLastConnection } = useMatrixClient();
-  const [serverUrl, setServerUrl] = useState("http://localhost:8080");
+  const [serverUrl, setServerUrl] = useState(
+    hasLocalServer() ? "http://localhost:19880" : "https://"
+  );
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");

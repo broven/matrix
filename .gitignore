@@ -140,3 +140,7 @@ vite.config.ts.timestamp-*
 
 # Tauri build output
 packages/client/src-tauri/target/
+packages/client/src-tauri/binaries/matrix-server-*
+*.db
+*.db-shm
+*.db-wal

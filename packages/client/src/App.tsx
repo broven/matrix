@@ -1,11 +1,14 @@
 import { MatrixClientProvider, useMatrixClient } from "./hooks/useMatrixClient";
 import { AppLayout } from "./components/layout/AppLayout";
 import { ConnectPage } from "./pages/ConnectPage";
+import { hasLocalServer } from "./lib/platform";
 
 function AppContent() {
   const { client } = useMatrixClient();
 
-  if (!client) {
+  // Desktop with local server: skip ConnectPage, go straight to AppLayout
+  // Auto-connect happens in the background via useMatrixClient
+  if (!client && !hasLocalServer()) {
     return <ConnectPage />;
   }
 
