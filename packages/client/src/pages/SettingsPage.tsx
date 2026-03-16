@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { ArrowLeft, Plus, Trash2, Wifi } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Wifi, RefreshCw, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
-import { hasLocalServer } from "@/lib/platform";
+import { hasLocalServer, isTauri, isMacOS } from "@/lib/platform";
+import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 
 interface SavedServer {
   serverUrl: string;
@@ -28,6 +29,7 @@ function saveSavedServers(servers: SavedServer[]) {
 
 export function SettingsPage({ onBack }: { onBack: () => void }) {
   const { connect, connectionInfo, status } = useMatrixClient();
+  const { state: updateState, updateInfo, checkForUpdate, error: updateError, hasChecked } = useAutoUpdate();
   const [servers, setServers] = useState(loadSavedServers);
   const [newUrl, setNewUrl] = useState("");
   const [newToken, setNewToken] = useState("");
@@ -90,6 +92,52 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
             )}
           </CardContent>
         </Card>
+
+        {/* App info & updates */}
+        {isTauri() && isMacOS() && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Info className="size-4" />
+                About
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm space-y-3">
+              <div className="text-muted-foreground">
+                Version: {__APP_VERSION__}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={checkForUpdate}
+                  disabled={updateState === "checking"}
+                >
+                  <RefreshCw className={`mr-1.5 size-3.5 ${updateState === "checking" ? "animate-spin" : ""}`} />
+                  Check for Updates
+                </Button>
+                {updateState === "available" && updateInfo && (
+                  <span className="text-xs text-primary">
+                    v{updateInfo.version} available
+                  </span>
+                )}
+                {updateState === "checking" && (
+                  <span className="text-xs text-muted-foreground">
+                    Checking...
+                  </span>
+                )}
+                {updateState === "idle" && !updateError && hasChecked && (
+                  <span className="text-xs text-muted-foreground">
+                    Up to date
+                  </span>
+                )}
+              </div>
+              {updateError && (
+                <p className="text-xs text-destructive">{updateError}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Remote servers */}
         <Card>

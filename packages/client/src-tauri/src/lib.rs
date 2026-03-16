@@ -1,9 +1,21 @@
 use tauri::Manager;
 
+#[cfg(target_os = "macos")]
+mod updater;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        updater::check_update,
+        updater::download_update,
+        updater::install_update,
+    ]);
+
+    builder
         .setup(|app| {
             #[cfg(desktop)]
             {
