@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { MatrixClient, type MatrixClientConfig } from "@matrix/sdk";
 import type { ConnectionStatus } from "@matrix/protocol";
 import { hasLocalServer } from "@/lib/platform";
@@ -37,6 +37,7 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<MatrixClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("offline");
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
+  const connectedRef = useRef(false);
 
   const buildConnectionInfo = useCallback(
     (config: MatrixClientConfig, source: ConnectionInfo["source"]): ConnectionInfo => ({
@@ -53,6 +54,7 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
   );
 
   const connect = useCallback((config: MatrixClientConfig) => {
+    connectedRef.current = true;
     const newClient = new MatrixClient(config);
     newClient.onStatusChange(setStatus);
     newClient.connect();
@@ -94,12 +96,13 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     const tryConnect = async () => {
       for (let i = 0; i < 30; i++) {
-        if (cancelled) return;
+        if (cancelled || connectedRef.current) return;
         try {
           const res = await fetch(`${LOCAL_URL}/agents`, {
             headers: { Authorization: "Bearer local" },
           });
           if (res.ok) {
+            if (connectedRef.current) return;
             connect({ serverUrl: LOCAL_URL, token: "local" });
             return;
           }
@@ -108,7 +111,9 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
         }
         await new Promise((r) => setTimeout(r, 500));
       }
-      console.warn("Local sidecar did not become ready in 15s");
+      if (!connectedRef.current) {
+        console.warn("Local sidecar did not become ready in 15s");
+      }
     };
 
     tryConnect();
