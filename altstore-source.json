@@ -14,10 +14,10 @@
       "tintColor": "#7C3AED",
       "versions": [
         {
-          "version": "0.1.0",
+          "version": "0.1.4",
           "date": "2026-03-16",
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.4/Matrix_v0.1.4.ipa",
-          "size": 3693761,
+          "size": 3693765,
           "minOSVersion": "16.0"
         },
         {
