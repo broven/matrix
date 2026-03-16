@@ -192,50 +192,34 @@ jobs:
 
       - name: Create sidecar placeholder
         run: |
+          mkdir -p packages/client/src-tauri/binaries
           touch packages/client/src-tauri/binaries/matrix-server-aarch64-apple-ios
+          touch packages/client/src-tauri/binaries/matrix-server-aarch64-apple-ios-sim
           chmod +x packages/client/src-tauri/binaries/matrix-server-aarch64-apple-ios
+          chmod +x packages/client/src-tauri/binaries/matrix-server-aarch64-apple-ios-sim
 
-      - name: Build Rust for iOS
-        run: |
-          cd packages/client/src-tauri
-          cargo build --release --target aarch64-apple-ios
+      - name: Install CocoaPods
+        run: brew install cocoapods
 
-      - name: Initialize iOS project
+      - name: Build iOS
+        env:
+          TAURI_APPLE_DEVELOPMENT_TEAM: ""
         run: |
-          brew install cocoapods
-          cd packages/client && pnpm tauri ios init
-
-      - name: Patch Xcode build phase
-        run: |
-          # Replace Tauri CLI xcode-script with direct library copy
-          cd packages/client/src-tauri/gen/apple
-          sed -i '' 's|pnpm tauri ios xcode-script.*${ARCHS:?}|# Copy pre-built Rust library\nSRC_DIR=\\"${SRCROOT}/../../target/aarch64-apple-ios/release\\"\nDST_DIR=\\"${SRCROOT}/Externals/arm64/${CONFIGURATION}\\"\nmkdir -p \\"${DST_DIR}\\"\ncp \\"${SRC_DIR}/libmatrix_client_lib.a\\" \\"${DST_DIR}/libapp.a\\"|' matrix-client.xcodeproj/project.pbxproj
-
-      - name: Copy frontend assets into iOS project
-        run: |
-          # Tauri iOS expects frontend files in gen/apple/assets/
-          mkdir -p packages/client/src-tauri/gen/apple/assets
-          cp -r packages/client/dist/* packages/client/src-tauri/gen/apple/assets/
-
-      - name: Archive with xcodebuild
-        run: |
-          cd packages/client/src-tauri/gen/apple
-          xcodebuild \
-            -project matrix-client.xcodeproj \
-            -scheme matrix-client_iOS \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination "generic/platform=iOS" \
-            -archivePath ./build/Matrix.xcarchive \
-            archive \
-            CODE_SIGNING_ALLOWED=NO
+          cd packages/client
+          pnpm tauri ios build -- --allowProvisioningUpdates CODE_SIGNING_ALLOWED=NO
 
       - name: Package IPA
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           mkdir -p Payload
-          cp -r packages/client/src-tauri/gen/apple/build/Matrix.xcarchive/Products/Applications/Matrix.app Payload/
+          # Find the .app in the Tauri iOS build output
+          APP_PATH=$(find packages/client/src-tauri -name "Matrix.app" -path "*/release-iphoneos/*" -o -name "Matrix.app" -path "*/Products/Applications/*" 2>/dev/null | head -1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find packages/client/src-tauri -name "*.app" -path "*/release-iphoneos/*" -o -name "*.app" -path "*/Products/Applications/*" 2>/dev/null | head -1)
+          fi
+          echo "Found app at: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
           zip -r "Matrix_v${VERSION}.ipa" Payload
 
       - name: Upload artifacts
