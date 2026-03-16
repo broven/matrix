@@ -191,7 +191,8 @@ jobs:
           path: Matrix_v*.ipa
 
   create-release:
-    needs: [build-mac, build-linux-server, build-ios]
+    needs: [build-mac, build-linux-server]
+    if: always() && needs.build-mac.result == 'success' && needs.build-linux-server.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
