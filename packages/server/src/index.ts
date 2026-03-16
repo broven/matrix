@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
+import path from "node:path";
 import { loadConfig } from "./config.js";
 import { generateToken } from "./auth/token.js";
 import { authMiddleware } from "./auth/middleware.js";
@@ -18,7 +20,9 @@ import qrcode from "qrcode-terminal";
 import { buildConnectionUri } from "./connect-info.js";
 
 const config = loadConfig();
-const serverToken = process.env.MATRIX_TOKEN || generateToken();
+const serverToken = config.localMode
+  ? "local"
+  : (process.env.MATRIX_TOKEN || generateToken());
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);
 store.normalizeSessionsOnStartup();
@@ -271,6 +275,19 @@ const { injectWebSocket } = setupWebSocket(app as any, {
   onCancel: handleCancel,
   onPermissionResponse: handlePermissionResponse,
 });
+
+// Serve static web UI files if configured
+if (config.webDir) {
+  const resolvedWebDir = path.resolve(config.webDir);
+
+  // Serve static assets
+  app.get("/*", serveStatic({ root: resolvedWebDir }));
+
+  // SPA fallback: serve index.html for any unmatched GET request
+  app.get("/*", serveStatic({ root: resolvedWebDir, path: "index.html" }));
+
+  console.log(`  Serving web UI from ${resolvedWebDir}`);
+}
 
 // Start server
 const server = serve({
