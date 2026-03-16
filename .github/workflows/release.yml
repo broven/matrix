@@ -1,0 +1,240 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  VERSION: ${{ github.ref_name }}
+
+jobs:
+  build-mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Set version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          # Update tauri.conf.json version
+          cd packages/client/src-tauri
+          jq --arg v "$VERSION" '.version = $v' tauri.conf.json > tmp.json && mv tmp.json tauri.conf.json
+
+      - name: Compile server sidecar
+        run: |
+          bun build --compile packages/server/src/index.ts \
+            --outfile packages/client/src-tauri/binaries/matrix-server-aarch64-apple-darwin
+
+      - name: Build Tauri app
+        run: |
+          cd packages/client
+          pnpm tauri build --target aarch64-apple-darwin
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-artifacts
+          path: |
+            packages/client/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+
+  build-linux-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build web UI
+        run: cd packages/client && pnpm build
+
+      - name: Compile server (glibc for tarball)
+        run: |
+          bun build --compile packages/server/src/index.ts \
+            --target bun-linux-x64 \
+            --outfile matrix-server
+
+      - name: Compile server (musl for Docker)
+        run: |
+          bun build --compile packages/server/src/index.ts \
+            --target bun-linux-x64-musl \
+            --outfile matrix-server-musl
+
+      - name: Package tarball
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          DIR="matrix-server-v${VERSION}-linux-x64"
+          mkdir -p "${DIR}/web"
+          cp matrix-server "${DIR}/"
+          cp -r packages/client/dist/* "${DIR}/web/"
+          tar czf "${DIR}.tar.gz" "${DIR}"
+
+      - name: Build and push Docker image
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/matrix-server"
+
+          # Prepare Docker context
+          cp matrix-server-musl matrix-server-docker
+          mkdir -p docker-web
+          cp -r packages/client/dist/* docker-web/
+
+          # Build with inline Dockerfile
+          cat > Dockerfile.ci <<'DOCKERFILE'
+          FROM alpine:3.21
+          RUN apk add --no-cache libstdc++
+          COPY matrix-server-docker /usr/local/bin/matrix-server
+          COPY docker-web/ /app/web/
+          WORKDIR /app
+          EXPOSE 3000
+          CMD ["matrix-server", "--port", "3000", "--web", "/app/web"]
+          DOCKERFILE
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker build -f Dockerfile.ci -t "${IMAGE}:${VERSION}" -t "${IMAGE}:latest" .
+          docker push "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:latest"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: matrix-server-v*-linux-x64.tar.gz
+
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Set version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          cd packages/client/src-tauri
+          jq --arg v "$VERSION" '.version = $v' tauri.conf.json > tmp.json && mv tmp.json tauri.conf.json
+
+      - name: Initialize iOS project
+        run: cd packages/client && pnpm tauri ios init
+
+      - name: Build iOS
+        run: cd packages/client && pnpm tauri ios build --export-method release-testing
+
+      - name: Package IPA
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          mkdir -p Payload
+          cp -r packages/client/src-tauri/gen/apple/build/arm64/Matrix.app Payload/
+          zip -r "Matrix_v${VERSION}.ipa" Payload
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-artifacts
+          path: Matrix_v*.ipa
+
+  create-release:
+    needs: [build-mac, build-linux-server, build-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Update AltStore source
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          IPA_NAME="Matrix_v${VERSION}.ipa"
+          IPA_SIZE=$(stat -c%s "artifacts/${IPA_NAME}" 2>/dev/null || echo 0)
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${IPA_NAME}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Update altstore-source.json with new version
+          jq --arg v "$VERSION" \
+             --arg url "$DOWNLOAD_URL" \
+             --arg size "$IPA_SIZE" \
+             --arg date "$DATE" \
+             '.apps[0].versions = [{
+               "version": $v,
+               "date": $date,
+               "downloadURL": $url,
+               "size": ($size | tonumber),
+               "minOSVersion": "16.0"
+             }] + .apps[0].versions' \
+             altstore-source.json > tmp.json && mv tmp.json altstore-source.json
+
+      - name: Commit AltStore source update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add altstore-source.json
+          git commit -m "chore: update AltStore source for ${{ github.ref_name }}" || true
+          git push origin HEAD:main
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            artifacts/* \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
