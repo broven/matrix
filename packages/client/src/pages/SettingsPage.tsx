@@ -35,10 +35,16 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
 
   const handleAdd = () => {
     if (!newUrl || !newToken) return;
+    let hostLabel: string;
+    try {
+      hostLabel = new URL(newUrl).host;
+    } catch {
+      hostLabel = newUrl;
+    }
     const server: SavedServer = {
       serverUrl: newUrl,
       token: newToken,
-      name: newName || new URL(newUrl).host,
+      name: newName || hostLabel,
     };
     const updated = [...servers, server];
     setServers(updated);
