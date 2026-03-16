@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AgentListItem, SessionInfo } from "@matrix/protocol";
-import { PanelLeftOpen, Plus } from "lucide-react";
+import { PanelLeftOpen, Plus, Settings } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 
@@ -30,6 +31,7 @@ export function AppLayout() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     if (!client) {
@@ -159,7 +161,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <aside className="hidden h-full w-[280px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex">
+      <aside className="hidden h-full w-[280px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
         <Sidebar
           agents={agents}
           sessions={sortedSessions}
@@ -169,6 +171,17 @@ export function AppLayout() {
           onCreateSession={handleCreateSession}
           onDeleteSession={handleDeleteSession}
         />
+        <div className="border-t border-sidebar-border p-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-2"
+            onClick={() => setShowSettings(true)}
+          >
+            <Settings className="size-4" />
+            Settings
+          </Button>
+        </div>
       </aside>
 
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
@@ -189,6 +202,10 @@ export function AppLayout() {
       </Sheet>
 
       <main className="flex min-w-0 flex-1 flex-col">
+        {showSettings ? (
+          <SettingsPage onBack={() => setShowSettings(false)} />
+        ) : (
+        <>
         <MobileHeader
           selectedSession={selectedSession}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
@@ -222,6 +239,8 @@ export function AppLayout() {
               </Button>
             </div>
           </div>
+        )}
+        </>
         )}
       </main>
     </div>
