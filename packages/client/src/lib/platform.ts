@@ -10,3 +10,7 @@ export function isMobilePlatform(): boolean {
 export function hasLocalServer(): boolean {
   return isTauri() && !isMobilePlatform();
 }
+
+export function isMacOS(): boolean {
+  return /Macintosh|Mac OS X/i.test(navigator.userAgent);
+}
