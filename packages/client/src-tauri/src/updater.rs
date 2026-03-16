@@ -311,3 +311,142 @@ rm "$0"
     // Exit current app
     std::process::exit(0);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_newer_version ────────────────────────────────────────────
+
+    #[test]
+    fn newer_basic_minor_bump() {
+        assert!(is_newer_version("0.1.0", "0.2.0"));
+    }
+
+    #[test]
+    fn newer_same_version() {
+        assert!(!is_newer_version("0.1.0", "0.1.0"));
+    }
+
+    #[test]
+    fn newer_downgrade() {
+        assert!(!is_newer_version("0.2.0", "0.1.0"));
+    }
+
+    #[test]
+    fn newer_major_bump() {
+        assert!(is_newer_version("1.0.0", "2.0.0"));
+    }
+
+    #[test]
+    fn newer_patch_bump() {
+        assert!(is_newer_version("0.1.0", "0.1.1"));
+    }
+
+    #[test]
+    fn newer_with_v_prefix() {
+        assert!(is_newer_version("v0.1.0", "v0.2.0"));
+    }
+
+    #[test]
+    fn newer_mixed_v_prefix() {
+        assert!(is_newer_version("v0.1.0", "0.2.0"));
+    }
+
+    #[test]
+    fn newer_two_segment_versions() {
+        assert!(is_newer_version("0.1", "0.2"));
+    }
+
+    #[test]
+    fn newer_longer_version_string() {
+        // "0.1.0.1" is newer than "0.1.0" because the 4th segment (1) > implicit 0
+        assert!(is_newer_version("0.1.0", "0.1.0.1"));
+    }
+
+    // ── parse_mount_point ───────────────────────────────────────────
+
+    #[test]
+    fn parse_mount_real_hdiutil_output() {
+        let stdout = "/dev/disk4s1\tApple_HFS\t/Volumes/Matrix";
+        assert_eq!(
+            parse_mount_point(stdout),
+            Some("/Volumes/Matrix".to_string()),
+        );
+    }
+
+    #[test]
+    fn parse_mount_multiline_output() {
+        // Typical hdiutil output has a preamble line before the mount line
+        let stdout = "/dev/disk4\t\t\n/dev/disk4s1\tApple_HFS\t/Volumes/Matrix";
+        assert_eq!(
+            parse_mount_point(stdout),
+            Some("/Volumes/Matrix".to_string()),
+        );
+    }
+
+    #[test]
+    fn parse_mount_no_mount_point() {
+        let stdout = "/dev/disk4\t\t\n/dev/disk4s1\tApple_HFS\t";
+        assert_eq!(parse_mount_point(stdout), None);
+    }
+
+    #[test]
+    fn parse_mount_empty_string() {
+        assert_eq!(parse_mount_point(""), None);
+    }
+
+    #[test]
+    fn parse_mount_volume_with_spaces() {
+        let stdout = "/dev/disk4s1\tApple_HFS\t/Volumes/Matrix Client";
+        assert_eq!(
+            parse_mount_point(stdout),
+            Some("/Volumes/Matrix Client".to_string()),
+        );
+    }
+
+    // ── validate_download_url ───────────────────────────────────────
+
+    #[test]
+    fn validate_url_github_com() {
+        let url = "https://github.com/broven/matrix/releases/download/v0.2.0/Matrix.dmg";
+        assert!(validate_download_url(url).is_ok());
+    }
+
+    #[test]
+    fn validate_url_objects_githubusercontent() {
+        let url = "https://objects.githubusercontent.com/some/path/Matrix.dmg";
+        assert!(validate_download_url(url).is_ok());
+    }
+
+    #[test]
+    fn validate_url_http_rejected() {
+        let url = "http://github.com/broven/matrix/releases/download/v0.2.0/Matrix.dmg";
+        assert!(validate_download_url(url).is_err());
+    }
+
+    #[test]
+    fn validate_url_random_domain_rejected() {
+        let url = "https://evil.com/Matrix.dmg";
+        assert!(validate_download_url(url).is_err());
+    }
+
+    #[test]
+    fn validate_url_not_a_url() {
+        assert!(validate_download_url("not-a-url").is_err());
+    }
+
+    #[test]
+    fn validate_url_subdomain_of_github_allowed() {
+        // ends with .github.com → allowed
+        let url = "https://evil.github.com/some/path";
+        assert!(validate_download_url(url).is_ok());
+    }
+
+    #[test]
+    fn validate_url_github_com_in_middle_rejected() {
+        // github.com is NOT a suffix of "github.com.evil.com"
+        let url = "https://github.com.evil.com/some/path";
+        assert!(validate_download_url(url).is_err());
+    }
+}
