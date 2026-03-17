@@ -1,3 +1,5 @@
+mod automation;
+
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]

@@ -41,23 +41,17 @@ fn generate_token() -> String {
 }
 
 fn platform_name() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        return "macos";
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "unknown"
     }
-    #[cfg(target_os = "ios")]
-    {
-        return "ios";
-    }
-    #[cfg(target_os = "linux")]
-    {
-        return "linux";
-    }
-    #[cfg(target_os = "windows")]
-    {
-        return "windows";
-    }
-    "unknown"
 }
 
 #[cfg(test)]
