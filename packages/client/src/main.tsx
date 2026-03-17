@@ -4,6 +4,9 @@ import "./index.css";
 import { App } from "./App";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { installAutomationBridge } from "./automation/bridge";
+
+installAutomationBridge();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
