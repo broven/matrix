@@ -217,18 +217,27 @@ jobs:
 
       - name: Build iOS
         run: |
-          cd packages/client
-          pnpm tauri ios build
+          cd packages/client/src-tauri/gen/apple
+          xcodebuild build \
+            -scheme matrix-client_iOS \
+            -configuration release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Package IPA
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           mkdir -p Payload
-          # Find the .app in the Tauri iOS build output
-          APP_PATH=$(find packages/client/src-tauri -name "Matrix.app" -path "*/release-iphoneos/*" -o -name "Matrix.app" -path "*/Products/Applications/*" 2>/dev/null | head -1)
+          APP_PATH=$(find packages/client/src-tauri/gen/apple/build -name "*.app" -path "*/release-iphoneos/*" 2>/dev/null | head -1)
           if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find packages/client/src-tauri -name "*.app" -path "*/release-iphoneos/*" -o -name "*.app" -path "*/Products/Applications/*" 2>/dev/null | head -1)
+            APP_PATH=$(find packages/client/src-tauri/gen/apple/build -name "*.app" -path "*/Products/*" 2>/dev/null | head -1)
           fi
           echo "Found app at: $APP_PATH"
           cp -r "$APP_PATH" Payload/
