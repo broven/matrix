@@ -24,7 +24,7 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
-    host: tauriDevHost ?? false,
+    host: tauriDevHost ?? "127.0.0.1",
     hmr: tauriDevHost
       ? {
           protocol: "ws",
