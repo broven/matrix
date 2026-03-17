@@ -3,6 +3,8 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+#[cfg(test)]
+use std::net::Shutdown;
 use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -310,6 +312,9 @@ fn send_test_request(addr: SocketAddr, request: &str) -> Vec<u8> {
         .write_all(request.as_bytes())
         .expect("should write request");
     stream.flush().expect("should flush request");
+    stream
+        .shutdown(Shutdown::Write)
+        .expect("should half-close request stream");
     read_test_response_body(&mut stream)
 }
 
@@ -317,6 +322,7 @@ fn send_test_request(addr: SocketAddr, request: &str) -> Vec<u8> {
 fn send_test_request_chunks(
     addr: SocketAddr,
     chunks: &[&str],
+    close_write: bool,
     read_response: bool,
 ) -> Vec<u8> {
     let mut stream = TcpStream::connect(addr).expect("should connect to server");
@@ -325,6 +331,11 @@ fn send_test_request_chunks(
             .write_all(chunk.as_bytes())
             .expect("should write request chunk");
         stream.flush().expect("should flush request chunk");
+    }
+    if close_write {
+        stream
+            .shutdown(Shutdown::Write)
+            .expect("should half-close request stream");
     }
     if !read_response {
         return Vec::new();
@@ -503,6 +514,7 @@ mod tests {
                 "ation: Bearer test-token\r\n\r\n",
             ],
             true,
+            true,
         );
         let (status, body) = parse_test_response(&raw);
         assert_eq!(status, 200);
@@ -532,6 +544,7 @@ mod tests {
         let raw = send_test_request_chunks(
             server.local_addr(),
             &["GET /health HTTP/1.1\r\nHost: localhost\r\n"],
+            false,
             true,
         );
         let (status, body) = parse_test_response(&raw);
