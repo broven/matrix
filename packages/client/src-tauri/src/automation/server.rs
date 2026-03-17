@@ -342,6 +342,56 @@ mod tests {
     }
 
     #[test]
+    fn loopback_server_returns_health_for_valid_token() {
+        let server = test_server_with_sample_state("test-token");
+        let raw = send_test_request(
+            server.local_addr(),
+            "GET /health HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\n\r\n",
+        );
+        let (status, body) = parse_test_response(&raw);
+        assert_eq!(status, 200);
+        assert_eq!(body.get("ok").and_then(|value| value.as_bool()), Some(true));
+        assert_eq!(
+            body.get("platform").and_then(|value| value.as_str()),
+            Some("macos")
+        );
+        assert!(body.get("appReady").is_some());
+        assert!(body.get("webviewReady").is_some());
+        assert!(body.get("sidecarReady").is_some());
+        server.shutdown().expect("server should stop");
+    }
+
+    #[test]
+    fn loopback_server_returns_state_for_valid_token() {
+        let server = test_server_with_sample_state("test-token");
+        let raw = send_test_request(
+            server.local_addr(),
+            "GET /state HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\n\r\n",
+        );
+        let (status, body) = parse_test_response(&raw);
+        assert_eq!(status, 200);
+        assert_eq!(
+            body.get("window")
+                .and_then(|window| window.get("label"))
+                .and_then(|label| label.as_str()),
+            Some("main")
+        );
+        assert_eq!(
+            body.get("webview")
+                .and_then(|webview| webview.get("url"))
+                .and_then(|url| url.as_str()),
+            Some("http://127.0.0.1:19880")
+        );
+        assert_eq!(
+            body.get("sidecar")
+                .and_then(|sidecar| sidecar.get("running"))
+                .and_then(|running| running.as_bool()),
+            Some(true)
+        );
+        server.shutdown().expect("server should stop");
+    }
+
+    #[test]
     fn loopback_server_rejects_invalid_token() {
         let server = test_server_with_sample_state("test-token");
         let raw = send_test_request(
