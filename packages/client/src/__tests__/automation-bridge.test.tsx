@@ -16,8 +16,22 @@ describe("automation bridge", () => {
     expect(typeof bridge?.dispatchEvent).toBe("function");
   });
 
+  it("installs bridge in development mode", () => {
+    const bridge = installAutomationBridge({ mode: "development", dev: true });
+    expect((window as any).__MATRIX_AUTOMATION__).toBeDefined();
+    expect(bridge).toBeDefined();
+  });
+
   it("returns a JSON-safe snapshot", () => {
     const bridge = installAutomationBridge({ mode: "test", dev: false });
+    const cyclic: Record<string, unknown> = { foo: "bar", bad: undefined };
+    cyclic.self = cyclic;
+    seedAutomationTestState({
+      cyclic,
+      fn: () => "x",
+      nested: { value: 123, symbol: Symbol("s") },
+      big: BigInt(42),
+    });
     const snapshot = bridge?.getSnapshot();
     const encoded = JSON.stringify(snapshot);
     expect(encoded).toBeTruthy();
