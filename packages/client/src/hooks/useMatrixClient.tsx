@@ -8,14 +8,15 @@ interface ConnectionInfo {
   token: string;
   tokenMasked: string;
   transport: MatrixClientConfig["transport"];
-  source: "manual" | "storage";
+  source: "manual" | "storage" | "saved";
+  serverId?: string;
 }
 
 interface MatrixClientState {
   client: MatrixClient | null;
   status: ConnectionStatus;
   connectionInfo: ConnectionInfo | null;
-  connect: (config: MatrixClientConfig) => void;
+  connect: (config: MatrixClientConfig, opts?: { source?: ConnectionInfo["source"]; serverId?: string }) => void;
   restoreLastConnection: () => void;
   disconnect: () => void;
 }
@@ -33,52 +34,60 @@ export function useMatrixClient() {
   return useContext(MatrixClientContext);
 }
 
+function maskToken(token: string): string {
+  if (token.length <= 8) return token;
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+}
+
 export function MatrixClientProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<MatrixClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("offline");
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const connectedRef = useRef(false);
 
-  const buildConnectionInfo = useCallback(
-    (config: MatrixClientConfig, source: ConnectionInfo["source"]): ConnectionInfo => ({
-      serverUrl: config.serverUrl,
-      token: config.token,
-      tokenMasked:
-        config.token.length <= 8
-          ? config.token
-          : `${config.token.slice(0, 4)}...${config.token.slice(-4)}`,
-      transport: config.transport ?? "auto",
-      source,
-    }),
-    [],
-  );
-
-  const connect = useCallback((config: MatrixClientConfig) => {
+  const connect = useCallback((config: MatrixClientConfig, opts?: { source?: ConnectionInfo["source"]; serverId?: string }) => {
     connectedRef.current = true;
+
+    // Disconnect existing client before connecting new one
+    setClient((prev: MatrixClient | null) => {
+      prev?.disconnect();
+      return null;
+    });
+
     const newClient = new MatrixClient(config);
     newClient.onStatusChange(setStatus);
     newClient.connect();
     setClient(newClient);
-    setConnectionInfo(buildConnectionInfo(config, "manual"));
+    setConnectionInfo({
+      serverUrl: config.serverUrl,
+      token: config.token,
+      tokenMasked: maskToken(config.token),
+      transport: config.transport ?? "auto",
+      source: opts?.source ?? "manual",
+      serverId: opts?.serverId,
+    });
 
     sessionStorage.setItem("matrix:lastConnection", JSON.stringify({
       serverUrl: config.serverUrl,
       token: config.token,
+      serverId: opts?.serverId,
     }));
-  }, [buildConnectionInfo]);
+  }, []);
 
   const restoreLastConnection = useCallback(() => {
     const saved = sessionStorage.getItem("matrix:lastConnection");
     if (!saved) return;
 
-    const parsed = JSON.parse(saved) as { serverUrl: string; token: string };
-    setConnectionInfo(
-      buildConnectionInfo(
-        { serverUrl: parsed.serverUrl, token: parsed.token, transport: "auto" },
-        "storage",
-      ),
-    );
-  }, [buildConnectionInfo]);
+    const parsed = JSON.parse(saved) as { serverUrl: string; token: string; serverId?: string };
+    setConnectionInfo({
+      serverUrl: parsed.serverUrl,
+      token: parsed.token,
+      tokenMasked: maskToken(parsed.token),
+      transport: "auto",
+      source: "storage",
+      serverId: parsed.serverId,
+    });
+  }, []);
 
   const disconnect = useCallback(() => {
     client?.disconnect();
@@ -86,20 +95,41 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
     setStatus("offline");
   }, [client]);
 
-  // Auto-connect to local sidecar on desktop
-  // Sidecar is spawned by Tauri setup, give it a moment to start then connect directly.
-  // The MatrixClient SDK handles reconnection if the server isn't ready yet.
+  // Auto-connect to local sidecar on desktop — fetch token from server
   useEffect(() => {
     if (!hasLocalServer()) return;
     if (connectedRef.current) return;
 
+    const LOCAL_SERVER_URL = "http://127.0.0.1:19880";
+    let cancelled = false;
+
+    const tryConnect = async () => {
+      // Poll until sidecar is ready (up to ~15 seconds)
+      for (let i = 0; i < 60 && !cancelled; i++) {
+        try {
+          const res = await fetch(`${LOCAL_SERVER_URL}/api/auth-info`);
+          if (res.ok) {
+            const { token } = await res.json() as { token: string };
+            if (!cancelled && !connectedRef.current) {
+              connect({ serverUrl: LOCAL_SERVER_URL, token }, { source: "storage" });
+            }
+            return;
+          }
+        } catch {
+          // Server not ready yet
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    };
+
+    // Give sidecar a moment to start
     const timer = setTimeout(() => {
       if (!connectedRef.current) {
-        connect({ serverUrl: "http://127.0.0.1:19880", token: "local" });
+        tryConnect();
       }
-    }, 1500);
+    }, 500);
 
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

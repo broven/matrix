@@ -12,6 +12,9 @@
     "core:default",
     "shell:allow-spawn",
     "shell:allow-kill",
+    "store:default",
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
     {
       "identifier": "http:default",
       "allow": [
