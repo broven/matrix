@@ -36,3 +36,12 @@ test("tauri config points at the existing Vite frontend", () => {
   assert.equal(config.build?.frontendDist, "../dist");
   assert.equal(config.app?.windows?.[0]?.label, "main");
 });
+
+test("tauri lib wires automation startup hooks in debug builds", () => {
+  const libPath = path.join(clientDir, "src-tauri/src/lib.rs");
+  const source = readFileSync(libPath, "utf8");
+
+  assert.match(source, /start_loopback_server\(/);
+  assert.match(source, /write_discovery_file\(None\)/);
+  assert.match(source, /NoopWebviewEvalBackend/);
+});

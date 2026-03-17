@@ -9,8 +9,7 @@ use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-#[path = "actions.rs"]
-mod actions;
+use super::actions;
 
 const REQUEST_HEAD_MAX_BYTES: usize = 8 * 1024;
 const REQUEST_BODY_MAX_BYTES: usize = 64 * 1024;
