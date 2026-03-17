@@ -7,6 +7,9 @@ use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
+const REQUEST_HEAD_MAX_BYTES: usize = 8 * 1024;
+const REQUEST_READ_TIMEOUT: Duration = Duration::from_millis(300);
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthResponse {
@@ -151,7 +154,16 @@ fn handle_connection(
     token: &str,
     state: &Arc<RwLock<RouteState>>,
 ) -> std::io::Result<()> {
-    let request = parse_request_head(stream)?;
+    let request = match parse_request_head(stream) {
+        Ok(request) => request,
+        Err(RequestParseError::Timeout) => {
+            return write_simple_error(stream, 408, "request_timeout")
+        }
+        Err(RequestParseError::Malformed(message)) => {
+            return write_simple_error(stream, 400, message)
+        }
+        Err(RequestParseError::Io(error)) => return Err(error),
+    };
     let response = {
         let state_guard = state
             .read()
@@ -177,7 +189,9 @@ fn write_json_response(stream: &mut TcpStream, status: u16, body: &Value) -> std
         serde_json::to_vec(body).map_err(|error| std::io::Error::other(error.to_string()))?;
     let status_text = match status {
         200 => "OK",
+        400 => "Bad Request",
         401 => "Unauthorized",
+        408 => "Request Timeout",
         404 => "Not Found",
         500 => "Internal Server Error",
         _ => "OK",
@@ -201,27 +215,57 @@ struct ParsedRequestHead {
     authorization: Option<String>,
 }
 
-fn parse_request_head(stream: &mut TcpStream) -> std::io::Result<ParsedRequestHead> {
-    let mut buf = [0_u8; 8192];
-    let read_len = stream.read(&mut buf)?;
-    let raw = String::from_utf8_lossy(&buf[..read_len]);
-    let header_end = raw
-        .find("\r\n\r\n")
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid request"))?;
-    let head = &raw[..header_end];
+enum RequestParseError {
+    Timeout,
+    Malformed(&'static str),
+    Io(std::io::Error),
+}
+
+fn parse_request_head(stream: &mut TcpStream) -> Result<ParsedRequestHead, RequestParseError> {
+    stream
+        .set_read_timeout(Some(REQUEST_READ_TIMEOUT))
+        .map_err(RequestParseError::Io)?;
+
+    let mut request_buf = Vec::<u8>::new();
+    let mut read_buf = [0_u8; 1024];
+    let header_end = loop {
+        match stream.read(&mut read_buf) {
+            Ok(0) => {
+                return Err(RequestParseError::Malformed("incomplete_request"));
+            }
+            Ok(read_len) => {
+                request_buf.extend_from_slice(&read_buf[..read_len]);
+                if request_buf.len() > REQUEST_HEAD_MAX_BYTES {
+                    return Err(RequestParseError::Malformed("request_head_too_large"));
+                }
+                if let Some(index) = find_header_end(&request_buf) {
+                    break index;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                return Err(RequestParseError::Timeout);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(RequestParseError::Timeout);
+            }
+            Err(error) => return Err(RequestParseError::Io(error)),
+        }
+    };
+    let head = std::str::from_utf8(&request_buf[..header_end])
+        .map_err(|_| RequestParseError::Malformed("invalid_utf8"))?;
 
     let mut lines = head.lines();
     let request_line = lines
         .next()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing request line"))?;
+        .ok_or(RequestParseError::Malformed("missing_request_line"))?;
     let mut request_parts = request_line.split_whitespace();
     let method = request_parts
         .next()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing method"))?
+        .ok_or(RequestParseError::Malformed("missing_method"))?
         .to_string();
     let path = request_parts
         .next()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing path"))?
+        .ok_or(RequestParseError::Malformed("missing_path"))?
         .to_string();
 
     let mut headers = HashMap::<String, String>::new();
@@ -236,6 +280,11 @@ fn parse_request_head(stream: &mut TcpStream) -> std::io::Result<ParsedRequestHe
         path,
         authorization: headers.get("authorization").cloned(),
     })
+}
+
+fn find_header_end(buf: &[u8]) -> Option<usize> {
+    buf.windows(4)
+        .position(|window| window == b"\r\n\r\n")
 }
 
 #[cfg(test)]
@@ -261,10 +310,40 @@ fn send_test_request(addr: SocketAddr, request: &str) -> Vec<u8> {
         .write_all(request.as_bytes())
         .expect("should write request");
     stream.flush().expect("should flush request");
+    read_test_response_body(&mut stream)
+}
+
+#[cfg(test)]
+fn send_test_request_chunks(
+    addr: SocketAddr,
+    chunks: &[&str],
+    read_response: bool,
+) -> Vec<u8> {
+    let mut stream = TcpStream::connect(addr).expect("should connect to server");
+    for chunk in chunks {
+        stream
+            .write_all(chunk.as_bytes())
+            .expect("should write request chunk");
+        stream.flush().expect("should flush request chunk");
+    }
+    if !read_response {
+        return Vec::new();
+    }
+    read_test_response_body(&mut stream)
+}
+
+#[cfg(test)]
+fn read_test_response_body(stream: &mut TcpStream) -> Vec<u8> {
     let mut response = Vec::<u8>::new();
-    stream
-        .read_to_end(&mut response)
-        .expect("should read response");
+    let mut buf = [0_u8; 2048];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(read_len) => response.extend_from_slice(&buf[..read_len]),
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => break,
+            Err(error) => panic!("should read response: {error}"),
+        }
+    }
     response
 }
 
@@ -285,8 +364,8 @@ fn test_server_with_sample_state(token: &str) -> AutomationServer {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_test_response, route_request, send_test_request, test_server_with_sample_state,
-        RouteState,
+        parse_test_response, route_request, send_test_request, send_test_request_chunks,
+        test_server_with_sample_state, RouteState,
     };
     use serde_json::json;
 
@@ -411,6 +490,56 @@ mod tests {
     fn loopback_server_binds_to_loopback_only() {
         let server = test_server_with_sample_state("test-token");
         assert!(server.local_addr().ip().is_loopback());
+        server.shutdown().expect("server should stop");
+    }
+
+    #[test]
+    fn loopback_server_handles_fragmented_request_head() {
+        let server = test_server_with_sample_state("test-token");
+        let raw = send_test_request_chunks(
+            server.local_addr(),
+            &[
+                "GET /health HTTP/1.1\r\nHost: localhost\r\nAuthoriz",
+                "ation: Bearer test-token\r\n\r\n",
+            ],
+            true,
+        );
+        let (status, body) = parse_test_response(&raw);
+        assert_eq!(status, 200);
+        assert_eq!(body.get("ok").and_then(|value| value.as_bool()), Some(true));
+        server.shutdown().expect("server should stop");
+    }
+
+    #[test]
+    fn loopback_server_returns_400_for_malformed_request() {
+        let server = test_server_with_sample_state("test-token");
+        let raw = send_test_request(
+            server.local_addr(),
+            "GET_ONLY\r\nAuthorization: Bearer test-token\r\n\r\n",
+        );
+        let (status, body) = parse_test_response(&raw);
+        assert_eq!(status, 400);
+        assert_eq!(
+            body.get("error").and_then(|value| value.as_str()),
+            Some("missing_path")
+        );
+        server.shutdown().expect("server should stop");
+    }
+
+    #[test]
+    fn loopback_server_returns_408_for_timeout_during_request_head() {
+        let server = test_server_with_sample_state("test-token");
+        let raw = send_test_request_chunks(
+            server.local_addr(),
+            &["GET /health HTTP/1.1\r\nHost: localhost\r\n"],
+            true,
+        );
+        let (status, body) = parse_test_response(&raw);
+        assert_eq!(status, 408);
+        assert_eq!(
+            body.get("error").and_then(|value| value.as_str()),
+            Some("request_timeout")
+        );
         server.shutdown().expect("server should stop");
     }
 }
