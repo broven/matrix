@@ -649,10 +649,15 @@ mod tests {
             unauthorized_body
         );
         let unauthorized_raw = send_test_request(server.local_addr(), &unauthorized_request);
-        let (unauthorized_status, _) = parse_test_response(&unauthorized_raw);
+        let (unauthorized_status, unauthorized_response) = parse_test_response(&unauthorized_raw);
         assert_eq!(unauthorized_status, 401);
+        assert_eq!(
+            unauthorized_response.get("error").and_then(|value| value.as_str()),
+            Some("unauthorized")
+        );
 
         let body = r#"{"script":"(() => ({\"value\": 2}))()"}"#;
+        let expected_script = "(() => ({\"value\": 2}))()";
         let request = format!(
             "POST /webview/eval HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
             body.len(),
@@ -661,9 +666,15 @@ mod tests {
         let raw = send_test_request(server.local_addr(), &request);
         let (status, response) = parse_test_response(&raw);
         assert_eq!(status, 200);
-        assert!(response.get("ok").is_some());
-        assert!(response.get("result").is_some());
-        assert!(response.get("error").is_some());
+        assert_eq!(response.get("ok").and_then(|value| value.as_bool()), Some(true));
+        assert!(response.get("error").is_some_and(|value| value.is_null()));
+        assert_eq!(
+            response
+                .get("result")
+                .and_then(|result| result.get("echo"))
+                .and_then(|echo| echo.as_str()),
+            Some(expected_script)
+        );
 
         server.shutdown().expect("server should stop");
     }
