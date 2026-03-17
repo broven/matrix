@@ -1,3 +1,4 @@
+#[cfg(any(test, debug_assertions))]
 mod automation;
 
 use tauri::Manager;
