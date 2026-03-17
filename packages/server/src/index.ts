@@ -315,7 +315,7 @@ if (config.webDir) {
   app.get("/*", async (c, next) => {
     const p = c.req.path;
     // Skip API routes and WebSocket endpoint
-    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     const res = await serveStatic({ root: resolvedWebDir })(c, next);
@@ -325,7 +325,7 @@ if (config.webDir) {
   // SPA fallback: serve index.html for non-API GET requests
   app.get("/*", async (c, next) => {
     const p = c.req.path;
-    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);

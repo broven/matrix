@@ -135,7 +135,7 @@ export function ShareServerModal({
               <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Server URL
               </label>
-              <Input readOnly value={shareUrl} className="font-mono text-xs" />
+              <Input value={shareUrl} onChange={(e) => setShareUrl(e.target.value)} className="font-mono text-xs" />
             </div>
 
             {lanIp && (
