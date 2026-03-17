@@ -9,7 +9,11 @@ use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
+#[path = "actions.rs"]
+mod actions;
+
 const REQUEST_HEAD_MAX_BYTES: usize = 8 * 1024;
+const REQUEST_BODY_MAX_BYTES: usize = 64 * 1024;
 const REQUEST_READ_TIMEOUT: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Clone, Serialize)]
@@ -79,6 +83,7 @@ pub fn start_loopback_server(
     port: u16,
     token: String,
     state: Arc<RwLock<RouteState>>,
+    eval_backend: Arc<dyn actions::WebviewEvalBackend>,
 ) -> std::io::Result<AutomationServer> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     listener.set_nonblocking(true)?;
@@ -92,7 +97,7 @@ pub fn start_loopback_server(
 
         match listener.accept() {
             Ok((mut stream, _)) => {
-                if let Err(error) = handle_connection(&mut stream, &token, &state) {
+                if let Err(error) = handle_connection(&mut stream, &token, &state, &eval_backend) {
                     let _ = write_simple_error(&mut stream, 500, &error.to_string());
                 }
             }
@@ -114,8 +119,10 @@ fn route_request(
     method: &str,
     path: &str,
     authorization: Option<&str>,
+    body: &[u8],
     token: &str,
     state: &RouteState,
+    eval_backend: &dyn actions::WebviewEvalBackend,
 ) -> HttpResponse {
     let expected = format!("Bearer {token}");
     if authorization != Some(expected.as_str()) {
@@ -144,6 +151,24 @@ fn route_request(
                 sidecar: state.sidecar.clone(),
             }),
         },
+        ("POST", "/webview/eval") => {
+            let request = match actions::parse_webview_eval_request(body) {
+                Ok(request) => request,
+                Err(error) => {
+                    return HttpResponse {
+                        status: 400,
+                        body: json!({ "error": error }),
+                    }
+                }
+            };
+            HttpResponse {
+                status: 200,
+                body: json!(actions::evaluate_webview_script(
+                    eval_backend,
+                    &request.script
+                )),
+            }
+        }
         _ => HttpResponse {
             status: 404,
             body: json!({"error": "not_found"}),
@@ -155,8 +180,9 @@ fn handle_connection(
     stream: &mut TcpStream,
     token: &str,
     state: &Arc<RwLock<RouteState>>,
+    eval_backend: &Arc<dyn actions::WebviewEvalBackend>,
 ) -> std::io::Result<()> {
-    let request = match parse_request_head(stream) {
+    let request = match parse_http_request(stream) {
         Ok(request) => request,
         Err(RequestParseError::Timeout) => {
             return write_simple_error(stream, 408, "request_timeout")
@@ -174,8 +200,10 @@ fn handle_connection(
             &request.method,
             &request.path,
             request.authorization.as_deref(),
+            &request.body,
             token,
             &state_guard,
+            eval_backend.as_ref(),
         )
     };
     write_json_response(stream, response.status, &response.body)
@@ -211,10 +239,11 @@ fn write_json_response(stream: &mut TcpStream, status: u16, body: &Value) -> std
 }
 
 #[derive(Debug)]
-struct ParsedRequestHead {
+struct ParsedHttpRequest {
     method: String,
     path: String,
     authorization: Option<String>,
+    body: Vec<u8>,
 }
 
 enum RequestParseError {
@@ -223,7 +252,7 @@ enum RequestParseError {
     Io(std::io::Error),
 }
 
-fn parse_request_head(stream: &mut TcpStream) -> Result<ParsedRequestHead, RequestParseError> {
+fn parse_http_request(stream: &mut TcpStream) -> Result<ParsedHttpRequest, RequestParseError> {
     stream
         .set_read_timeout(Some(REQUEST_READ_TIMEOUT))
         .map_err(RequestParseError::Io)?;
@@ -253,6 +282,7 @@ fn parse_request_head(stream: &mut TcpStream) -> Result<ParsedRequestHead, Reque
             Err(error) => return Err(RequestParseError::Io(error)),
         }
     };
+    let body_offset = header_end + 4;
     let head = std::str::from_utf8(&request_buf[..header_end])
         .map_err(|_| RequestParseError::Malformed("invalid_utf8"))?;
 
@@ -277,10 +307,47 @@ fn parse_request_head(stream: &mut TcpStream) -> Result<ParsedRequestHead, Reque
         }
     }
 
-    Ok(ParsedRequestHead {
+    let content_length = match headers.get("content-length") {
+        Some(raw) => raw
+            .parse::<usize>()
+            .map_err(|_| RequestParseError::Malformed("invalid_content_length"))?,
+        None => 0,
+    };
+    if content_length > REQUEST_BODY_MAX_BYTES {
+        return Err(RequestParseError::Malformed("request_body_too_large"));
+    }
+
+    let mut body = if body_offset < request_buf.len() {
+        request_buf[body_offset..].to_vec()
+    } else {
+        Vec::new()
+    };
+    if body.len() > content_length {
+        body.truncate(content_length);
+    }
+    while body.len() < content_length {
+        match stream.read(&mut read_buf) {
+            Ok(0) => return Err(RequestParseError::Malformed("incomplete_body")),
+            Ok(read_len) => {
+                let remaining = content_length - body.len();
+                let take = remaining.min(read_len);
+                body.extend_from_slice(&read_buf[..take]);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                return Err(RequestParseError::Timeout);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(RequestParseError::Timeout);
+            }
+            Err(error) => return Err(RequestParseError::Io(error)),
+        }
+    }
+
+    Ok(ParsedHttpRequest {
         method,
         path,
         authorization: headers.get("authorization").cloned(),
+        body,
     })
 }
 
@@ -359,6 +426,16 @@ fn read_test_response_body(stream: &mut TcpStream) -> Vec<u8> {
 }
 
 #[cfg(test)]
+struct TestWebviewEvalBackend;
+
+#[cfg(test)]
+impl actions::WebviewEvalBackend for TestWebviewEvalBackend {
+    fn evaluate_script(&self, script: &str) -> Result<Value, String> {
+        Ok(json!({ "echo": script }))
+    }
+}
+
+#[cfg(test)]
 fn test_server_with_sample_state(token: &str) -> AutomationServer {
     let state = Arc::new(RwLock::new(RouteState {
         platform: "macos".to_string(),
@@ -369,14 +446,15 @@ fn test_server_with_sample_state(token: &str) -> AutomationServer {
         webview: json!({ "url": "http://127.0.0.1:19880" }),
         sidecar: json!({ "running": true }),
     }));
-    start_loopback_server(0, token.to_string(), state).expect("server should start")
+    start_loopback_server(0, token.to_string(), state, Arc::new(TestWebviewEvalBackend))
+        .expect("server should start")
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         parse_test_response, route_request, send_test_request, send_test_request_chunks,
-        test_server_with_sample_state, RouteState,
+        test_server_with_sample_state, RouteState, TestWebviewEvalBackend,
     };
     use serde_json::json;
 
@@ -399,8 +477,10 @@ mod tests {
             "GET",
             "/health",
             Some("Bearer test-token"),
+            &[],
             "test-token",
             &state,
+            &TestWebviewEvalBackend,
         );
 
         assert_eq!(response.status, 200);
@@ -421,8 +501,10 @@ mod tests {
             "GET",
             "/state",
             Some("Bearer test-token"),
+            &[],
             "test-token",
             &state,
+            &TestWebviewEvalBackend,
         );
 
         assert_eq!(response.status, 200);
@@ -553,6 +635,36 @@ mod tests {
             body.get("error").and_then(|value| value.as_str()),
             Some("request_timeout")
         );
+        server.shutdown().expect("server should stop");
+    }
+
+    #[test]
+    fn webview_eval_contract() {
+        let server = test_server_with_sample_state("test-token");
+
+        let unauthorized_body = r#"{"script":"(() => 1)()"}"#;
+        let unauthorized_request = format!(
+            "POST /webview/eval HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            unauthorized_body.len(),
+            unauthorized_body
+        );
+        let unauthorized_raw = send_test_request(server.local_addr(), &unauthorized_request);
+        let (unauthorized_status, _) = parse_test_response(&unauthorized_raw);
+        assert_eq!(unauthorized_status, 401);
+
+        let body = r#"{"script":"(() => ({\"value\": 2}))()"}"#;
+        let request = format!(
+            "POST /webview/eval HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let raw = send_test_request(server.local_addr(), &request);
+        let (status, response) = parse_test_response(&raw);
+        assert_eq!(status, 200);
+        assert!(response.get("ok").is_some());
+        assert!(response.get("result").is_some());
+        assert!(response.get("error").is_some());
+
         server.shutdown().expect("server should stop");
     }
 }
