@@ -323,11 +323,15 @@ const idleSuspendSweepTimer = setInterval(() => {
 }, IDLE_SUSPEND_SWEEP_INTERVAL_MS);
 idleSuspendSweepTimer.unref();
 
+const maskedToken = serverToken.length > 8
+  ? `${serverToken.slice(0, 4)}...${serverToken.slice(-4)}`
+  : "****";
+
 console.log(`\n  Matrix Server running on http://${config.host}:${config.port}`);
-console.log(`\n  Auth token: ${serverToken}`);
+console.log(`\n  Auth token: ${maskedToken} (Check environment or startup logs for full token)`);
 const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
 const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
-console.log(`\n  Connect URI: ${connectionUri}`);
+console.log(`\n  Connect URI: ${buildConnectionUri(`http://${advertisedHost}:${config.port}`, maskedToken)}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
 console.log(`\n  Registered agents: ${config.agents.map((a) => a.name).join(", ")}\n`);
