@@ -38,6 +38,30 @@ describe("automation bridge", () => {
     expect(JSON.parse(encoded ?? "{}")).toEqual(snapshot);
   });
 
+  it("handles self-referential arrays without recursion overflow", () => {
+    const bridge = installAutomationBridge({ mode: "test", dev: false });
+    const cyclicArray: unknown[] = [];
+    cyclicArray.push("head");
+    cyclicArray.push(cyclicArray);
+    seedAutomationTestState({ cyclicArray });
+
+    const snapshot = bridge?.getSnapshot() as { testState?: unknown };
+    expect(() => JSON.stringify(snapshot)).not.toThrow();
+    expect(snapshot.testState).toEqual({ cyclicArray: ["head", null] });
+  });
+
+  it("serializes repeated shared references by value", () => {
+    const bridge = installAutomationBridge({ mode: "test", dev: false });
+    const shared = { ok: 1 };
+    seedAutomationTestState({ a: shared, b: shared });
+
+    const snapshot = bridge?.getSnapshot() as { testState?: unknown };
+    expect(snapshot.testState).toEqual({
+      a: { ok: 1 },
+      b: { ok: 1 },
+    });
+  });
+
   it("clears seeded state on reset", () => {
     const bridge = installAutomationBridge({ mode: "test", dev: false });
     seedAutomationTestState({ foo: "bar" });

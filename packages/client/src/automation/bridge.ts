@@ -33,7 +33,7 @@ function shouldInstallBridge(options?: InstallOptions): boolean {
   return dev || mode === "test";
 }
 
-function toJsonSafe(value: unknown, seen = new WeakSet<object>()): JsonSafeValue {
+function toJsonSafe(value: unknown, path = new WeakSet<object>()): JsonSafeValue {
   if (value === null) return null;
 
   const valueType = typeof value;
@@ -55,21 +55,32 @@ function toJsonSafe(value: unknown, seen = new WeakSet<object>()): JsonSafeValue
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => toJsonSafe(item, seen));
+    if (path.has(value)) {
+      return null;
+    }
+    path.add(value);
+    try {
+      return value.map((item) => toJsonSafe(item, path));
+    } finally {
+      path.delete(value);
+    }
   }
 
   if (typeof value === "object") {
     const obj = value as Record<string, unknown>;
-    if (seen.has(obj)) {
+    if (path.has(obj)) {
       return null;
     }
-    seen.add(obj);
-
-    const output: { [key: string]: JsonSafeValue } = {};
-    for (const [key, item] of Object.entries(obj)) {
-      output[key] = toJsonSafe(item, seen);
+    path.add(obj);
+    try {
+      const output: { [key: string]: JsonSafeValue } = {};
+      for (const [key, item] of Object.entries(obj)) {
+        output[key] = toJsonSafe(item, path);
+      }
+      return output;
+    } finally {
+      path.delete(obj);
     }
-    return output;
   }
 
   return null;
