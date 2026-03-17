@@ -34,7 +34,7 @@ pub fn run() {
                 let web_dir = resource_dir.join("web");
 
                 let shell = app.shell();
-                let (mut _rx, child) = shell
+                let (mut rx, child) = shell
                     .sidecar("matrix-server")
                     .expect("failed to create sidecar command")
                     .args([
@@ -49,6 +49,29 @@ pub fn run() {
                     .expect("failed to spawn matrix-server sidecar");
 
                 app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
+
+                // Log sidecar output for debugging
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_shell::process::CommandEvent;
+                    while let Some(event) = rx.recv().await {
+                        match event {
+                            CommandEvent::Stdout(line) => {
+                                eprintln!("[matrix-server] {}", String::from_utf8_lossy(&line));
+                            }
+                            CommandEvent::Stderr(line) => {
+                                eprintln!("[matrix-server:err] {}", String::from_utf8_lossy(&line));
+                            }
+                            CommandEvent::Terminated(payload) => {
+                                eprintln!(
+                                    "[matrix-server] terminated code={:?} signal={:?}",
+                                    payload.code, payload.signal
+                                );
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                });
 
                 // Inject a redirect script into the webview to navigate to sidecar URL
                 let main_window = app.get_webview_window("main").unwrap();
