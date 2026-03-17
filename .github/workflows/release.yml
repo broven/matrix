@@ -204,10 +204,21 @@ jobs:
       - name: Initialize iOS project
         run: cd packages/client && pnpm tauri ios init
 
+      - name: Disable code signing
+        run: |
+          PBXPROJ="packages/client/src-tauri/gen/apple/matrix-client.xcodeproj/project.pbxproj"
+          sed -i '' 's/CODE_SIGN_IDENTITY = ".*"/CODE_SIGN_IDENTITY = "-"/g' "$PBXPROJ"
+          sed -i '' 's/DEVELOPMENT_TEAM = ".*"/DEVELOPMENT_TEAM = ""/g' "$PBXPROJ"
+          # Inject signing overrides into every buildSettings block
+          sed -i '' '/buildSettings = {/a\
+            CODE_SIGNING_REQUIRED = NO;\
+            CODE_SIGNING_ALLOWED = NO;\
+          ' "$PBXPROJ"
+
       - name: Build iOS
         run: |
           cd packages/client
-          pnpm tauri ios build -- CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          pnpm tauri ios build
 
       - name: Package IPA
         run: |
