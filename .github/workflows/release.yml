@@ -226,11 +226,8 @@ jobs:
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
           mkdir -p Payload
-          # Find .app in Xcode archive or derived data
-          APP_PATH=$(find ~/Library/Developer/Xcode -name "*.app" -path "*/Products/Applications/*" 2>/dev/null | head -1)
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find packages/client/src-tauri/gen/apple -name "*.app" -path "*/release-iphoneos/*" 2>/dev/null | head -1)
-          fi
+          # Find .app in Xcode archive
+          APP_PATH=$(find packages/client/src-tauri/gen/apple/build -name "*.app" -path "*/Products/Applications/*" 2>/dev/null | head -1)
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app found"
             find packages/client/src-tauri/gen/apple -name "*.app" 2>/dev/null || true
