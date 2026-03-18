@@ -38,7 +38,40 @@ export interface AutomationBridge {
   runScript: (script: string) => AutomationScriptResponse;
 }
 
+type RuntimeBridgeRequest =
+  | {
+      id: number;
+      responseEvent: string;
+      request: { kind: "eval"; script: string };
+    }
+  | {
+      id: number;
+      responseEvent: string;
+      request: { kind: "dispatchEvent"; name: string; payload?: unknown };
+    }
+  | {
+      id: number;
+      responseEvent: string;
+      request: { kind: "snapshot" };
+    };
+
+type RuntimeBridgeResponse =
+  | {
+      id: number;
+      ok: true;
+      result: JsonSafeValue;
+      error: null;
+    }
+  | {
+      id: number;
+      ok: false;
+      result: null;
+      error: "webview_unavailable" | "internal_error";
+    };
+
 const BRIDGE_KEY = "__MATRIX_AUTOMATION__";
+const RUNTIME_REQUEST_EVENT = "matrix:automation:runtime-request";
+let runtimeBridgeListenerPromise: Promise<void> | null = null;
 
 type JsonSafeValue =
   | null
@@ -59,7 +92,7 @@ function toJsonSafe(value: unknown, path = new WeakSet<object>()): JsonSafeValue
 
   const valueType = typeof value;
   if (valueType === "string" || valueType === "boolean") {
-    return value;
+    return value as string | boolean;
   }
   if (valueType === "number") {
     return Number.isFinite(value as number) ? (value as number) : null;
@@ -145,6 +178,79 @@ function getSnapshot(): Record<string, unknown> {
   };
 }
 
+function getAutomationBridge(): AutomationBridge | null {
+  return ((window as any)[BRIDGE_KEY] as AutomationBridge | undefined) ?? null;
+}
+
+function toRuntimeResponse(
+  id: number,
+  response: AutomationScriptResponse,
+): RuntimeBridgeResponse {
+  if (response.ok) {
+    return {
+      id,
+      ok: true,
+      result: response.result,
+      error: null,
+    };
+  }
+
+  return {
+    id,
+    ok: false,
+    result: null,
+    error: "internal_error",
+  };
+}
+
+function handleRuntimeRequest(request: RuntimeBridgeRequest): RuntimeBridgeResponse {
+  const bridge = getAutomationBridge();
+  if (!bridge) {
+    return {
+      id: request.id,
+      ok: false,
+      result: null,
+      error: "webview_unavailable",
+    };
+  }
+
+  try {
+    switch (request.request.kind) {
+      case "eval":
+        return toRuntimeResponse(request.id, bridge.runScript(request.request.script));
+      case "dispatchEvent":
+        bridge.dispatchEvent(request.request.name, request.request.payload);
+        return {
+          id: request.id,
+          ok: true,
+          result: null,
+          error: null,
+        };
+      case "snapshot":
+        return {
+          id: request.id,
+          ok: true,
+          result: toJsonSafe(bridge.getSnapshot()),
+          error: null,
+        };
+      default:
+        return {
+          id: request.id,
+          ok: false,
+          result: null,
+          error: "internal_error",
+        };
+    }
+  } catch {
+    return {
+      id: request.id,
+      ok: false,
+      result: null,
+      error: "internal_error",
+    };
+  }
+}
+
 export function installAutomationBridge(options?: InstallOptions): AutomationBridge | null {
   if (!shouldInstallBridge(options)) {
     return null;
@@ -174,4 +280,27 @@ export function installAutomationBridge(options?: InstallOptions): AutomationBri
 
   (window as any)[BRIDGE_KEY] = bridge;
   return bridge;
+}
+
+export async function installAutomationRuntimeBridgeListener(
+  options?: InstallOptions,
+): Promise<void> {
+  if (!shouldInstallBridge(options)) {
+    return;
+  }
+
+  if (runtimeBridgeListenerPromise) {
+    return runtimeBridgeListenerPromise;
+  }
+
+  runtimeBridgeListenerPromise = (async () => {
+    const { listen, emit } = await import("@tauri-apps/api/event");
+
+    await listen<RuntimeBridgeRequest>(RUNTIME_REQUEST_EVENT, async (event) => {
+      const response = handleRuntimeRequest(event.payload);
+      await emit(event.payload.responseEvent, response);
+    });
+  })();
+
+  return runtimeBridgeListenerPromise;
 }

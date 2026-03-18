@@ -4,9 +4,15 @@ import "./index.css";
 import { App } from "./App";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { installAutomationBridge } from "./automation/bridge";
+import {
+  installAutomationBridge,
+  installAutomationRuntimeBridgeListener,
+} from "./automation/bridge";
 
 installAutomationBridge();
+void installAutomationRuntimeBridgeListener().catch((error) => {
+  console.error("failed to install automation runtime bridge listener", error);
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

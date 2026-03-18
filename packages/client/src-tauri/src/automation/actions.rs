@@ -2,9 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::core::capabilities::{self, NativeCapability, WebviewCapability};
-use super::core::errors::AutomationErrorCode;
 use super::core::models::{AutomationEnvelope, NativeActionRequest};
-use super::runtime::router::AutomationRouterBackend;
 
 #[derive(Debug, Deserialize)]
 pub struct WebviewEvalRequest {
@@ -16,32 +14,6 @@ pub type WebviewEvalEnvelope = AutomationEnvelope<Value>;
 pub trait WebviewEvalBackend: WebviewCapability + Send + Sync {}
 
 impl<T> WebviewEvalBackend for T where T: WebviewCapability + Send + Sync {}
-
-pub struct NoopWebviewEvalBackend;
-
-impl WebviewCapability for NoopWebviewEvalBackend {
-    fn eval(&self, _script: &str) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::WebviewUnavailable)
-    }
-
-    fn dispatch_event(
-        &self,
-        _name: &str,
-        _payload: Option<&Value>,
-    ) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::WebviewUnavailable)
-    }
-
-    fn snapshot(&self) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::WebviewUnavailable)
-    }
-}
-
-impl AutomationRouterBackend for NoopWebviewEvalBackend {
-    fn webview_capability(&self) -> Option<&dyn WebviewCapability> {
-        Some(self)
-    }
-}
 
 pub fn parse_webview_eval_request(body: &[u8]) -> Result<WebviewEvalRequest, &'static str> {
     let parsed = serde_json::from_slice::<WebviewEvalRequest>(body).map_err(|_| "invalid_json")?;

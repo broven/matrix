@@ -90,7 +90,11 @@ pub fn run() {
                         automation_state.port,
                         automation_state.token.clone(),
                         route_state,
-                        Arc::new(automation::actions::NoopWebviewEvalBackend),
+                        Arc::new(automation::runtime::webview::DesktopWebviewBridge::new(
+                            automation::runtime::webview::TauriEventBridgeTransport::new(
+                                app.handle().clone(),
+                            ),
+                        )),
                     ) {
                         Ok(automation_server) => {
                             automation_state.port = automation_server.local_addr().port();

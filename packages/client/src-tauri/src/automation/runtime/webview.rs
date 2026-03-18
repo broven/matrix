@@ -1,16 +1,45 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    mpsc,
+    Arc,
+};
+use std::time::Duration;
 
 use crate::automation::core::capabilities::WebviewCapability;
 use crate::automation::core::errors::AutomationErrorCode;
 
 use super::router::AutomationRouterBackend;
 
-#[derive(Debug, Clone, PartialEq)]
+use tauri::{AppHandle, Emitter, Listener};
+
+const RUNTIME_REQUEST_EVENT: &str = "matrix:automation:runtime-request";
+const RUNTIME_RESPONSE_EVENT_PREFIX: &str = "matrix:automation:runtime-response:";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum WebviewBridgeRequest {
     Eval { script: String },
     DispatchEvent { name: String, payload: Option<Value> },
     Snapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeBridgeRequest {
+    id: u64,
+    response_event: String,
+    request: WebviewBridgeRequest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeBridgeResponse {
+    id: u64,
+    ok: bool,
+    result: Option<Value>,
+    error: Option<AutomationErrorCode>,
 }
 
 pub trait FrontEndBridgeTransport: Send + Sync {
@@ -23,6 +52,76 @@ where
 {
     fn send(&self, request: WebviewBridgeRequest) -> Result<Value, AutomationErrorCode> {
         self.as_ref().send(request)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TauriEventBridgeTransport {
+    app: AppHandle,
+    request_timeout: Duration,
+    next_request_id: Arc<AtomicU64>,
+}
+
+impl TauriEventBridgeTransport {
+    pub fn new(app: AppHandle) -> Self {
+        Self {
+            app,
+            request_timeout: Duration::from_secs(5),
+            next_request_id: Arc::new(AtomicU64::new(1)),
+        }
+    }
+
+    fn next_request_id(&self) -> u64 {
+        self.next_request_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn response_event_name(request_id: u64) -> String {
+        format!("{RUNTIME_RESPONSE_EVENT_PREFIX}{request_id}")
+    }
+}
+
+impl FrontEndBridgeTransport for TauriEventBridgeTransport {
+    fn send(&self, request: WebviewBridgeRequest) -> Result<Value, AutomationErrorCode> {
+        let request_id = self.next_request_id();
+        let response_event = Self::response_event_name(request_id);
+        let (response_tx, response_rx) = mpsc::channel::<RuntimeBridgeResponse>();
+
+        let listener_id = self.app.listen(response_event.clone(), move |event| {
+            if let Ok(response) = serde_json::from_str::<RuntimeBridgeResponse>(event.payload()) {
+                let _ = response_tx.send(response);
+            }
+        });
+
+        let request = RuntimeBridgeRequest {
+            id: request_id,
+            response_event,
+            request,
+        };
+
+        if let Err(error) = self.app.emit(RUNTIME_REQUEST_EVENT, request) {
+            self.app.unlisten(listener_id);
+            let _ = error;
+            return Err(AutomationErrorCode::InternalError);
+        }
+
+        let response = match response_rx.recv_timeout(self.request_timeout) {
+            Ok(response) => response,
+            Err(_) => {
+                self.app.unlisten(listener_id);
+                return Err(AutomationErrorCode::WebviewUnavailable);
+            }
+        };
+        self.app.unlisten(listener_id);
+
+        if response.id != request_id {
+            return Err(AutomationErrorCode::InternalError);
+        }
+
+        if response.ok {
+            return Ok(response.result.unwrap_or(Value::Null));
+        }
+
+        Err(response.error.unwrap_or(AutomationErrorCode::InternalError))
     }
 }
 
