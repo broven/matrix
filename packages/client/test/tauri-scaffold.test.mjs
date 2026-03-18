@@ -14,6 +14,8 @@ const requiredPaths = [
   "src-tauri/src/main.rs",
   "src-tauri/src/lib.rs",
   "src-tauri/capabilities/default.json",
+  "src-tauri/src/automation/core/mod.rs",
+  "src-tauri/src/automation/runtime/mod.rs",
 ];
 
 test("client package includes the required Tauri scaffold files", () => {
@@ -52,4 +54,6 @@ test("tauri lib wires automation startup hooks in debug builds", () => {
   assert.match(source, /start_loopback_server\(/);
   assert.match(source, /write_discovery_file\(None\)/);
   assert.match(source, /NoopWebviewEvalBackend/);
+  assert.match(source, /automation::core::/);
+  assert.match(source, /automation::runtime::/);
 });

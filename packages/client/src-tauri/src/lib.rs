@@ -55,6 +55,9 @@ pub fn run() {
 
                 #[cfg(any(test, debug_assertions))]
                 {
+                    automation::core::layout_hint();
+                    automation::runtime::layout_hint();
+
                     let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
                         .ok()
                         .and_then(|raw| raw.parse::<u16>().ok())
