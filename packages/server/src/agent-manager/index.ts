@@ -21,6 +21,8 @@ export class AgentManager {
       name: config.name,
       command: config.command,
       available: isAgentAvailable(config),
+      icon: config.icon,
+      description: config.description,
     }));
   }
 

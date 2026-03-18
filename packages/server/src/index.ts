@@ -8,6 +8,7 @@ import { generateToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
+import { discoverAgents } from "./agent-manager/discovery.js";
 import { Store } from "./store/index.js";
 import { AcpBridge } from "./acp-bridge/index.js";
 import { createRestRoutes } from "./api/rest/index.js";
@@ -15,7 +16,7 @@ import { setupWebSocket } from "./api/ws/index.js";
 import { ConnectionManager } from "./api/ws/connection-manager.js";
 import { createTransportRoutes } from "./api/transport/index.js";
 import { SessionManager } from "./session-manager/index.js";
-import type { CreateSessionRequest } from "@matrix/protocol";
+import type { AgentCapabilities, CreateSessionRequest } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
 import { buildConnectionUri, getLocalIp } from "./connect-info.js";
@@ -41,8 +42,9 @@ function flushAgentMessageBuffer(sessionId: string): void {
   }
 }
 
-// Register configured agents
-for (const agent of config.agents) {
+// Discover and register ACP agents
+const discoveredAgents = await discoverAgents();
+for (const agent of discoveredAgents) {
   agentManager.register(agent);
 }
 
@@ -110,6 +112,13 @@ function handlePermissionResponse(sessionId: string, toolCallId: string, outcome
   if (bridge) {
     bridge.respondPermission(toolCallId, outcome);
   }
+}
+
+function validateCapabilities(caps: AgentCapabilities | null): string[] {
+  // No hard requirements for now — all mainstream agents should work.
+  // Add checks here as needed, e.g.:
+  // if (!caps?.promptCapabilities?.embeddedContext) missing.push("embeddedContext");
+  return [];
 }
 
 /**
@@ -198,6 +207,14 @@ async function createBridge(
   });
 
   await bridge.initialize({ name: "matrix-server", version: "0.1.0" });
+
+  // Validate agent capabilities
+  const missing = validateCapabilities(bridge.capabilities);
+  if (missing.length > 0) {
+    bridge.destroy();
+    throw new Error(`Agent "${agentId}" missing required capabilities: ${missing.join(", ")}`);
+  }
+
   const sessionResult = restoreAgentSessionId
     ? await bridge.loadSession(restoreAgentSessionId, cwd) as any
     : await bridge.createSession(cwd) as any;
@@ -355,4 +372,4 @@ const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port
 console.log(`\n  Connect URI: ${connectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
-console.log(`\n  Registered agents: ${config.agents.map((a) => a.name).join(", ")}\n`);
+console.log(`\n  Discovered agents: ${discoveredAgents.map((a) => a.name).join(", ")}\n`);
