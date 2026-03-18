@@ -11,3 +11,11 @@ export function validateToken(provided: string, expected: string): boolean {
   const b = Buffer.from(expected);
   return timingSafeEqual(a, b);
 }
+
+/**
+ * Masks a token for safe logging (e.g., "abcd...wxyz")
+ */
+export function maskToken(token: string): string {
+  if (token.length <= 8) return "****";
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+}

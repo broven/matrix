@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
-import { generateToken } from "./auth/token.js";
+import { generateToken, maskToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
@@ -238,24 +238,34 @@ app.use("/agents/*", authMiddleware(serverToken));
 app.use("/sessions", authMiddleware(serverToken));
 app.use("/sessions/*", authMiddleware(serverToken));
 
+
 function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }
 
-// Auth info endpoint — loopback only, lets desktop app fetch its token
+// Auth info endpoint — loopback only, lets desktop app fetch its token.
+// Defined after CORS to ensure it works with browser-based desktop apps (Tauri/Vite).
 app.get("/api/auth-info", (c) => {
   if (!isLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
+  // Require custom header to prevent CSRF/unintended browser access
+  if (c.req.header("X-Matrix-Internal") !== "true") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
   return c.json({ token: serverToken });
 });
 
-// Local IP endpoint — loopback only, for sidecar QR code generation
+// Local IP endpoint — loopback only, for sidecar QR code generation.
 app.get("/api/local-ip", (c) => {
   if (!isLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
+  }
+  // Require custom header to prevent CSRF/unintended browser access
+  if (c.req.header("X-Matrix-Internal") !== "true") {
+    return c.json({ error: "Unauthorized" }, 401);
   }
   const ip = getLocalIp();
   if (!ip) {
@@ -349,10 +359,11 @@ const idleSuspendSweepTimer = setInterval(() => {
 idleSuspendSweepTimer.unref();
 
 console.log(`\n  Matrix Server running on http://${config.host}:${config.port}`);
-console.log(`\n  Auth token: ${serverToken}`);
+console.log(`\n  Auth token: ${maskToken(serverToken)}`);
 const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
 const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
-console.log(`\n  Connect URI: ${connectionUri}`);
+const maskedConnectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, maskToken(serverToken));
+console.log(`\n  Connect URI: ${maskedConnectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
 console.log(`\n  Registered agents: ${config.agents.map((a) => a.name).join(", ")}\n`);

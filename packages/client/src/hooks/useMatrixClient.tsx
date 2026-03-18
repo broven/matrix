@@ -107,7 +107,9 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
       // Poll until sidecar is ready (up to ~15 seconds)
       for (let i = 0; i < 60 && !cancelled; i++) {
         try {
-          const res = await fetch(`${LOCAL_SERVER_URL}/api/auth-info`);
+          const res = await fetch(`${LOCAL_SERVER_URL}/api/auth-info`, {
+            headers: { "X-Matrix-Internal": "true" },
+          });
           if (res.ok) {
             const { token } = await res.json() as { token: string };
             if (!cancelled && !connectedRef.current) {
