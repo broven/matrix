@@ -11,10 +11,31 @@ interface InstallOptions {
   dev?: boolean;
 }
 
+export interface AutomationScriptError {
+  name: string;
+  message: string;
+  stack?: string;
+}
+
+export interface AutomationScriptSuccess {
+  ok: true;
+  result: JsonSafeValue;
+  error: null;
+}
+
+export interface AutomationScriptFailure {
+  ok: false;
+  result: null;
+  error: AutomationScriptError;
+}
+
+export type AutomationScriptResponse = AutomationScriptSuccess | AutomationScriptFailure;
+
 export interface AutomationBridge {
   getSnapshot: () => Record<string, unknown>;
-  resetTestState: () => void;
+  resetTestState: (scopes?: string[]) => void;
   dispatchEvent: (name: string, payload?: unknown) => void;
+  runScript: (script: string) => AutomationScriptResponse;
 }
 
 const BRIDGE_KEY = "__MATRIX_AUTOMATION__";
@@ -86,6 +107,28 @@ function toJsonSafe(value: unknown, path = new WeakSet<object>()): JsonSafeValue
   return null;
 }
 
+function toScriptError(error: unknown): AutomationScriptError {
+  if (error instanceof Error) {
+    return {
+      name: error.name || "Error",
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  if (typeof error === "string") {
+    return {
+      name: "Error",
+      message: error,
+    };
+  }
+
+  return {
+    name: "Error",
+    message: "script_execution_failed",
+  };
+}
+
 function getSnapshot(): Record<string, unknown> {
   return {
     url: window.location.href,
@@ -106,6 +149,22 @@ export function installAutomationBridge(options?: InstallOptions): AutomationBri
     getSnapshot,
     resetTestState: resetAutomationTestState,
     dispatchEvent: dispatchAutomationEvent,
+    runScript(script: string): AutomationScriptResponse {
+      try {
+        const result = eval(script);
+        return {
+          ok: true,
+          result: toJsonSafe(result),
+          error: null,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          result: null,
+          error: toScriptError(error),
+        };
+      }
+    },
   };
 
   (window as any)[BRIDGE_KEY] = bridge;

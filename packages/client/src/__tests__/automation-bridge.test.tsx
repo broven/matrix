@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { installAutomationBridge } from "@/automation/bridge";
-import { readAutomationTestState, seedAutomationTestState } from "@/automation/test-hooks";
+import {
+  readAutomationTestState,
+  readAutomationTestStateScope,
+  seedAutomationTestState,
+  seedAutomationTestStateScope,
+} from "@/automation/test-hooks";
 
 describe("automation bridge", () => {
   beforeEach(() => {
@@ -38,6 +43,50 @@ describe("automation bridge", () => {
     expect(JSON.parse(encoded ?? "{}")).toEqual(snapshot);
   });
 
+  it("runs scripts and returns JSON-safe values", () => {
+    const bridge = installAutomationBridge({ mode: "test", dev: false });
+    const response = bridge?.runScript(`(() => ({
+      answer: 42,
+      nested: { ok: true },
+      fn: () => "ignored",
+      cyclic: (() => {
+        const value = { label: "loop" };
+        value.self = value;
+        return value;
+      })(),
+    }))()`);
+
+    expect(response).toEqual({
+      ok: true,
+      result: {
+        answer: 42,
+        nested: { ok: true },
+        fn: null,
+        cyclic: {
+          label: "loop",
+          self: null,
+        },
+      },
+      error: null,
+    });
+  });
+
+  it("reports structured errors for thrown scripts", () => {
+    const bridge = installAutomationBridge({ mode: "test", dev: false });
+    const response = bridge?.runScript(`(() => {
+      throw new Error("boom");
+    })()`);
+
+    expect(response).toMatchObject({
+      ok: false,
+      result: null,
+      error: {
+        name: "Error",
+        message: "boom",
+      },
+    });
+  });
+
   it("handles self-referential arrays without recursion overflow", () => {
     const bridge = installAutomationBridge({ mode: "test", dev: false });
     const cyclicArray: unknown[] = [];
@@ -68,6 +117,19 @@ describe("automation bridge", () => {
     expect(readAutomationTestState()).toEqual({ foo: "bar" });
     bridge?.resetTestState();
     expect(readAutomationTestState()).toBeNull();
+  });
+
+  it("clears scoped test state on reset", () => {
+    const bridge = installAutomationBridge({ mode: "test", dev: false });
+    seedAutomationTestStateScope("page", { foo: "bar" });
+    seedAutomationTestStateScope("native", { baz: 1 });
+    expect(readAutomationTestStateScope("page")).toEqual({ foo: "bar" });
+    expect(readAutomationTestStateScope("native")).toEqual({ baz: 1 });
+
+    bridge?.resetTestState(["page"]);
+
+    expect(readAutomationTestStateScope("page")).toBeNull();
+    expect(readAutomationTestStateScope("native")).toEqual({ baz: 1 });
   });
 
   it("dispatches a custom event", () => {
