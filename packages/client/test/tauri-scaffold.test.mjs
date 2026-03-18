@@ -49,11 +49,14 @@ test("client dev scripts load root worktree env before starting vite or tauri", 
 
 test("tauri lib wires automation startup hooks in debug builds", () => {
   const libPath = path.join(clientDir, "src-tauri/src/lib.rs");
+  const automationModPath = path.join(clientDir, "src-tauri/src/automation/mod.rs");
   const source = readFileSync(libPath, "utf8");
+  const automationMod = readFileSync(automationModPath, "utf8");
 
   assert.match(source, /start_loopback_server\(/);
   assert.match(source, /write_discovery_file\(None\)/);
   assert.match(source, /NoopWebviewEvalBackend/);
-  assert.match(source, /automation::core::/);
-  assert.match(source, /automation::runtime::/);
+  assert.match(automationMod, /^pub mod core;$/m);
+  assert.match(automationMod, /^pub mod runtime;$/m);
+  assert.doesNotMatch(source, /layout_hint\(/);
 });
