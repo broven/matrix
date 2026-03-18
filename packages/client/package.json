@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec vite'",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run && node --test test/**/*.test.mjs",
     "test:e2e": "playwright test",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec tauri dev'",
     "tauri:build": "tauri build"
   },
   "dependencies": {

@@ -37,6 +37,14 @@ test("tauri config points at the existing Vite frontend", () => {
   assert.equal(config.app?.windows?.[0]?.label, "main");
 });
 
+test("client dev scripts load root worktree env before starting vite or tauri", () => {
+  const packageJsonPath = path.join(clientDir, "package.json");
+  const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+
+  assert.match(pkg.scripts?.dev ?? "", /\.\.\/\.\.\/\.env\.local/);
+  assert.match(pkg.scripts?.["tauri:dev"] ?? "", /\.\.\/\.\.\/\.env\.local/);
+});
+
 test("tauri lib wires automation startup hooks in debug builds", () => {
   const libPath = path.join(clientDir, "src-tauri/src/lib.rs");
   const source = readFileSync(libPath, "utf8");
