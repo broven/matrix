@@ -6,7 +6,7 @@ use crate::automation::core::capabilities::{
 };
 use crate::automation::core::errors::AutomationErrorCode;
 use crate::automation::core::models::{
-    NativeActionRequest, ResetRequest, WaitRequest, WebviewEventRequest,
+    AutomationEnvelope, NativeActionRequest, ResetRequest, WaitRequest, WebviewEventRequest,
 };
 use serde::Serialize;
 
@@ -99,18 +99,6 @@ pub fn route_request(
             }),
         },
         ("POST", "/webview/eval") => {
-            let capability = match backend.webview_capability() {
-                Some(capability) => capability,
-                None => {
-                    return RouterResponse {
-                        status: 200,
-                        body: json!(capabilities::evaluate_webview(
-                            &MissingWebviewCapability,
-                            "",
-                        )),
-                    }
-                }
-            };
             let request = match actions::parse_webview_eval_request(body) {
                 Ok(request) => request,
                 Err(error) => {
@@ -120,27 +108,15 @@ pub fn route_request(
                     }
                 }
             };
+            let Some(capability) = backend.webview_capability() else {
+                return capability_unavailable_response(AutomationErrorCode::WebviewUnavailable);
+            };
             RouterResponse {
                 status: 200,
                 body: json!(capabilities::evaluate_webview(capability, &request.script)),
             }
         }
         ("POST", "/webview/event") => {
-            let capability = match backend.webview_capability() {
-                Some(capability) => capability,
-                None => {
-                    return RouterResponse {
-                        status: 200,
-                        body: json!(capabilities::dispatch_webview_event(
-                            &MissingWebviewCapability,
-                            &WebviewEventRequest {
-                                name: String::new(),
-                                payload: None,
-                            },
-                        )),
-                    }
-                }
-            };
             let request = match serde_json::from_slice::<WebviewEventRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
@@ -150,27 +126,15 @@ pub fn route_request(
                     }
                 }
             };
+            let Some(capability) = backend.webview_capability() else {
+                return capability_unavailable_response(AutomationErrorCode::WebviewUnavailable);
+            };
             RouterResponse {
                 status: 200,
                 body: json!(capabilities::dispatch_webview_event(capability, &request)),
             }
         }
         ("POST", "/native/invoke") => {
-            let capability = match backend.native_capability() {
-                Some(capability) => capability,
-                None => {
-                    return RouterResponse {
-                        status: 200,
-                        body: json!(capabilities::invoke_native(
-                            &MissingNativeCapability,
-                            &NativeActionRequest {
-                                action: String::new(),
-                                args: None,
-                            },
-                        )),
-                    }
-                }
-            };
             let request = match serde_json::from_slice::<NativeActionRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
@@ -180,24 +144,15 @@ pub fn route_request(
                     }
                 }
             };
+            let Some(capability) = backend.native_capability() else {
+                return capability_unavailable_response(AutomationErrorCode::NativeUnavailable);
+            };
             RouterResponse {
                 status: 200,
                 body: json!(capabilities::invoke_native(capability, &request)),
             }
         }
         ("POST", "/test/reset") => {
-            let capability = match backend.test_control_capability() {
-                Some(capability) => capability,
-                None => {
-                    return RouterResponse {
-                        status: 200,
-                        body: json!(capabilities::reset_test_control(
-                            &MissingTestControlCapability,
-                            &[],
-                        )),
-                    }
-                }
-            };
             let request = match serde_json::from_slice::<ResetRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
@@ -206,6 +161,9 @@ pub fn route_request(
                         body: json!({ "error": "invalid_json" }),
                     }
                 }
+            };
+            let Some(capability) = backend.test_control_capability() else {
+                return capability_unavailable_response(AutomationErrorCode::ResetFailed);
             };
             RouterResponse {
                 status: 200,
@@ -216,24 +174,6 @@ pub fn route_request(
             }
         }
         ("POST", "/wait") => {
-            let capability =
-                match backend.wait_capability() {
-                    Some(capability) => capability,
-                    None => return RouterResponse {
-                        status: 200,
-                        body: json!(capabilities::wait_for_condition(
-                            &MissingWaitCapability,
-                            &WaitRequest {
-                                timeout_ms: 0,
-                                interval_ms: 0,
-                                condition:
-                                    crate::automation::core::models::WaitCondition::WebviewEval {
-                                        script: String::new(),
-                                    },
-                            },
-                        )),
-                    },
-                };
             let request = match serde_json::from_slice::<WaitRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
@@ -242,6 +182,9 @@ pub fn route_request(
                         body: json!({ "error": "invalid_json" }),
                     }
                 }
+            };
+            let Some(capability) = backend.wait_capability() else {
+                return capability_unavailable_response(AutomationErrorCode::UnsupportedCondition);
             };
             RouterResponse {
                 status: 200,
@@ -255,55 +198,10 @@ pub fn route_request(
     }
 }
 
-struct MissingWebviewCapability;
-
-impl WebviewCapability for MissingWebviewCapability {
-    fn eval(&self, _script: &str) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::WebviewUnavailable)
-    }
-
-    fn dispatch_event(
-        &self,
-        _name: &str,
-        _payload: Option<&Value>,
-    ) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::WebviewUnavailable)
-    }
-
-    fn snapshot(&self) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::WebviewUnavailable)
-    }
-}
-
-struct MissingNativeCapability;
-
-impl NativeCapability for MissingNativeCapability {
-    fn invoke(&self, _action: &str, _args: Option<&Value>) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::NativeUnavailable)
-    }
-}
-
-struct MissingTestControlCapability;
-
-impl TestControlCapability for MissingTestControlCapability {
-    fn reset(
-        &self,
-        _scopes: &[crate::automation::core::models::ResetScope],
-    ) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::ResetFailed)
-    }
-}
-
-struct MissingWaitCapability;
-
-impl WaitCapability for MissingWaitCapability {
-    fn wait_for(
-        &self,
-        _condition: &crate::automation::core::models::WaitCondition,
-        _timeout_ms: u64,
-        _interval_ms: u64,
-    ) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::UnsupportedCondition)
+fn capability_unavailable_response(error: AutomationErrorCode) -> RouterResponse {
+    RouterResponse {
+        status: 200,
+        body: json!(AutomationEnvelope::<Value>::failure(error)),
     }
 }
 
