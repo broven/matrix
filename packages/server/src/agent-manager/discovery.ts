@@ -1,9 +1,9 @@
 import { execSync } from "node:child_process";
 import { platform } from "node:os";
 import type { AgentConfig } from "@matrix/protocol";
-import { KNOWN_AGENTS } from "./known-agents.js";
+import { KNOWN_AGENTS, type KnownAgent } from "./known-agents.js";
 
-interface RegistryAgent {
+export interface RegistryAgent {
   id: string;
   name: string;
   description?: string;
@@ -17,7 +17,7 @@ interface RegistryAgent {
   };
 }
 
-interface RegistryResponse {
+export interface RegistryResponse {
   agents: RegistryAgent[];
 }
 
@@ -25,7 +25,7 @@ const REGISTRY_URL =
   "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 const FETCH_TIMEOUT_MS = 3_000;
 
-function isCommandInstalled(command: string): boolean {
+export function isCommandInstalled(command: string): boolean {
   try {
     const checkCmd =
       platform() === "win32" ? `where.exe ${command}` : `command -v ${command}`;
@@ -36,7 +36,7 @@ function isCommandInstalled(command: string): boolean {
   }
 }
 
-async function fetchRegistry(): Promise<RegistryResponse | null> {
+export async function fetchRegistry(): Promise<RegistryResponse | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -58,7 +58,7 @@ async function fetchRegistry(): Promise<RegistryResponse | null> {
   }
 }
 
-const FALLBACK_AGENTS: AgentConfig[] = [
+export const FALLBACK_AGENTS: AgentConfig[] = [
   {
     id: "claude-acp",
     name: "Claude Code",
@@ -67,15 +67,25 @@ const FALLBACK_AGENTS: AgentConfig[] = [
   },
 ];
 
-export async function discoverAgents(): Promise<AgentConfig[]> {
-  if (!isCommandInstalled("npx")) {
+/** Dependencies that can be injected for testing */
+export interface DiscoveryDeps {
+  checkCommand: (cmd: string) => boolean;
+  fetchRegistryData: () => Promise<RegistryResponse | null>;
+  knownAgents: KnownAgent[];
+}
+
+/**
+ * Core discovery logic, testable with injected dependencies.
+ */
+export async function discoverAgentsWithDeps(deps: DiscoveryDeps): Promise<AgentConfig[]> {
+  if (!deps.checkCommand("npx")) {
     console.warn("[discovery] npx not found on PATH, using fallback agents");
     return FALLBACK_AGENTS;
   }
 
   let registry: RegistryResponse | null = null;
   try {
-    registry = await fetchRegistry();
+    registry = await deps.fetchRegistryData();
   } catch (error) {
     console.warn("[discovery] Registry discovery failed:", error);
   }
@@ -89,8 +99,8 @@ export async function discoverAgents(): Promise<AgentConfig[]> {
 
   const discovered: AgentConfig[] = [];
 
-  for (const known of KNOWN_AGENTS) {
-    if (!isCommandInstalled(known.detectCommand)) {
+  for (const known of deps.knownAgents) {
+    if (!deps.checkCommand(known.detectCommand)) {
       continue;
     }
 
@@ -120,4 +130,13 @@ export async function discoverAgents(): Promise<AgentConfig[]> {
   }
 
   return discovered;
+}
+
+/** Production entry point — wires in real dependencies */
+export async function discoverAgents(): Promise<AgentConfig[]> {
+  return discoverAgentsWithDeps({
+    checkCommand: isCommandInstalled,
+    fetchRegistryData: fetchRegistry,
+    knownAgents: KNOWN_AGENTS,
+  });
 }
