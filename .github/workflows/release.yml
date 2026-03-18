@@ -251,6 +251,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Detect channel
+        run: |
+          if [[ "${{ github.ref_name }}" == *-* ]]; then
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+          else
+            echo "PRERELEASE=false" >> $GITHUB_ENV
+          fi
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -291,9 +299,14 @@ jobs:
 
       - name: Create GitHub Release
         run: |
+          PRERELEASE_FLAG=""
+          if [ "$PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
           gh release create "${{ github.ref_name }}" \
             artifacts/* \
             --title "${{ github.ref_name }}" \
-            --generate-notes
+            --generate-notes \
+            $PRERELEASE_FLAG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
