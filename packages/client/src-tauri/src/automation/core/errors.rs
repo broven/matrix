@@ -1,6 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AutomationErrorCode {
     Unauthorized,
     InvalidJson,
@@ -28,5 +30,11 @@ impl AutomationErrorCode {
             Self::ResetFailed => "reset_failed",
             Self::InternalError => "internal_error",
         }
+    }
+}
+
+impl fmt::Display for AutomationErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }

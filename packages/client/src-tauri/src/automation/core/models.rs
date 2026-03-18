@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::errors::AutomationErrorCode;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ResetScope {
@@ -57,7 +59,7 @@ pub struct AutomationEnvelope<T> {
     #[serde(default)]
     pub result: Option<T>,
     #[serde(default)]
-    pub error: Option<String>,
+    pub error: Option<AutomationErrorCode>,
 }
 
 impl<T> AutomationEnvelope<T> {
@@ -69,11 +71,11 @@ impl<T> AutomationEnvelope<T> {
         }
     }
 
-    pub fn failure(error: impl Into<String>) -> Self {
+    pub fn failure(error: AutomationErrorCode) -> Self {
         Self {
             ok: false,
             result: None,
-            error: Some(error.into()),
+            error: Some(error),
         }
     }
 }
