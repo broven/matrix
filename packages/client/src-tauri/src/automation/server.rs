@@ -428,9 +428,21 @@ fn read_test_response_body(stream: &mut TcpStream) -> Vec<u8> {
 struct TestWebviewEvalBackend;
 
 #[cfg(test)]
-impl actions::WebviewEvalBackend for TestWebviewEvalBackend {
-    fn evaluate_script(&self, script: &str) -> Result<Value, String> {
+impl crate::automation::core::capabilities::WebviewCapability for TestWebviewEvalBackend {
+    fn eval(&self, script: &str) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
         Ok(json!({ "echo": script }))
+    }
+
+    fn dispatch_event(
+        &self,
+        _name: &str,
+        _payload: Option<&Value>,
+    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
+        Err(crate::automation::core::errors::AutomationErrorCode::UnsupportedAction)
+    }
+
+    fn snapshot(&self) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
+        Ok(json!({ "snapshot": true }))
     }
 }
 

@@ -32,7 +32,7 @@ pub trait WaitCapability {
     ) -> Result<Value, AutomationErrorCode>;
 }
 
-pub fn invoke_native<C: NativeCapability>(
+pub fn invoke_native<C: NativeCapability + ?Sized>(
     capability: &C,
     request: &NativeActionRequest,
 ) -> AutomationEnvelope<Value> {
@@ -42,7 +42,7 @@ pub fn invoke_native<C: NativeCapability>(
     }
 }
 
-pub fn evaluate_webview<C: WebviewCapability>(
+pub fn evaluate_webview<C: WebviewCapability + ?Sized>(
     capability: &C,
     script: &str,
 ) -> AutomationEnvelope<Value> {
@@ -52,7 +52,7 @@ pub fn evaluate_webview<C: WebviewCapability>(
     }
 }
 
-pub fn dispatch_webview_event<C: WebviewCapability>(
+pub fn dispatch_webview_event<C: WebviewCapability + ?Sized>(
     capability: &C,
     request: &WebviewEventRequest,
 ) -> AutomationEnvelope<Value> {
@@ -62,14 +62,14 @@ pub fn dispatch_webview_event<C: WebviewCapability>(
     }
 }
 
-pub fn snapshot_webview<C: WebviewCapability>(capability: &C) -> AutomationEnvelope<Value> {
+pub fn snapshot_webview<C: WebviewCapability + ?Sized>(capability: &C) -> AutomationEnvelope<Value> {
     match capability.snapshot() {
         Ok(result) => AutomationEnvelope::success(result),
         Err(error) => AutomationEnvelope::failure(error),
     }
 }
 
-pub fn reset_test_control<C: TestControlCapability>(
+pub fn reset_test_control<C: TestControlCapability + ?Sized>(
     capability: &C,
     scopes: &[ResetScope],
 ) -> AutomationEnvelope<Value> {
@@ -79,7 +79,7 @@ pub fn reset_test_control<C: TestControlCapability>(
     }
 }
 
-pub fn wait_for_condition<C: WaitCapability>(
+pub fn wait_for_condition<C: WaitCapability + ?Sized>(
     capability: &C,
     request: &WaitRequest,
 ) -> AutomationEnvelope<Value> {

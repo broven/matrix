@@ -1,28 +1,40 @@
 use serde::Deserialize;
-use serde::Serialize;
 use serde_json::Value;
+
+use super::core::capabilities::{
+    self, NativeCapability, WebviewCapability,
+};
+use super::core::errors::AutomationErrorCode;
+use super::core::models::{AutomationEnvelope, NativeActionRequest};
 
 #[derive(Debug, Deserialize)]
 pub struct WebviewEvalRequest {
     pub script: String,
 }
 
-#[derive(Debug, Serialize)]
-pub struct WebviewEvalEnvelope {
-    pub ok: bool,
-    pub result: Option<Value>,
-    pub error: Option<String>,
-}
+pub type WebviewEvalEnvelope = AutomationEnvelope<Value>;
 
-pub trait WebviewEvalBackend: Send + Sync {
-    fn evaluate_script(&self, script: &str) -> Result<Value, String>;
-}
+pub trait WebviewEvalBackend: WebviewCapability + Send + Sync {}
+
+impl<T> WebviewEvalBackend for T where T: WebviewCapability + Send + Sync {}
 
 pub struct NoopWebviewEvalBackend;
 
-impl WebviewEvalBackend for NoopWebviewEvalBackend {
-    fn evaluate_script(&self, _script: &str) -> Result<Value, String> {
-        Err("webview_eval_not_wired".to_string())
+impl WebviewCapability for NoopWebviewEvalBackend {
+    fn eval(&self, _script: &str) -> Result<Value, AutomationErrorCode> {
+        Err(AutomationErrorCode::WebviewUnavailable)
+    }
+
+    fn dispatch_event(
+        &self,
+        _name: &str,
+        _payload: Option<&Value>,
+    ) -> Result<Value, AutomationErrorCode> {
+        Err(AutomationErrorCode::WebviewUnavailable)
+    }
+
+    fn snapshot(&self) -> Result<Value, AutomationErrorCode> {
+        Err(AutomationErrorCode::WebviewUnavailable)
     }
 }
 
@@ -39,68 +51,34 @@ pub fn evaluate_webview_script(
     backend: &dyn WebviewEvalBackend,
     script: &str,
 ) -> WebviewEvalEnvelope {
-    match backend.evaluate_script(script) {
-        Ok(result) => WebviewEvalEnvelope {
-            ok: true,
-            result: Some(result),
-            error: None,
-        },
-        Err(error) => WebviewEvalEnvelope {
-            ok: false,
-            result: None,
-            error: Some(error),
-        },
-    }
+    capabilities::evaluate_webview(backend, script)
 }
 
-#[derive(Debug, Deserialize)]
-pub struct NativeActionRequest {
-    pub action: String,
-    pub args: Option<Value>,
-}
+pub type NativeActionEnvelope = AutomationEnvelope<Value>;
 
-#[derive(Debug, Serialize)]
-pub struct NativeActionEnvelope {
-    pub ok: bool,
-    pub result: Option<Value>,
-    pub error: Option<String>,
-}
+pub trait NativeActionBackend: NativeCapability + Send + Sync {}
 
-pub trait NativeActionBackend: Send + Sync {
-    fn window_focus(&self) -> Result<Value, String>;
-    fn window_reload(&self) -> Result<Value, String>;
-    fn sidecar_status(&self) -> Result<Value, String>;
-}
+impl<T> NativeActionBackend for T where T: NativeCapability + Send + Sync {}
 
 pub fn dispatch_native_action(
     backend: &dyn NativeActionBackend,
     action: &str,
-    _args: Option<&Value>,
+    args: Option<&Value>,
 ) -> NativeActionEnvelope {
-    let result = match action {
-        "window.focus" => backend.window_focus(),
-        "window.reload" => backend.window_reload(),
-        "sidecar.status" => backend.sidecar_status(),
-        _ => Err("unsupported_action".to_string()),
-    };
-
-    match result {
-        Ok(result) => NativeActionEnvelope {
-            ok: true,
-            result: Some(result),
-            error: None,
+    capabilities::invoke_native(
+        backend,
+        &NativeActionRequest {
+            action: action.to_string(),
+            args: args.cloned(),
         },
-        Err(error) => NativeActionEnvelope {
-            ok: false,
-            result: None,
-            error: Some(error),
-        },
-    }
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{dispatch_native_action, NativeActionBackend};
+    use super::dispatch_native_action;
+    use crate::automation::core::capabilities::NativeCapability;
+    use crate::automation::core::errors::AutomationErrorCode;
     use serde_json::json;
     use serde_json::Value;
 
@@ -111,23 +89,24 @@ mod tests {
         status_calls: usize,
     }
 
-    impl NativeActionBackend for std::sync::Mutex<MockNativeActionBackend> {
-        fn window_focus(&self) -> Result<Value, String> {
+    impl NativeCapability for std::sync::Mutex<MockNativeActionBackend> {
+        fn invoke(&self, action: &str, _args: Option<&Value>) -> Result<Value, AutomationErrorCode> {
             let mut guard = self.lock().expect("lock should succeed");
-            guard.focus_calls += 1;
-            Ok(json!({ "focused": true }))
-        }
-
-        fn window_reload(&self) -> Result<Value, String> {
-            let mut guard = self.lock().expect("lock should succeed");
-            guard.reload_calls += 1;
-            Ok(json!({ "reloaded": true }))
-        }
-
-        fn sidecar_status(&self) -> Result<Value, String> {
-            let mut guard = self.lock().expect("lock should succeed");
-            guard.status_calls += 1;
-            Ok(json!({ "running": true }))
+            match action {
+                "window.focus" => {
+                    guard.focus_calls += 1;
+                    Ok(json!({ "focused": true }))
+                }
+                "window.reload" => {
+                    guard.reload_calls += 1;
+                    Ok(json!({ "reloaded": true }))
+                }
+                "sidecar.status" => {
+                    guard.status_calls += 1;
+                    Ok(json!({ "running": true }))
+                }
+                _ => Err(AutomationErrorCode::UnsupportedAction),
+            }
         }
     }
 
@@ -164,6 +143,6 @@ mod tests {
         let response = dispatch_native_action(&backend, "sidecar.restart", None);
         assert_eq!(response.ok, false);
         assert_eq!(response.result, None);
-        assert_eq!(response.error.as_deref(), Some("unsupported_action"));
+        assert_eq!(response.error, Some(AutomationErrorCode::UnsupportedAction));
     }
 }
