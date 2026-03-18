@@ -18,6 +18,8 @@ struct GitHubAsset {
 struct GitHubRelease {
     tag_name: String,
     body: Option<String>,
+    draft: Option<bool>,
+    prerelease: Option<bool>,
     assets: Vec<GitHubAsset>,
 }
 
@@ -115,31 +117,62 @@ fn validate_download_url(url: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
+pub async fn check_update(app: AppHandle, channel: Option<String>) -> Result<UpdateInfo, String> {
     let current_version = app.config().version.clone().unwrap_or_default();
-
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/releases/latest",
-        GITHUB_OWNER, GITHUB_REPO
-    );
+    let channel = channel.unwrap_or_else(|| "stable".to_string());
 
     let client = reqwest::Client::new();
-    let response = client
-        .get(&url)
-        .header("User-Agent", "matrix-client")
-        .header("Accept", "application/vnd.github.v3+json")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to check for updates: {}", e))?;
 
-    if !response.status().is_success() {
-        return Err(format!("GitHub API returned status: {}", response.status()));
-    }
+    let release = if channel == "beta" {
+        // Fetch all releases, pick the first non-draft
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/releases?per_page=10",
+            GITHUB_OWNER, GITHUB_REPO
+        );
+        let response = client
+            .get(&url)
+            .header("User-Agent", "matrix-client")
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to check for updates: {}", e))?;
 
-    let release: GitHubRelease = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse release info: {}", e))?;
+        if !response.status().is_success() {
+            return Err(format!("GitHub API returned status: {}", response.status()));
+        }
+
+        let releases: Vec<GitHubRelease> = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse releases: {}", e))?;
+
+        releases
+            .into_iter()
+            .find(|r| !r.draft.unwrap_or(false))
+            .ok_or_else(|| "No releases found".to_string())?
+    } else {
+        // Stable: fetch latest (existing behavior)
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/releases/latest",
+            GITHUB_OWNER, GITHUB_REPO
+        );
+        let response = client
+            .get(&url)
+            .header("User-Agent", "matrix-client")
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to check for updates: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("GitHub API returned status: {}", response.status()));
+        }
+
+        response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse release info: {}", e))?
+    };
 
     let latest_version = strip_v_prefix(&release.tag_name);
     let has_update = is_newer_version(&current_version, latest_version);
