@@ -48,7 +48,7 @@ sudo systemctl restart matrix-server
 
 | Variable | Default | Description |
 |---|---|---|
-| `MATRIX_PORT` | `8080` | Listen port |
+| `MATRIX_PORT` | `19880` | Listen port |
 | `MATRIX_TOKEN` | *(generated)* | Auth token |
 | `MATRIX_HOST` | `0.0.0.0` | Bind address |
 | `MATRIX_DB_PATH` | `/var/lib/matrix/matrix.db` | SQLite database path |
