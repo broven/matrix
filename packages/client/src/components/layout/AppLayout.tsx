@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AgentListItem, SessionInfo } from "@matrix/protocol";
-import { PanelLeftOpen, Plus, Settings } from "lucide-react";
+import { MessageSquarePlus } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Settings } from "lucide-react";
 
 const SESSION_STATUS_ORDER: Record<SessionInfo["status"], number> = {
   active: 0,
@@ -161,7 +162,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <aside className="hidden h-full w-[280px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+      <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
         <Sidebar
           agents={agents}
           sessions={sortedSessions}
@@ -175,17 +176,17 @@ export function AppLayout() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start gap-2"
+            className="w-full justify-start gap-2 rounded-lg text-xs"
             onClick={() => setShowSettings(true)}
           >
-            <Settings className="size-4" />
+            <Settings className="size-3.5" />
             Settings
           </Button>
         </div>
       </aside>
 
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-        <SheetContent side="left" className="w-[86vw] max-w-[320px] border-sidebar-border bg-sidebar p-0">
+        <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar p-0">
           <Sidebar
             agents={agents}
             sessions={sortedSessions}
@@ -219,22 +220,22 @@ export function AppLayout() {
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">
-            <div className="max-w-md space-y-4 rounded-[1.75rem] border border-dashed border-border bg-card/70 p-8 text-center shadow-sm">
-              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <PanelLeftOpen className="size-6" />
+            <div className="max-w-sm space-y-5 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-accent text-muted-foreground">
+                <MessageSquarePlus className="size-5" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-2xl font-semibold tracking-tight">No session selected</h2>
+                <h2 className="text-xl font-semibold tracking-tight">No session selected</h2>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  Pick a session from the sidebar or create a new one to open the chat view.
+                  Pick a session from the sidebar or create a new one.
                 </p>
               </div>
               <Button
-                className="w-full sm:w-auto"
+                className="rounded-xl"
                 onClick={() => setMobileSidebarOpen(true)}
                 variant="outline"
+                size="sm"
               >
-                <Plus className="size-4" />
                 Open Sessions
               </Button>
             </div>

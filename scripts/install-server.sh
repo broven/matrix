@@ -277,10 +277,10 @@ main() {
     # Determine port
     if [ -z "$PORT" ]; then
       if [ -t 0 ]; then
-        printf 'Port [8080]: '
+        printf 'Port [19880]: '
         read -r PORT
       fi
-      PORT="${PORT:-8080}"
+      PORT="${PORT:-19880}"
     fi
 
     # Determine token

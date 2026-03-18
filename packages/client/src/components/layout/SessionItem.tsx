@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo } from "@matrix/protocol";
-import { Clock3, X } from "lucide-react";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SessionItemProps {
@@ -27,37 +27,20 @@ function formatRelativeTime(value: string) {
   return `${diffDays}d ago`;
 }
 
-function getSessionStatusMeta(status: SessionInfo["status"]) {
+function getStatusColor(status: SessionInfo["status"]) {
   switch (status) {
     case "active":
-      return {
-        label: "Active",
-        indicatorClassName:
-          "bg-success shadow-[0_0_0_4px_color-mix(in_oklch,var(--success)_18%,transparent)]",
-      };
+      return "bg-success";
     case "restoring":
-      return {
-        label: "Restoring",
-        indicatorClassName:
-          "bg-primary shadow-[0_0_0_4px_color-mix(in_oklch,var(--primary)_18%,transparent)]",
-      };
+      return "bg-primary animate-pulse";
     case "suspended":
-      return {
-        label: "Suspended",
-        indicatorClassName:
-          "bg-amber-500 shadow-[0_0_0_4px_color-mix(in_oklch,oklch(76.9%_0.188_70.08)_18%,transparent)]",
-      };
+      return "bg-amber-400";
     case "closed":
-      return {
-        label: "Closed",
-        indicatorClassName:
-          "bg-slate-400 shadow-[0_0_0_4px_color-mix(in_oklch,oklch(70.4%_0.04_256.788)_18%,transparent)]",
-      };
+      return "bg-muted-foreground/30";
   }
 }
 
 export function SessionItem({ session, selected, onSelect, onDelete }: SessionItemProps) {
-  const statusMeta = getSessionStatusMeta(session.status);
   const [confirming, setConfirming] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -139,20 +122,20 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
     return (
       <div
         ref={itemRef}
-        className="flex w-full items-center justify-between rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3"
+        className="flex w-full items-center justify-between rounded-xl border border-destructive/30 bg-destructive/8 px-3 py-2.5"
       >
-        <span className="text-sm font-medium">Delete session?</span>
-        <div className="flex gap-2">
+        <span className="text-sm font-medium">Delete?</span>
+        <div className="flex gap-1.5">
           <button
             type="button"
-            className="rounded-lg bg-destructive px-3 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
+            className="rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
             onClick={confirmDelete}
           >
             Yes
           </button>
           <button
             type="button"
-            className="rounded-lg bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
+            className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
             onClick={cancelDelete}
           >
             No
@@ -166,10 +149,10 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
     <>
       <div
         className={cn(
-          "group relative flex w-full flex-col gap-2 rounded-2xl border px-4 py-3 text-left transition-colors",
+          "group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
           selected
-            ? "border-primary/40 bg-primary/10 shadow-sm"
-            : "border-transparent bg-transparent hover:border-sidebar-border hover:bg-background/75",
+            ? "bg-accent"
+            : "hover:bg-accent/50",
         )}
         role="button"
         tabIndex={0}
@@ -185,55 +168,38 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
           }
         }}
       >
-        <span
-          className={cn(
-            "absolute inset-y-3 left-1 w-1 rounded-full transition-colors",
-            selected ? "bg-primary" : "bg-transparent group-hover:bg-border",
-          )}
-        />
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{session.agentId}</p>
-            <p className="truncate text-xs text-muted-foreground">{session.cwd}</p>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <div className="relative mt-1">
-              <div className={cn("size-2 rounded-full transition-opacity group-hover:opacity-0 group-focus-within:opacity-0", statusMeta.indicatorClassName)} />
-              <div
-                role="button"
-                tabIndex={0}
-                className="absolute inset-0 flex -translate-x-0.5 -translate-y-0.5 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  triggerDelete();
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    triggerDelete();
-                  }
-                }}
-                aria-label="Delete session"
-              >
-                <X className="size-3.5 text-muted-foreground hover:text-destructive" />
-              </div>
-            </div>
-            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              {statusMeta.label}
-            </span>
-          </div>
+        <div className={cn("size-2 shrink-0 rounded-full", getStatusColor(session.status))} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{session.agentId}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {formatRelativeTime(session.lastActiveAt || session.createdAt)}
+          </p>
         </div>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Clock3 className="size-3" />
-          {formatRelativeTime(session.lastActiveAt || session.createdAt)}
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex size-6 items-center justify-center rounded-md opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10"
+          onClick={(event) => {
+            event.stopPropagation();
+            triggerDelete();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.stopPropagation();
+              triggerDelete();
+            }
+          }}
+          aria-label="Delete session"
+        >
+          <X className="size-3.5 text-muted-foreground hover:text-destructive" />
         </div>
       </div>
 
-      {contextMenu ? (
+      {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-md"
+          className="fixed z-50 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
@@ -245,7 +211,7 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
             Delete
           </button>
         </div>
-      ) : null}
+      )}
     </>
   );
 }

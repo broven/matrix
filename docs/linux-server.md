@@ -22,6 +22,13 @@ Re-run the same install command. The script detects the existing installation, d
 curl -fsSL https://raw.githubusercontent.com/broven/matrix/main/scripts/install-server.sh | sudo bash
 ```
 
+To change port or token during an update, pass them as arguments:
+
+```bash
+curl -fsSL .../install-server.sh | sudo bash -s -- --port 9090 --token new-secret
+```
+
+
 ## File Layout
 
 | Path | Purpose |
@@ -42,7 +49,7 @@ sudo systemctl restart matrix-server
 
 | Variable | Default | Description |
 |---|---|---|
-| `MATRIX_PORT` | `8080` | Listen port |
+| `MATRIX_PORT` | `19880` | Listen port |
 | `MATRIX_TOKEN` | *(generated)* | Auth token |
 | `MATRIX_HOST` | `0.0.0.0` | Bind address |
 | `MATRIX_DB_PATH` | `/var/lib/matrix/matrix.db` | SQLite database path |

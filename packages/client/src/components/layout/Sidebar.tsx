@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AgentListItem, ConnectionStatus, SessionInfo } from "@matrix/protocol";
-import { FolderSearch2, Plus, Search, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,9 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SessionItem } from "@/components/layout/SessionItem";
+import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   agents: AgentListItem[];
@@ -79,43 +78,48 @@ export function Sidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="space-y-5 px-5 pb-5 pt-6">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="text-xs font-medium uppercase tracking-[0.3em] text-muted-foreground">
-              Workspace
+      <div className="space-y-4 px-4 pb-4 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background">
+              <span className="text-sm font-bold">M</span>
             </div>
-            <div className="text-2xl font-semibold tracking-tight text-gradient">Matrix</div>
+            <div>
+              <div className="text-sm font-semibold tracking-tight">Matrix</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Workspace
+              </div>
+            </div>
           </div>
-          <Badge
-            variant={connectionStatus === "connected" ? "default" : "secondary"}
-            className="rounded-full px-3 py-1"
-          >
-            {connectionStatus}
-          </Badge>
+          <div
+            className={cn(
+              "size-2 rounded-full",
+              connectionStatus === "connected" ? "bg-success" : "bg-muted-foreground/40",
+            )}
+            title={connectionStatus}
+          />
         </div>
 
-        {sessions.length > 5 ? (
+        {sessions.length > 5 && (
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search sessions"
-              className="pl-9"
+              className="h-8 rounded-lg border-border/50 bg-background pl-8 text-sm"
             />
           </div>
-        ) : null}
+        )}
       </div>
 
-      <ScrollArea className="min-h-0 flex-1 px-3">
-        <div className="space-y-1 pb-4">
+      <ScrollArea className="min-h-0 flex-1 px-2">
+        <div className="space-y-0.5 pb-4">
           {filteredSessions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-sidebar-border bg-background/60 px-4 py-6 text-center">
-              <FolderSearch2 className="mx-auto mb-3 size-5 text-muted-foreground" />
-              <p className="text-sm font-medium">No sessions found</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Create a new session or adjust the search filter.
+            <div className="px-3 py-8 text-center">
+              <p className="text-sm text-muted-foreground">No sessions</p>
+              <p className="mt-1 text-xs text-muted-foreground/60">
+                Create one to get started.
               </p>
             </div>
           ) : (
@@ -132,26 +136,21 @@ export function Sidebar({
         </div>
       </ScrollArea>
 
-      <div className="space-y-4 border-t border-sidebar-border px-5 py-5">
+      <div className="space-y-3 border-t border-sidebar-border px-4 py-4">
         <Button
-          className="w-full justify-start rounded-xl"
+          className="w-full justify-center gap-2 rounded-xl text-sm"
           onClick={() => setShowCreateForm((current) => !current)}
           variant={showCreateForm ? "secondary" : "default"}
+          size="sm"
         >
           <Plus className="size-4" />
           New Session
         </Button>
 
-        {showCreateForm ? (
-          <div className="space-y-3 rounded-2xl border border-sidebar-border bg-background/70 p-3">
-            <div className="space-y-1">
-              <p className="text-sm font-medium">Launch a fresh agent session</p>
-              <p className="text-xs leading-5 text-muted-foreground">
-                Sessions appear immediately in the sidebar and auto-open after creation.
-              </p>
-            </div>
+        {showCreateForm && (
+          <div className="space-y-2.5 rounded-xl border border-border/60 bg-background p-3">
             <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="h-8 w-full rounded-lg text-sm">
                 <SelectValue placeholder="Choose an agent" />
               </SelectTrigger>
               <SelectContent>
@@ -166,23 +165,18 @@ export function Sidebar({
               value={cwd}
               onChange={(event) => setCwd(event.target.value)}
               placeholder="Working directory"
+              className="h-8 rounded-lg text-sm"
             />
             <Button
-              className="w-full"
+              className="w-full rounded-lg"
+              size="sm"
               disabled={creating || !selectedAgent || !cwd.trim()}
               onClick={handleCreate}
             >
-              {creating ? "Creating..." : "Create Session"}
+              {creating ? "Creating..." : "Create"}
             </Button>
           </div>
-        ) : null}
-
-        <Separator />
-
-        <div className="flex items-center gap-2 text-xs leading-5 text-muted-foreground">
-          <Sparkles className="size-4 text-primary" />
-          Responsive sidebar on desktop, drawer navigation on mobile.
-        </div>
+        )}
       </div>
     </div>
   );
