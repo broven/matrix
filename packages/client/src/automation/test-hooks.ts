@@ -24,7 +24,10 @@ function clearAutomationTestStateScope(scope: string): void {
 }
 
 export function resetAutomationTestState(scopes?: string[]): void {
-  if (scopes && scopes.length > 0) {
+  if (scopes) {
+    if (scopes.length === 0) {
+      return;
+    }
     for (const scope of scopes) {
       clearAutomationTestStateScope(scope);
     }

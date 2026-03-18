@@ -87,6 +87,17 @@ describe("automation bridge", () => {
     });
   });
 
+  it("runs scripts without exposing bridge-local bindings", () => {
+    const bridge = installAutomationBridge({ mode: "test", dev: false });
+    const response = bridge?.runScript("typeof toScriptError");
+
+    expect(response).toEqual({
+      ok: true,
+      result: "undefined",
+      error: null,
+    });
+  });
+
   it("handles self-referential arrays without recursion overflow", () => {
     const bridge = installAutomationBridge({ mode: "test", dev: false });
     const cyclicArray: unknown[] = [];
@@ -130,6 +141,17 @@ describe("automation bridge", () => {
 
     expect(readAutomationTestStateScope("page")).toBeNull();
     expect(readAutomationTestStateScope("native")).toEqual({ baz: 1 });
+  });
+
+  it("treats an empty reset scope list as a no-op", () => {
+    const bridge = installAutomationBridge({ mode: "test", dev: false });
+    seedAutomationTestState({ foo: "bar" });
+    seedAutomationTestStateScope("page", { page: true });
+
+    bridge?.resetTestState([]);
+
+    expect(readAutomationTestState()).toEqual({ foo: "bar" });
+    expect(readAutomationTestStateScope("page")).toEqual({ page: true });
   });
 
   it("dispatches a custom event", () => {

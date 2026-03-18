@@ -129,6 +129,11 @@ function toScriptError(error: unknown): AutomationScriptError {
   };
 }
 
+function executeScript(script: string): unknown {
+  // Run as a global expression to avoid exposing bridge-local bindings to scripts.
+  return Function('"use strict"; return (' + script + ");")();
+}
+
 function getSnapshot(): Record<string, unknown> {
   return {
     url: window.location.href,
@@ -151,7 +156,7 @@ export function installAutomationBridge(options?: InstallOptions): AutomationBri
     dispatchEvent: dispatchAutomationEvent,
     runScript(script: string): AutomationScriptResponse {
       try {
-        const result = eval(script);
+        const result = executeScript(script);
         return {
           ok: true,
           result: toJsonSafe(result),
