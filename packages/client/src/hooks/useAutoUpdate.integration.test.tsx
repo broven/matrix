@@ -273,13 +273,13 @@ describe("useAutoUpdate integration", () => {
 
     renderApp();
 
-    // Wait for the check to complete
+    // Wait for async channel load + auto-check to complete
     await waitFor(() => {
-      expect(screen.getByTestId("state").textContent).toBe("idle");
+      expect(mockInvoke).toHaveBeenCalledWith("check_update", { channel: "stable" });
     });
 
-    // Ensure check was actually called (now passes channel)
-    expect(mockInvoke).toHaveBeenCalledWith("check_update", { channel: "stable" });
+    // State should be idle (no update available)
+    expect(screen.getByTestId("state").textContent).toBe("idle");
 
     // No toast should be visible
     expect(screen.queryByText(/available/)).not.toBeInTheDocument();
