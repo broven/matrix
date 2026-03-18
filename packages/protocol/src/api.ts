@@ -32,6 +32,8 @@ export interface AgentListItem {
   name: string;
   command: string;
   available: boolean;
+  icon?: string;
+  description?: string;
 }
 
 /** History entry type discriminator */

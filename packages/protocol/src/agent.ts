@@ -5,6 +5,8 @@ export interface AgentConfig {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  icon?: string;
+  description?: string;
 }
 
 /** Agent info returned after ACP initialize */

@@ -1,4 +1,3 @@
-import type { AgentConfig } from "@matrix/protocol";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -9,7 +8,6 @@ export interface ServerConfig {
   dbPath: string;
   webDir: string | null;
   localMode: boolean;
-  agents: AgentConfig[];
 }
 
 function parseArgs(): Record<string, string> {
@@ -41,13 +39,5 @@ export function loadConfig(): ServerConfig {
     dbPath: args.db || process.env.MATRIX_DB_PATH || getDefaultDbPath(localMode),
     webDir: args.web || process.env.MATRIX_WEB_DIR || null,
     localMode,
-    agents: [
-      {
-        id: "claude-code-acp",
-        name: "Claude Code",
-        command: process.env.CLAUDE_CODE_ACP_PATH || "claude-code-acp",
-        args: [],
-      },
-    ],
   };
 }
