@@ -28,6 +28,7 @@ To change port or token during an update, pass them as arguments:
 curl -fsSL .../install-server.sh | sudo bash -s -- --port 9090 --token new-secret
 ```
 
+
 ## File Layout
 
 | Path | Purpose |

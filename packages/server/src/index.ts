@@ -5,6 +5,7 @@ import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
 import { generateToken } from "./auth/token.js";
+import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
 import { Store } from "./store/index.js";
@@ -17,12 +18,10 @@ import { SessionManager } from "./session-manager/index.js";
 import type { CreateSessionRequest } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
-import { buildConnectionUri } from "./connect-info.js";
+import { buildConnectionUri, getLocalIp } from "./connect-info.js";
 
 const config = loadConfig();
-const serverToken = config.localMode
-  ? "local"
-  : (process.env.MATRIX_TOKEN || generateToken());
+const serverToken = process.env.MATRIX_TOKEN || getPersistedToken();
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);
 store.normalizeSessionsOnStartup();
@@ -239,6 +238,32 @@ app.use("/agents/*", authMiddleware(serverToken));
 app.use("/sessions", authMiddleware(serverToken));
 app.use("/sessions/*", authMiddleware(serverToken));
 
+function isLoopbackRequest(c: any): boolean {
+  const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
+  if (!addr) return false;
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+}
+
+// Auth info endpoint — loopback only, lets desktop app fetch its token
+app.get("/api/auth-info", (c) => {
+  if (!isLoopbackRequest(c)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  return c.json({ token: serverToken });
+});
+
+// Local IP endpoint — loopback only, for sidecar QR code generation
+app.get("/api/local-ip", (c) => {
+  if (!isLoopbackRequest(c)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  const ip = getLocalIp();
+  if (!ip) {
+    return c.json({ error: "No LAN address found" }, 404);
+  }
+  return c.json({ ip });
+});
+
 // REST routes
 app.route("/", createRestRoutes(agentManager, store, sessionManager));
 app.route("/", createTransportRoutes({
@@ -290,7 +315,7 @@ if (config.webDir) {
   app.get("/*", async (c, next) => {
     const p = c.req.path;
     // Skip API routes and WebSocket endpoint
-    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     const res = await serveStatic({ root: resolvedWebDir })(c, next);
@@ -300,7 +325,7 @@ if (config.webDir) {
   // SPA fallback: serve index.html for non-API GET requests
   app.get("/*", async (c, next) => {
     const p = c.req.path;
-    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);
