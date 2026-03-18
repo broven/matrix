@@ -6,6 +6,11 @@ import type {
   CreateSessionRequest,
   CreateSessionResponse,
   SessionInfo,
+  RepositoryInfo,
+  WorktreeInfo,
+  AddRepositoryRequest,
+  CreateWorktreeRequest,
+  CreateWorktreeResponse,
 } from "@matrix/protocol";
 import { createTransport, type Transport } from "./transport/index.js";
 import { MatrixSession } from "./session.js";
@@ -70,11 +75,17 @@ export class MatrixClient {
 
   async getAgents(): Promise<AgentListItem[]> {
     const res = await this.fetch("/agents");
+    if (!res.ok) {
+      throw new Error(`Failed to get agents: ${res.status}`);
+    }
     return res.json();
   }
 
   async getSessions(): Promise<SessionInfo[]> {
     const res = await this.fetch("/sessions");
+    if (!res.ok) {
+      throw new Error(`Failed to get sessions: ${res.status}`);
+    }
     return res.json();
   }
 
@@ -84,6 +95,10 @@ export class MatrixClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to create session" }));
+      throw new Error((err as any).error || `Failed to create session: ${res.status}`);
+    }
     const data: CreateSessionResponse = await res.json();
 
     const session = new MatrixSession(
@@ -103,6 +118,68 @@ export class MatrixClient {
     }
     this.sessions.delete(sessionId);
   }
+
+  // ── Repositories ──────────────────────────────────────────────────
+
+  async getRepositories(): Promise<RepositoryInfo[]> {
+    const res = await this.fetch("/repositories");
+    if (!res.ok) {
+      throw new Error(`Failed to get repositories: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async addRepository(request: AddRepositoryRequest): Promise<RepositoryInfo> {
+    const res = await this.fetch("/repositories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to add repository" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async deleteRepository(id: string): Promise<void> {
+    const res = await this.fetch(`/repositories/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      throw new Error(`Failed to delete repository ${id}: ${res.status}`);
+    }
+  }
+
+  // ── Worktrees ────────────────────────────────────────────────────
+
+  async getWorktrees(repositoryId: string): Promise<WorktreeInfo[]> {
+    const res = await this.fetch(`/repositories/${repositoryId}/worktrees`);
+    if (!res.ok) {
+      throw new Error(`Failed to get worktrees for ${repositoryId}: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async createWorktree(repositoryId: string, request: CreateWorktreeRequest): Promise<CreateWorktreeResponse> {
+    const res = await this.fetch(`/repositories/${repositoryId}/worktrees`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to create worktree" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async deleteWorktree(id: string): Promise<void> {
+    const res = await this.fetch(`/worktrees/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      throw new Error(`Failed to delete worktree ${id}: ${res.status}`);
+    }
+  }
+
+  // ── Session helpers ──────────────────────────────────────────────
 
   attachSession(sessionId: string): MatrixSession {
     const existing = this.sessions.get(sessionId);

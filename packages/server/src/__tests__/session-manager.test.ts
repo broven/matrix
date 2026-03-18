@@ -331,12 +331,19 @@ describe("SessionManager", () => {
       const { Hono } = await import("hono");
       const { createRestRoutes } = await import("../api/rest/index.js");
       const { AgentManager } = await import("../agent-manager/index.js");
+      const { WorktreeManager } = await import("../worktree-manager/index.js");
 
       const agentManager = new AgentManager();
       agentManager.register({ id: "test-agent", name: "Test", command: "echo", args: [] });
 
       const app = new Hono();
-      app.route("/", createRestRoutes(agentManager, store, sessionManager));
+      app.route("/", createRestRoutes({
+        agentManager,
+        store,
+        sessionManager,
+        worktreeManager: new WorktreeManager(),
+        createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
+      }));
 
       const bridge = createMockBridge();
       store.createSession("sess_1", "test-agent", "/tmp");

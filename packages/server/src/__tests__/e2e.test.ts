@@ -15,6 +15,7 @@ import { createRestRoutes } from "../api/rest/index.js";
 import { createTransportRoutes } from "../api/transport/index.js";
 import { ConnectionManager } from "../api/ws/connection-manager.js";
 import { SessionManager } from "../session-manager/index.js";
+import { WorktreeManager } from "../worktree-manager/index.js";
 
 const DB_PATH = "/tmp/matrix-e2e-test.db";
 
@@ -318,7 +319,13 @@ function createTestApp() {
   app.use("/agents/*", authMiddleware(serverToken));
   app.use("/sessions/*", authMiddleware(serverToken));
 
-  app.route("/", createRestRoutes(agentManager, store, sessionManager));
+  app.route("/", createRestRoutes({
+    agentManager,
+    store,
+    sessionManager,
+    worktreeManager: new WorktreeManager(),
+    createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
+  }));
   app.route(
     "/",
     createTransportRoutes({

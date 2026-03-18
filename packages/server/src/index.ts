@@ -16,6 +16,7 @@ import { setupWebSocket } from "./api/ws/index.js";
 import { ConnectionManager } from "./api/ws/connection-manager.js";
 import { createTransportRoutes } from "./api/transport/index.js";
 import { SessionManager } from "./session-manager/index.js";
+import { WorktreeManager } from "./worktree-manager/index.js";
 import type { AgentCapabilities, CreateSessionRequest } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
@@ -28,6 +29,7 @@ const store = new Store(config.dbPath);
 store.normalizeSessionsOnStartup();
 const connectionManager = new ConnectionManager();
 const sessionManager = new SessionManager();
+const worktreeManager = new WorktreeManager();
 const IDLE_SUSPEND_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_SUSPEND_SWEEP_INTERVAL_MS = 60 * 1000;
 
@@ -230,6 +232,27 @@ async function createBridge(
 // Register the bridge factory for auto-restart
 sessionManager.setBridgeFactory(createBridge);
 
+/**
+ * Helper to create a session inside a worktree (used by repository routes).
+ */
+async function createSessionForWorktree(
+  agentId: string,
+  cwd: string,
+  worktreeId: string,
+): Promise<{ sessionId: string; modes: { currentModeId: string; availableModes: unknown[] } }> {
+  const sessionId = `sess_${nanoid()}`;
+  const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, agentId, cwd);
+
+  sessionManager.register(sessionId, bridge, agentId, cwd);
+  store.createSession(sessionId, agentId, cwd, {
+    recoverable,
+    agentSessionId,
+    worktreeId,
+  });
+
+  return { sessionId, modes };
+}
+
 const app = new Hono();
 
 // CORS for web client
@@ -254,6 +277,10 @@ app.use("/agents", authMiddleware(serverToken));
 app.use("/agents/*", authMiddleware(serverToken));
 app.use("/sessions", authMiddleware(serverToken));
 app.use("/sessions/*", authMiddleware(serverToken));
+app.use("/repositories", authMiddleware(serverToken));
+app.use("/repositories/*", authMiddleware(serverToken));
+app.use("/worktrees", authMiddleware(serverToken));
+app.use("/worktrees/*", authMiddleware(serverToken));
 
 function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
@@ -282,7 +309,13 @@ app.get("/api/local-ip", (c) => {
 });
 
 // REST routes
-app.route("/", createRestRoutes(agentManager, store, sessionManager));
+app.route("/", createRestRoutes({
+  agentManager,
+  store,
+  sessionManager,
+  worktreeManager,
+  createSessionForWorktree,
+}));
 app.route("/", createTransportRoutes({
   connectionManager,
   serverToken,
@@ -296,14 +329,32 @@ app.route("/", createTransportRoutes({
 app.post("/sessions", async (c) => {
   const body = await c.req.json<CreateSessionRequest>();
 
+  // Resolve cwd: from worktreeId or direct cwd
+  let cwd = body.cwd;
+  let worktreeId: string | undefined;
+
+  if (body.worktreeId) {
+    const worktree = store.getWorktree(body.worktreeId);
+    if (!worktree) {
+      return c.json({ error: "Worktree not found" }, 404);
+    }
+    cwd = worktree.path;
+    worktreeId = body.worktreeId;
+  }
+
+  if (!cwd) {
+    return c.json({ error: "cwd or worktreeId is required" }, 400);
+  }
+
   const sessionId = `sess_${nanoid()}`;
   try {
-    const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, body.agentId, body.cwd);
+    const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, body.agentId, cwd);
 
-    sessionManager.register(sessionId, bridge, body.agentId, body.cwd);
-    store.createSession(sessionId, body.agentId, body.cwd, {
+    sessionManager.register(sessionId, bridge, body.agentId, cwd);
+    store.createSession(sessionId, body.agentId, cwd, {
       recoverable,
       agentSessionId,
+      worktreeId,
     });
 
     return c.json({ sessionId, modes });
@@ -332,7 +383,7 @@ if (config.webDir) {
   app.get("/*", async (c, next) => {
     const p = c.req.path;
     // Skip API routes and WebSocket endpoint
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     const res = await serveStatic({ root: resolvedWebDir })(c, next);
@@ -342,7 +393,7 @@ if (config.webDir) {
   // SPA fallback: serve index.html for non-API GET requests
   app.get("/*", async (c, next) => {
     const p = c.req.path;
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);

@@ -1,11 +1,19 @@
 import { Database } from "bun:sqlite";
-import type { SessionInfo, HistoryEntry, HistoryEntryType } from "@matrix/protocol";
+import type {
+  SessionInfo,
+  HistoryEntry,
+  HistoryEntryType,
+  RepositoryInfo,
+  WorktreeInfo,
+  WorktreeStatus,
+} from "@matrix/protocol";
 import { nanoid } from "nanoid";
 
 interface CreateSessionOptions {
   recoverable?: boolean;
   agentSessionId?: string | null;
   lastActiveAt?: string;
+  worktreeId?: string | null;
 }
 
 interface SessionStatePatch {
@@ -51,8 +59,31 @@ export class Store {
         timestamp TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (session_id) REFERENCES sessions(session_id)
       );
+
+      CREATE TABLE IF NOT EXISTS repositories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        remote_url TEXT,
+        server_id TEXT NOT NULL DEFAULT 'local',
+        default_branch TEXT NOT NULL DEFAULT 'main',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS worktrees (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL REFERENCES repositories(id),
+        branch TEXT NOT NULL,
+        base_branch TEXT NOT NULL,
+        path TEXT NOT NULL,
+        task_description TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_active_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
 
+    // Session column migrations
     const sessionColumns = this.db
       .prepare("PRAGMA table_info(sessions)")
       .all() as Array<{ name: string }>;
@@ -74,8 +105,11 @@ export class Store {
     if (!sessionColumnNames.includes("close_reason")) {
       this.db.exec(`ALTER TABLE sessions ADD COLUMN close_reason TEXT`);
     }
+    if (!sessionColumnNames.includes("worktree_id")) {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN worktree_id TEXT REFERENCES worktrees(id)`);
+    }
 
-    // Migration: add type and metadata columns if they don't exist (for existing databases)
+    // History column migrations
     const columns = this.db
       .prepare("PRAGMA table_info(history)")
       .all() as Array<{ name: string }>;
@@ -88,6 +122,154 @@ export class Store {
       this.db.exec(`ALTER TABLE history ADD COLUMN metadata TEXT`);
     }
   }
+
+  // ── Repositories ──────────────────────────────────────────────────
+
+  createRepository(
+    name: string,
+    path: string,
+    options: { remoteUrl?: string; serverId?: string; defaultBranch?: string } = {},
+  ): RepositoryInfo {
+    const id = `repo_${nanoid()}`;
+    const now = this.getCurrentTimestamp();
+    this.db.prepare(
+      `INSERT INTO repositories (id, name, path, remote_url, server_id, default_branch, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      name,
+      path,
+      options.remoteUrl ?? null,
+      options.serverId ?? "local",
+      options.defaultBranch ?? "main",
+      now,
+    );
+    return this.getRepository(id)!;
+  }
+
+  listRepositories(): RepositoryInfo[] {
+    return this.db
+      .prepare("SELECT * FROM repositories ORDER BY created_at DESC")
+      .all()
+      .map((row: any) => this.mapRepository(row));
+  }
+
+  getRepository(id: string): RepositoryInfo | null {
+    const row = this.db
+      .prepare("SELECT * FROM repositories WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapRepository(row) : null;
+  }
+
+  deleteRepository(id: string): void {
+    // Delete all sessions in worktrees of this repo
+    this.db.prepare(
+      `DELETE FROM history WHERE session_id IN (
+        SELECT session_id FROM sessions WHERE worktree_id IN (
+          SELECT id FROM worktrees WHERE repository_id = ?
+        )
+      )`
+    ).run(id);
+    this.db.prepare(
+      `DELETE FROM sessions WHERE worktree_id IN (
+        SELECT id FROM worktrees WHERE repository_id = ?
+      )`
+    ).run(id);
+    this.db.prepare("DELETE FROM worktrees WHERE repository_id = ?").run(id);
+    this.db.prepare("DELETE FROM repositories WHERE id = ?").run(id);
+  }
+
+  private mapRepository(row: Record<string, unknown>): RepositoryInfo {
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      path: String(row.path),
+      remoteUrl: row.remote_url == null ? null : String(row.remote_url),
+      serverId: String(row.server_id),
+      defaultBranch: String(row.default_branch),
+      createdAt: String(row.created_at),
+    };
+  }
+
+  // ── Worktrees ─────────────────────────────────────────────────────
+
+  createWorktree(
+    repositoryId: string,
+    branch: string,
+    baseBranch: string,
+    worktreePath: string,
+    taskDescription?: string,
+  ): WorktreeInfo {
+    const id = `wt_${nanoid()}`;
+    const now = this.getCurrentTimestamp();
+    this.db.prepare(
+      `INSERT INTO worktrees (id, repository_id, branch, base_branch, path, task_description, status, created_at, last_active_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+    ).run(id, repositoryId, branch, baseBranch, worktreePath, taskDescription ?? null, now, now);
+    return this.getWorktree(id)!;
+  }
+
+  listWorktrees(repositoryId: string): WorktreeInfo[] {
+    return this.db
+      .prepare("SELECT * FROM worktrees WHERE repository_id = ? ORDER BY created_at DESC")
+      .all(repositoryId)
+      .map((row: any) => this.mapWorktree(row));
+  }
+
+  getWorktree(id: string): WorktreeInfo | null {
+    const row = this.db
+      .prepare("SELECT * FROM worktrees WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapWorktree(row) : null;
+  }
+
+  updateWorktreeStatus(id: string, status: WorktreeStatus): void {
+    this.db.prepare("UPDATE worktrees SET status = ? WHERE id = ?").run(status, id);
+  }
+
+  touchWorktree(id: string, timestamp = this.getCurrentTimestamp()): void {
+    this.db.prepare("UPDATE worktrees SET last_active_at = ? WHERE id = ?").run(timestamp, id);
+  }
+
+  deleteWorktree(id: string): void {
+    this.db.prepare(
+      `DELETE FROM history WHERE session_id IN (
+        SELECT session_id FROM sessions WHERE worktree_id = ?
+      )`
+    ).run(id);
+    this.db.prepare("DELETE FROM sessions WHERE worktree_id = ?").run(id);
+    this.db.prepare("DELETE FROM worktrees WHERE id = ?").run(id);
+  }
+
+  getSessionsByWorktree(worktreeId: string): SessionInfo[] {
+    return this.db
+      .prepare(
+        `SELECT s.session_id, s.agent_id, s.cwd, s.status, s.created_at, s.recoverable,
+                s.agent_session_id, s.last_active_at, s.suspended_at, s.close_reason, s.worktree_id,
+                w.repository_id AS wt_repository_id, w.branch AS wt_branch
+         FROM sessions s
+         LEFT JOIN worktrees w ON s.worktree_id = w.id
+         WHERE s.worktree_id = ? ORDER BY s.created_at DESC`
+      )
+      .all(worktreeId)
+      .map((row: any) => this.mapSessionRow(row));
+  }
+
+  private mapWorktree(row: Record<string, unknown>): WorktreeInfo {
+    return {
+      id: String(row.id),
+      repositoryId: String(row.repository_id),
+      branch: String(row.branch),
+      baseBranch: String(row.base_branch),
+      path: String(row.path),
+      status: row.status as WorktreeStatus,
+      taskDescription: row.task_description == null ? null : String(row.task_description),
+      createdAt: String(row.created_at),
+      lastActiveAt: String(row.last_active_at),
+    };
+  }
+
+  // ── Sessions ──────────────────────────────────────────────────────
 
   createSession(
     sessionId: string,
@@ -107,8 +289,9 @@ export class Store {
         agent_session_id,
         last_active_at,
         suspended_at,
-        close_reason
-      ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, NULL, NULL)`
+        close_reason,
+        worktree_id
+      ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, NULL, NULL, ?)`
     );
     stmt.run(
       sessionId,
@@ -118,6 +301,7 @@ export class Store {
       options.recoverable ? 1 : 0,
       options.agentSessionId ?? null,
       now,
+      options.worktreeId ?? null,
     );
 
     return this.getSession(sessionId)!;
@@ -126,20 +310,24 @@ export class Store {
   listSessions(): SessionInfo[] {
     const stmt = this.db.prepare(
       `SELECT
-        session_id,
-        agent_id,
-        cwd,
-        status,
-        created_at,
-        recoverable,
-        agent_session_id,
-        last_active_at,
-        suspended_at,
-        close_reason
-      FROM sessions
-      ORDER BY created_at DESC`
+        s.session_id,
+        s.agent_id,
+        s.cwd,
+        s.status,
+        s.created_at,
+        s.recoverable,
+        s.agent_session_id,
+        s.last_active_at,
+        s.suspended_at,
+        s.close_reason,
+        s.worktree_id,
+        w.repository_id AS wt_repository_id,
+        w.branch AS wt_branch
+      FROM sessions s
+      LEFT JOIN worktrees w ON s.worktree_id = w.id
+      ORDER BY s.created_at DESC`
     );
-    return stmt.all().map((row: any) => this.mapSession(row));
+    return stmt.all().map((row: any) => this.mapSessionRow(row));
   }
 
   closeSession(sessionId: string): void {
@@ -158,21 +346,25 @@ export class Store {
   getSession(sessionId: string): SessionInfo | null {
     const stmt = this.db.prepare(
       `SELECT
-        session_id,
-        agent_id,
-        cwd,
-        status,
-        created_at,
-        recoverable,
-        agent_session_id,
-        last_active_at,
-        suspended_at,
-        close_reason
-      FROM sessions
-      WHERE session_id = ?`
+        s.session_id,
+        s.agent_id,
+        s.cwd,
+        s.status,
+        s.created_at,
+        s.recoverable,
+        s.agent_session_id,
+        s.last_active_at,
+        s.suspended_at,
+        s.close_reason,
+        s.worktree_id,
+        w.repository_id AS wt_repository_id,
+        w.branch AS wt_branch
+      FROM sessions s
+      LEFT JOIN worktrees w ON s.worktree_id = w.id
+      WHERE s.session_id = ?`
     );
     const row = stmt.get(sessionId) as Record<string, unknown> | undefined;
-    return row ? this.mapSession(row) : null;
+    return row ? this.mapSessionRow(row) : null;
   }
 
   updateSessionState(sessionId: string, patch: SessionStatePatch): void {
@@ -237,6 +429,8 @@ export class Store {
     ).run();
   }
 
+  // ── History ───────────────────────────────────────────────────────
+
   appendHistory(
     sessionId: string,
     role: "user" | "agent",
@@ -296,7 +490,12 @@ export class Store {
     this.db.close();
   }
 
-  private mapSession(row: Record<string, unknown>): SessionInfo {
+  /**
+   * Map a session row that includes LEFT JOIN'd worktree columns
+   * (wt_repository_id, wt_branch) to avoid N+1 queries.
+   */
+  private mapSessionRow(row: Record<string, unknown>): SessionInfo {
+    const worktreeId = row.worktree_id == null ? null : String(row.worktree_id);
     return {
       sessionId: String(row.session_id),
       agentId: String(row.agent_id),
@@ -311,6 +510,9 @@ export class Store {
         row.suspended_at == null ? null : String(row.suspended_at),
       closeReason:
         row.close_reason == null ? null : String(row.close_reason),
+      worktreeId,
+      repositoryId: row.wt_repository_id == null ? null : String(row.wt_repository_id),
+      branch: row.wt_branch == null ? null : String(row.wt_branch),
     };
   }
 

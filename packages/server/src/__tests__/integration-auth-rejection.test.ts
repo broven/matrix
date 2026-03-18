@@ -6,6 +6,7 @@ import { authMiddleware } from "../auth/middleware.js";
 import { AgentManager } from "../agent-manager/index.js";
 import { Store } from "../store/index.js";
 import { SessionManager } from "../session-manager/index.js";
+import { WorktreeManager } from "../worktree-manager/index.js";
 import { ConnectionManager } from "../api/ws/connection-manager.js";
 import { unlinkSync } from "node:fs";
 
@@ -36,7 +37,13 @@ describe("Integration: auth rejection", () => {
     app.use("/sessions/*", authMiddleware(TOKEN));
 
     const sessionManager = new SessionManager();
-    app.route("/", createRestRoutes(agentManager, store, sessionManager));
+    app.route("/", createRestRoutes({
+      agentManager,
+      store,
+      sessionManager,
+      worktreeManager: new WorktreeManager(),
+      createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
+    }));
     app.route(
       "/",
       createTransportRoutes({
