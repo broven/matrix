@@ -284,14 +284,16 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
+          # iOS bundle version must be pure X.Y.Z
           IOS_VERSION=$(echo "$VERSION" | sed 's/-.*//')
           IPA_NAME="Matrix_v${VERSION}.ipa"
           IPA_SIZE=$(stat -c%s "artifacts/${IPA_NAME}" 2>/dev/null || echo 0)
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${IPA_NAME}"
           DATE=$(date +%Y-%m-%d)
 
-          NEW_ENTRY=$(jq -n \
-            --arg v "$IOS_VERSION" \
+          # Always update beta source (use full version including pre-release suffix)
+          BETA_ENTRY=$(jq -n \
+            --arg v "$VERSION" \
             --arg url "$DOWNLOAD_URL" \
             --arg size "$IPA_SIZE" \
             --arg date "$DATE" \
@@ -302,15 +304,25 @@ jobs:
               "size": ($size | tonumber),
               "minOSVersion": "16.0"
             }')
-
-          # Always update beta source
-          jq --argjson entry "$NEW_ENTRY" \
+          jq --argjson entry "$BETA_ENTRY" \
             '.apps[0].versions = [$entry] + .apps[0].versions' \
             altstore-source-beta.json > tmp.json && mv tmp.json altstore-source-beta.json
 
-          # Only update stable source for non-prerelease
+          # Only update stable source for non-prerelease (use stripped IOS_VERSION)
           if [ "$PRERELEASE" = "false" ]; then
-            jq --argjson entry "$NEW_ENTRY" \
+            STABLE_ENTRY=$(jq -n \
+              --arg v "$IOS_VERSION" \
+              --arg url "$DOWNLOAD_URL" \
+              --arg size "$IPA_SIZE" \
+              --arg date "$DATE" \
+              '{
+                "version": $v,
+                "date": $date,
+                "downloadURL": $url,
+                "size": ($size | tonumber),
+                "minOSVersion": "16.0"
+              }')
+            jq --argjson entry "$STABLE_ENTRY" \
               '.apps[0].versions = [$entry] + .apps[0].versions' \
               altstore-source.json > tmp.json && mv tmp.json altstore-source.json
           fi

@@ -55,18 +55,26 @@ async function getChannelStore() {
 }
 
 async function loadChannel(): Promise<UpdateChannel> {
-  const store = await getChannelStore();
-  if (store) {
-    const val: string | undefined = await store.get(CHANNEL_STORAGE_KEY);
-    if (val === "beta") return "beta";
+  try {
+    const store = await getChannelStore();
+    if (store) {
+      const val: string | undefined = await store.get(CHANNEL_STORAGE_KEY);
+      if (val === "beta") return "beta";
+    }
+  } catch {
+    // Fall through to default
   }
   return "stable";
 }
 
 async function persistChannel(channel: UpdateChannel): Promise<void> {
-  const store = await getChannelStore();
-  if (store) {
-    await store.set(CHANNEL_STORAGE_KEY, channel);
+  try {
+    const store = await getChannelStore();
+    if (store) {
+      await store.set(CHANNEL_STORAGE_KEY, channel);
+    }
+  } catch {
+    // Silently ignore persistence failures
   }
 }
 
@@ -97,6 +105,7 @@ function useAutoUpdateInternal(): AutoUpdateContext {
   const [dmgPath, setDmgPath] = useState<string | null>(null);
   const [hasChecked, setHasChecked] = useState(false);
   const [channel, setChannelState] = useState<UpdateChannel>("stable");
+  const [channelLoaded, setChannelLoaded] = useState(false);
   const dismissedVersion = useRef<string | null>(null);
   const stateRef = useRef<UpdateState>("idle");
 
@@ -107,7 +116,10 @@ function useAutoUpdateInternal(): AutoUpdateContext {
 
   // Load channel on mount
   useEffect(() => {
-    loadChannel().then(setChannelState);
+    loadChannel().then((ch) => {
+      setChannelState(ch);
+      setChannelLoaded(true);
+    });
   }, []);
 
   const checkForUpdate = useCallback(async () => {
@@ -154,9 +166,9 @@ function useAutoUpdateInternal(): AutoUpdateContext {
   const setChannel = useCallback((ch: UpdateChannel) => {
     setChannelState(ch);
     persistChannel(ch);
-    // Trigger an update check with new channel after a tick
-    setTimeout(() => checkForUpdate(), 0);
-  }, [checkForUpdate]);
+    // The useEffect watching [checkForUpdate] will re-check automatically
+    // since channel change recreates checkForUpdate
+  }, []);
 
   const downloadUpdate = useCallback(async () => {
     if (!updateInfo) return;
@@ -224,14 +236,14 @@ function useAutoUpdateInternal(): AutoUpdateContext {
     };
   }, []);
 
-  // Auto-check on mount + interval
+  // Auto-check on mount + interval (only after channel is loaded)
   useEffect(() => {
-    if (!isTauri() || !isMacOS()) return;
+    if (!isTauri() || !isMacOS() || !channelLoaded) return;
 
     checkForUpdate();
     const interval = setInterval(checkForUpdate, CHECK_INTERVAL);
     return () => clearInterval(interval);
-  }, [checkForUpdate]);
+  }, [checkForUpdate, channelLoaded]);
 
   return {
     state,

@@ -124,9 +124,9 @@ pub async fn check_update(app: AppHandle, channel: Option<String>) -> Result<Upd
     let client = reqwest::Client::new();
 
     let release = if channel == "beta" {
-        // Fetch all releases, pick the first non-draft
+        // Fetch all releases, pick the one with the highest semver
         let url = format!(
-            "https://api.github.com/repos/{}/{}/releases?per_page=10",
+            "https://api.github.com/repos/{}/{}/releases?per_page=20",
             GITHUB_OWNER, GITHUB_REPO
         );
         let response = client
@@ -148,7 +148,14 @@ pub async fn check_update(app: AppHandle, channel: Option<String>) -> Result<Upd
 
         releases
             .into_iter()
-            .find(|r| !r.draft.unwrap_or(false))
+            .filter(|r| !r.draft.unwrap_or(false))
+            .reduce(|best, r| {
+                if is_newer_version(&best.tag_name, &r.tag_name) {
+                    r
+                } else {
+                    best
+                }
+            })
             .ok_or_else(|| "No releases found".to_string())?
     } else {
         // Stable: fetch latest (existing behavior)

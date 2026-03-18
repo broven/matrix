@@ -103,8 +103,9 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
                 Version: {__APP_VERSION__}
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
-                <span>Update Channel:</span>
+                <label htmlFor="update-channel">Update Channel:</label>
                 <select
+                  id="update-channel"
                   value={channel}
                   onChange={(e) => setChannel(e.target.value as "stable" | "beta")}
                   className="rounded border bg-background px-2 py-1 text-sm"

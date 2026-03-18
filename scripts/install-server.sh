@@ -79,11 +79,13 @@ get_latest_version() {
   local response
 
   if [ "$channel" = "beta" ]; then
-    # Fetch all releases, pick first non-draft
-    local api_url="https://api.github.com/repos/${REPO}/releases?per_page=5"
+    # Fetch all releases, find the highest semver (not just first in list)
+    local api_url="https://api.github.com/repos/${REPO}/releases?per_page=20"
     response=$(fetch "$api_url") || fatal "Failed to fetch releases from GitHub"
-    # Extract first tag_name (first release in array is newest)
-    echo "$response" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4
+    # Extract all tag_names, then pick the highest via sort -V
+    local best
+    best=$(echo "$response" | grep -o '"tag_name":\s*"[^"]*"' | cut -d'"' -f4 | sort -V | tail -1)
+    echo "$best"
   else
     # Stable: fetch latest
     local api_url="https://api.github.com/repos/${REPO}/releases/latest"
@@ -237,8 +239,16 @@ main() {
     # --- Update mode ---
     info "Existing installation detected — updating..."
 
-    # Check if already at latest (best-effort, no --version flag yet)
     download_binary "$latest_version"
+
+    # Persist channel to config if --channel was explicitly passed
+    if [ -n "$CHANNEL" ] && [ -f "$CONFIG_FILE" ]; then
+      if grep -q '^UPDATE_CHANNEL=' "$CONFIG_FILE" 2>/dev/null; then
+        sed -i "s/^UPDATE_CHANNEL=.*/UPDATE_CHANNEL=\"${CHANNEL}\"/" "$CONFIG_FILE"
+      else
+        echo "UPDATE_CHANNEL=\"${CHANNEL}\"" >> "$CONFIG_FILE"
+      fi
+    fi
 
     systemctl restart "$SERVICE_NAME"
     ok "Updated to ${latest_version}"
