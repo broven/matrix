@@ -39,20 +39,49 @@ fn strip_v_prefix(version: &str) -> &str {
     version.strip_prefix('v').unwrap_or(version)
 }
 
-/// Simple semver comparison: returns true if `latest` is newer than `current`.
+/// Parse a semver pre-release label into a sortable priority.
+/// alpha=0, beta=1, rc=2, anything else=3. No pre-release (stable) is highest.
+fn prerelease_ord(pre: &str) -> (u8, u64) {
+    if pre.is_empty() {
+        return (u8::MAX, 0); // stable sorts highest
+    }
+    // pre is e.g. "beta.1", "alpha.2", "rc.1"
+    let mut parts = pre.splitn(2, '.');
+    let label = parts.next().unwrap_or("");
+    let num: u64 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let priority = match label {
+        "alpha" => 0,
+        "beta" => 1,
+        "rc" => 2,
+        _ => 3,
+    };
+    (priority, num)
+}
+
+/// Semver comparison with pre-release support.
+/// Returns true if `latest` is newer than `current`.
+///
+/// Ordering: 0.4.0 < 0.5.0-alpha.1 < 0.5.0-beta.1 < 0.5.0-rc.1 < 0.5.0
 fn is_newer_version(current: &str, latest: &str) -> bool {
-    let parse = |v: &str| -> Vec<u64> {
-        strip_v_prefix(v)
+    let parse = |v: &str| -> (Vec<u64>, String) {
+        let stripped = strip_v_prefix(v);
+        // Split "0.5.0-beta.1" into ("0.5.0", "beta.1")
+        let (version_part, pre) = stripped.split_once('-').unwrap_or((stripped, ""));
+        let nums: Vec<u64> = version_part
             .split('.')
             .filter_map(|s| s.parse().ok())
-            .collect()
+            .collect();
+        (nums, pre.to_string())
     };
-    let cur = parse(current);
-    let lat = parse(latest);
-    let max_len = cur.len().max(lat.len());
+
+    let (cur_nums, cur_pre) = parse(current);
+    let (lat_nums, lat_pre) = parse(latest);
+
+    // Compare numeric version segments first
+    let max_len = cur_nums.len().max(lat_nums.len());
     for i in 0..max_len {
-        let c = cur.get(i).copied().unwrap_or(0);
-        let l = lat.get(i).copied().unwrap_or(0);
+        let c = cur_nums.get(i).copied().unwrap_or(0);
+        let l = lat_nums.get(i).copied().unwrap_or(0);
         if l > c {
             return true;
         }
@@ -60,7 +89,11 @@ fn is_newer_version(current: &str, latest: &str) -> bool {
             return false;
         }
     }
-    false
+
+    // Same numeric version — compare pre-release
+    let cur_ord = prerelease_ord(&cur_pre);
+    let lat_ord = prerelease_ord(&lat_pre);
+    lat_ord > cur_ord
 }
 
 fn cache_dir() -> std::path::PathBuf {
@@ -362,6 +395,50 @@ mod tests {
     fn newer_longer_version_string() {
         // "0.1.0.1" is newer than "0.1.0" because the 4th segment (1) > implicit 0
         assert!(is_newer_version("0.1.0", "0.1.0.1"));
+    }
+
+    // ── pre-release version ordering ────────────────────────────────
+
+    #[test]
+    fn newer_prerelease_less_than_release() {
+        // 0.5.0-beta.1 < 0.5.0
+        assert!(is_newer_version("0.5.0-beta.1", "0.5.0"));
+    }
+
+    #[test]
+    fn newer_release_not_newer_than_same_prerelease() {
+        // 0.5.0 is NOT newer than 0.5.0-beta.1
+        assert!(!is_newer_version("0.5.0", "0.5.0-beta.1"));
+    }
+
+    #[test]
+    fn newer_beta_newer_than_alpha() {
+        assert!(is_newer_version("0.5.0-alpha.1", "0.5.0-beta.1"));
+    }
+
+    #[test]
+    fn newer_rc_newer_than_beta() {
+        assert!(is_newer_version("0.5.0-beta.1", "0.5.0-rc.1"));
+    }
+
+    #[test]
+    fn newer_prerelease_newer_than_previous_stable() {
+        assert!(is_newer_version("0.4.0", "0.5.0-beta.1"));
+    }
+
+    #[test]
+    fn newer_same_prerelease() {
+        assert!(!is_newer_version("0.5.0-beta.1", "0.5.0-beta.1"));
+    }
+
+    #[test]
+    fn newer_prerelease_bump() {
+        assert!(is_newer_version("0.5.0-beta.1", "0.5.0-beta.2"));
+    }
+
+    #[test]
+    fn newer_with_v_prefix_prerelease() {
+        assert!(is_newer_version("v0.4.0", "v0.5.0-beta.1"));
     }
 
     // ── parse_mount_point ───────────────────────────────────────────
