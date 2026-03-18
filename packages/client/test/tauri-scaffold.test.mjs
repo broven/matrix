@@ -55,7 +55,9 @@ test("tauri lib wires automation startup hooks in debug builds", () => {
 
   assert.match(source, /start_loopback_server\(/);
   assert.match(source, /write_discovery_file\(None\)/);
-  assert.match(source, /NoopWebviewEvalBackend/);
+  assert.match(source, /DesktopWebviewBridge::new/);
+  assert.match(source, /TauriEventBridgeTransport::new/);
+  assert.doesNotMatch(source, /NoopWebviewEvalBackend/);
   assert.match(automationMod, /^pub mod core;$/m);
   assert.match(automationMod, /^pub mod runtime;$/m);
   assert.doesNotMatch(source, /layout_hint\(/);

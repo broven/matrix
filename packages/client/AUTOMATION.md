@@ -73,6 +73,7 @@ The iOS simulator adapter is present in `packages/client/src-tauri/src/automatio
 
 - If the bridge does not start, check the app console for `Automation bridge failed to start`.
 - If discovery is missing, confirm the app is running in dev/test mode and that `MATRIX_AUTOMATION_DISCOVERY_DIR` is writable when overridden.
+- If local smoke checks hit a proxy-generated `503` or HTML error page, bypass system proxies for loopback requests. The bundled smoke script now forces `curl --noproxy "*"`.
 - If requests return `401`, make sure the `Authorization` header uses the token from `automation.json`.
 - If `/webview/eval` returns `webview_unavailable`, the frontend bridge was not installed or did not respond in time.
 - If `/native/invoke` returns `unsupported_action`, the requested action is not part of the current whitelist.

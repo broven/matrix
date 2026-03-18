@@ -63,13 +63,14 @@ fi
 AUTH_HEADER="Authorization: Bearer ${TOKEN}"
 HEALTH_URL="${BASE_URL}/health"
 STATE_URL="${BASE_URL}/state"
+CURL_LOOPBACK_ARGS=(--noproxy "*")
 
 echo "smoke: checking ${HEALTH_URL}"
-HEALTH_BODY="$(curl --silent --show-error --fail -H "$AUTH_HEADER" "$HEALTH_URL")"
+HEALTH_BODY="$(curl "${CURL_LOOPBACK_ARGS[@]}" --silent --show-error --fail -H "$AUTH_HEADER" "$HEALTH_URL")"
 echo "$HEALTH_BODY" | jq -e '.ok == true' >/dev/null
 
 echo "smoke: checking ${STATE_URL}"
-STATE_BODY="$(curl --silent --show-error --fail -H "$AUTH_HEADER" "$STATE_URL")"
+STATE_BODY="$(curl "${CURL_LOOPBACK_ARGS[@]}" --silent --show-error --fail -H "$AUTH_HEADER" "$STATE_URL")"
 echo "$STATE_BODY" | jq -e 'has("window") and has("webview") and has("sidecar")' >/dev/null
 
 echo "smoke: mac automation bridge is reachable"
