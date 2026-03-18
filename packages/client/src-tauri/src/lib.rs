@@ -27,6 +27,31 @@ pub fn run() {
             {
                 use tauri_plugin_shell::ShellExt;
 
+                // Kill any orphaned sidecar processes from previous launches
+                // that may still hold port 19880
+                if let Ok(output) = std::process::Command::new("lsof")
+                    .args(["-ti", "tcp:19880"])
+                    .output()
+                {
+                    let pids = String::from_utf8_lossy(&output.stdout);
+                    for pid_str in pids.split_whitespace() {
+                        if pid_str.trim().is_empty() {
+                            continue;
+                        }
+                        eprintln!(
+                            "[matrix-client] killing orphaned process on port 19880: pid {}",
+                            pid_str
+                        );
+                        let _ = std::process::Command::new("kill")
+                            .args(["-TERM", pid_str.trim()])
+                            .output();
+                    }
+                    // Brief wait for processes to exit
+                    if !pids.trim().is_empty() {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                }
+
                 let resource_dir = app
                     .path()
                     .resource_dir()
