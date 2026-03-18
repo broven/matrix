@@ -1,0 +1,27 @@
+{
+  "name": "Matrix (Beta)",
+  "subtitle": "Remote ACP Client — Beta Channel",
+  "description": "Matrix Beta — Pre-release builds. May contain bugs.",
+  "iconURL": "https://raw.githubusercontent.com/broven/matrix/main/packages/client/src-tauri/icons/32x32.png",
+  "apps": [
+    {
+      "name": "Matrix",
+      "bundleIdentifier": "com.matrix.client",
+      "developerName": "broven",
+      "subtitle": "Remote ACP Client (Beta)",
+      "localizedDescription": "Matrix is a remote client for managing AI agent sessions via the ACP protocol. This is the beta channel with pre-release builds.",
+      "iconURL": "https://raw.githubusercontent.com/broven/matrix/main/packages/client/src-tauri/icons/32x32.png",
+      "tintColor": "#F59E0B",
+      "versions": [
+        {
+          "version": "0.6.0",
+          "date": "2026-03-18",
+          "downloadURL": "https://github.com/broven/matrix/releases/download/v0.6.0/Matrix_v0.6.0.ipa",
+          "size": 3085112,
+          "minOSVersion": "16.0"
+        }
+      ]
+    }
+  ],
+  "news": []
+}

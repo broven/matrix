@@ -28,6 +28,13 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
+vi.mock("@tauri-apps/plugin-store", () => ({
+  LazyStore: class {
+    async get() { return undefined; }
+    async set() {}
+  },
+}));
+
 // ── Imports (mocks are hoisted by vitest, so these see mocked modules) ───────
 
 import { UpdateProvider, useAutoUpdate } from "@/hooks/useAutoUpdate";
@@ -266,13 +273,13 @@ describe("useAutoUpdate integration", () => {
 
     renderApp();
 
-    // Wait for the check to complete
+    // Wait for async channel load + auto-check to complete
     await waitFor(() => {
-      expect(screen.getByTestId("state").textContent).toBe("idle");
+      expect(mockInvoke).toHaveBeenCalledWith("check_update", { channel: "stable" });
     });
 
-    // Ensure check was actually called
-    expect(mockInvoke).toHaveBeenCalledWith("check_update");
+    // State should be idle (no update available)
+    expect(screen.getByTestId("state").textContent).toBe("idle");
 
     // No toast should be visible
     expect(screen.queryByText(/available/)).not.toBeInTheDocument();
