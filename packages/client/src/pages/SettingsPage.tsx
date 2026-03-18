@@ -12,7 +12,7 @@ import { ShareServerModal } from "@/components/ShareServerModal";
 export function SettingsPage({ onBack }: { onBack: () => void }) {
   const { connect, connectionInfo, status } = useMatrixClient();
   const { servers, addServer, removeServer } = useServerStore();
-  const { state: updateState, updateInfo, checkForUpdate, error: updateError, hasChecked } = useAutoUpdate();
+  const { state: updateState, updateInfo, checkForUpdate, error: updateError, hasChecked, channel, setChannel } = useAutoUpdate();
   const [newUrl, setNewUrl] = useState("");
   const [newToken, setNewToken] = useState("");
   const [newName, setNewName] = useState("");
@@ -101,6 +101,18 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
             <CardContent className="text-sm space-y-3">
               <div className="text-muted-foreground">
                 Version: {__APP_VERSION__}
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <label htmlFor="update-channel">Update Channel:</label>
+                <select
+                  id="update-channel"
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value as "stable" | "beta")}
+                  className="rounded border bg-background px-2 py-1 text-sm"
+                >
+                  <option value="stable">Stable</option>
+                  <option value="beta">Beta</option>
+                </select>
               </div>
               <div className="flex items-center gap-2">
                 <Button

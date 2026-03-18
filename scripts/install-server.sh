@@ -75,10 +75,23 @@ preflight() {
 # --- GitHub Release ---
 
 get_latest_version() {
-  local api_url="https://api.github.com/repos/${REPO}/releases/latest"
+  local channel=$1
   local response
-  response=$(fetch "$api_url") || fatal "Failed to fetch latest release from GitHub"
-  echo "$response" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4
+
+  if [ "$channel" = "beta" ]; then
+    # Fetch all releases, find the highest semver (not just first in list)
+    local api_url="https://api.github.com/repos/${REPO}/releases?per_page=20"
+    response=$(fetch "$api_url") || fatal "Failed to fetch releases from GitHub"
+    # Extract all tag_names, then pick the highest via sort -V
+    local best
+    best=$(echo "$response" | grep -o '"tag_name":\s*"[^"]*"' | cut -d'"' -f4 | sort -V | tail -1)
+    echo "$best"
+  else
+    # Stable: fetch latest
+    local api_url="https://api.github.com/repos/${REPO}/releases/latest"
+    response=$(fetch "$api_url") || fatal "Failed to fetch latest release from GitHub"
+    echo "$response" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4
+  fi
 }
 
 download_binary() {
@@ -136,6 +149,7 @@ MATRIX_TOKEN="${token}"
 MATRIX_HOST="0.0.0.0"
 MATRIX_DB_PATH="${DATA_DIR}/matrix.db"
 MATRIX_WEB_DIR="${DATA_DIR}/web"
+UPDATE_CHANNEL="${CHANNEL}"
 EOF
 
   chmod 600 "$CONFIG_FILE"
@@ -177,6 +191,7 @@ EOF
 parse_args() {
   PORT=""
   TOKEN=""
+  CHANNEL=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --port)
@@ -188,6 +203,12 @@ parse_args() {
       --token)
         [ $# -ge 2 ] || fatal "--token requires a value"
         TOKEN="$2"
+        shift 2
+        ;;
+      --channel)
+        [ $# -ge 2 ] || fatal "--channel requires a value"
+        CHANNEL="$2"
+        [[ "$CHANNEL" =~ ^(stable|beta)$ ]] || fatal "--channel must be 'stable' or 'beta', got: ${CHANNEL}"
         shift 2
         ;;
       *)
@@ -203,18 +224,24 @@ main() {
   parse_args "$@"
   preflight
 
+  # Resolve channel: CLI arg > config file > default
+  if [ -z "$CHANNEL" ] && [ -f "$CONFIG_FILE" ]; then
+    CHANNEL=$(grep -oP '^UPDATE_CHANNEL="\K[^"]+' "$CONFIG_FILE" 2>/dev/null || true)
+  fi
+  CHANNEL="${CHANNEL:-stable}"
+  info "Update channel: ${CHANNEL}"
+
   local latest_version
-  latest_version=$(get_latest_version)
+  latest_version=$(get_latest_version "$CHANNEL")
   [ -z "$latest_version" ] && fatal "Could not determine latest version"
 
   if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
     # --- Update mode ---
     info "Existing installation detected — updating..."
 
-    # Check if already at latest (best-effort, no --version flag yet)
     download_binary "$latest_version"
 
-    # Update config if --port or --token was provided
+    # Update config if --port, --token, or --channel was provided
     local config_changed=""
     if [ -n "$PORT" ] && [ -f "$CONFIG_FILE" ]; then
       sed -i "s/^MATRIX_PORT=.*/MATRIX_PORT=\"${PORT}\"/" "$CONFIG_FILE"
@@ -224,6 +251,15 @@ main() {
     if [ -n "$TOKEN" ] && [ -f "$CONFIG_FILE" ]; then
       sed -i "s/^MATRIX_TOKEN=.*/MATRIX_TOKEN=\"${TOKEN}\"/" "$CONFIG_FILE"
       ok "Updated token"
+      config_changed=1
+    fi
+    if [ -n "$CHANNEL" ] && [ -f "$CONFIG_FILE" ]; then
+      if grep -q '^UPDATE_CHANNEL=' "$CONFIG_FILE" 2>/dev/null; then
+        sed -i "s/^UPDATE_CHANNEL=.*/UPDATE_CHANNEL=\"${CHANNEL}\"/" "$CONFIG_FILE"
+      else
+        echo "UPDATE_CHANNEL=\"${CHANNEL}\"" >> "$CONFIG_FILE"
+      fi
+      ok "Updated channel to ${CHANNEL}"
       config_changed=1
     fi
 
