@@ -3,7 +3,8 @@ use serde_json::Value;
 
 use super::core::capabilities::{self, NativeCapability, WebviewCapability};
 use super::core::errors::AutomationErrorCode;
-use super::core::models::{AutomationEnvelope, NativeActionRequest, ResetScope, WaitCondition};
+use super::core::models::{AutomationEnvelope, NativeActionRequest};
+use super::runtime::router::AutomationRouterBackend;
 
 #[derive(Debug, Deserialize)]
 pub struct WebviewEvalRequest {
@@ -36,26 +37,9 @@ impl WebviewCapability for NoopWebviewEvalBackend {
     }
 }
 
-impl NativeCapability for NoopWebviewEvalBackend {
-    fn invoke(&self, _action: &str, _args: Option<&Value>) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::NativeUnavailable)
-    }
-}
-
-impl crate::automation::core::capabilities::TestControlCapability for NoopWebviewEvalBackend {
-    fn reset(&self, _scopes: &[ResetScope]) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::ResetFailed)
-    }
-}
-
-impl crate::automation::core::capabilities::WaitCapability for NoopWebviewEvalBackend {
-    fn wait_for(
-        &self,
-        _condition: &WaitCondition,
-        _timeout_ms: u64,
-        _interval_ms: u64,
-    ) -> Result<Value, AutomationErrorCode> {
-        Err(AutomationErrorCode::UnsupportedCondition)
+impl AutomationRouterBackend for NoopWebviewEvalBackend {
+    fn webview_capability(&self) -> Option<&dyn WebviewCapability> {
+        Some(self)
     }
 }
 

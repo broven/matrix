@@ -1,4 +1,3 @@
-use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -14,34 +13,6 @@ use super::runtime::router;
 const REQUEST_HEAD_MAX_BYTES: usize = 8 * 1024;
 const REQUEST_BODY_MAX_BYTES: usize = 64 * 1024;
 const REQUEST_READ_TIMEOUT: Duration = Duration::from_millis(300);
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HealthResponse {
-    pub ok: bool,
-    pub platform: String,
-    pub app_ready: bool,
-    pub webview_ready: bool,
-    pub sidecar_ready: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct StateResponse {
-    pub window: Value,
-    pub webview: Value,
-    pub sidecar: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct RouteState {
-    pub platform: String,
-    pub app_ready: bool,
-    pub webview_ready: bool,
-    pub sidecar_ready: bool,
-    pub window: Value,
-    pub webview: Value,
-    pub sidecar: Value,
-}
 
 #[derive(Debug, Clone)]
 struct HttpResponse {
@@ -81,7 +52,7 @@ impl Drop for AutomationServer {
 pub fn start_loopback_server(
     port: u16,
     token: String,
-    state: Arc<RwLock<RouteState>>,
+    state: Arc<RwLock<router::RouteStateSnapshot>>,
     eval_backend: Arc<dyn router::AutomationRouterBackend>,
 ) -> std::io::Result<AutomationServer> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
@@ -120,7 +91,7 @@ fn route_request(
     authorization: Option<&str>,
     body: &[u8],
     token: &str,
-    state: &RouteState,
+    state: &router::RouteStateSnapshot,
     eval_backend: &dyn router::AutomationRouterBackend,
 ) -> HttpResponse {
     let response = router::route_request(
@@ -141,7 +112,7 @@ fn route_request(
 fn handle_connection(
     stream: &mut TcpStream,
     token: &str,
-    state: &Arc<RwLock<RouteState>>,
+    state: &Arc<RwLock<router::RouteStateSnapshot>>,
     eval_backend: &Arc<dyn router::AutomationRouterBackend>,
 ) -> std::io::Result<()> {
     let request = match parse_http_request(stream) {
@@ -412,41 +383,17 @@ impl crate::automation::core::capabilities::WebviewCapability for TestWebviewEva
 }
 
 #[cfg(test)]
-impl crate::automation::core::capabilities::NativeCapability for TestWebviewEvalBackend {
-    fn invoke(
+impl router::AutomationRouterBackend for TestWebviewEvalBackend {
+    fn webview_capability(
         &self,
-        _action: &str,
-        _args: Option<&Value>,
-    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
-        Err(crate::automation::core::errors::AutomationErrorCode::NativeUnavailable)
-    }
-}
-
-#[cfg(test)]
-impl crate::automation::core::capabilities::TestControlCapability for TestWebviewEvalBackend {
-    fn reset(
-        &self,
-        _scopes: &[crate::automation::core::models::ResetScope],
-    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
-        Err(crate::automation::core::errors::AutomationErrorCode::ResetFailed)
-    }
-}
-
-#[cfg(test)]
-impl crate::automation::core::capabilities::WaitCapability for TestWebviewEvalBackend {
-    fn wait_for(
-        &self,
-        _condition: &crate::automation::core::models::WaitCondition,
-        _timeout_ms: u64,
-        _interval_ms: u64,
-    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
-        Err(crate::automation::core::errors::AutomationErrorCode::Timeout)
+    ) -> Option<&dyn crate::automation::core::capabilities::WebviewCapability> {
+        Some(self)
     }
 }
 
 #[cfg(test)]
 fn test_server_with_sample_state(token: &str) -> AutomationServer {
-    let state = Arc::new(RwLock::new(RouteState {
+    let state = Arc::new(RwLock::new(router::RouteStateSnapshot {
         platform: "macos".to_string(),
         app_ready: true,
         webview_ready: true,
@@ -468,12 +415,13 @@ fn test_server_with_sample_state(token: &str) -> AutomationServer {
 mod tests {
     use super::{
         parse_test_response, route_request, send_test_request, send_test_request_chunks,
-        test_server_with_sample_state, RouteState, TestWebviewEvalBackend,
+        test_server_with_sample_state, TestWebviewEvalBackend,
     };
+    use crate::automation::runtime::router::RouteStateSnapshot;
     use serde_json::json;
 
-    fn sample_state() -> RouteState {
-        RouteState {
+    fn sample_state() -> RouteStateSnapshot {
+        RouteStateSnapshot {
             platform: "macos".to_string(),
             app_ready: true,
             webview_ready: true,

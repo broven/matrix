@@ -14,8 +14,7 @@ mod updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init());
+    let builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
 
     #[cfg(target_os = "macos")]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -60,29 +59,32 @@ pub fn run() {
                         .and_then(|raw| raw.parse::<u16>().ok())
                         .unwrap_or(18_765);
 
-                    let mut automation_state = automation::state::AutomationState::new(configured_port);
+                    let mut automation_state =
+                        automation::state::AutomationState::new(configured_port);
                     automation_state.app_ready = true;
                     automation_state.sidecar_ready = true;
                     automation_state.webview_ready = true;
 
-                    let route_state = Arc::new(RwLock::new(automation::server::RouteState {
-                        platform: automation_state.platform.to_string(),
-                        app_ready: automation_state.app_ready,
-                        webview_ready: automation_state.webview_ready,
-                        sidecar_ready: automation_state.sidecar_ready,
-                        window: json!({
-                            "label": "main",
-                            "focused": true,
-                            "visible": true
-                        }),
-                        webview: json!({
-                            "url": "http://127.0.0.1:19880"
-                        }),
-                        sidecar: json!({
-                            "running": true,
-                            "port": 19880
-                        }),
-                    }));
+                    let route_state = Arc::new(RwLock::new(
+                        automation::runtime::router::RouteStateSnapshot {
+                            platform: automation_state.platform.to_string(),
+                            app_ready: automation_state.app_ready,
+                            webview_ready: automation_state.webview_ready,
+                            sidecar_ready: automation_state.sidecar_ready,
+                            window: json!({
+                                "label": "main",
+                                "focused": true,
+                                "visible": true
+                            }),
+                            webview: json!({
+                                "url": "http://127.0.0.1:19880"
+                            }),
+                            sidecar: json!({
+                                "running": true,
+                                "port": 19880
+                            }),
+                        },
+                    ));
 
                     match automation::server::start_loopback_server(
                         automation_state.port,
@@ -104,7 +106,9 @@ pub fn run() {
                                     eprintln!("  Automation discovery write failed: {error}");
                                 }
                             }
-                            app.manage(AutomationServerState(std::sync::Mutex::new(Some(automation_server))));
+                            app.manage(AutomationServerState(std::sync::Mutex::new(Some(
+                                automation_server,
+                            ))));
                         }
                         Err(error) => {
                             eprintln!("  Automation bridge failed to start: {error}");
@@ -126,9 +130,8 @@ pub fn run() {
                         .is_ok()
                         {
                             std::thread::sleep(Duration::from_millis(300));
-                            let _ = main_window.eval(
-                                "window.location.replace('http://127.0.0.1:19880')",
-                            );
+                            let _ = main_window
+                                .eval("window.location.replace('http://127.0.0.1:19880')");
                             return;
                         }
                         std::thread::sleep(Duration::from_millis(250));
