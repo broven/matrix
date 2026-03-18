@@ -2,14 +2,14 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
 #[cfg(test)]
 use std::net::Shutdown;
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use super::actions;
+use super::runtime::router;
 
 const REQUEST_HEAD_MAX_BYTES: usize = 8 * 1024;
 const REQUEST_BODY_MAX_BYTES: usize = 64 * 1024;
@@ -82,7 +82,7 @@ pub fn start_loopback_server(
     port: u16,
     token: String,
     state: Arc<RwLock<RouteState>>,
-    eval_backend: Arc<dyn actions::WebviewEvalBackend>,
+    eval_backend: Arc<dyn router::AutomationRouterBackend>,
 ) -> std::io::Result<AutomationServer> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     listener.set_nonblocking(true)?;
@@ -121,57 +121,20 @@ fn route_request(
     body: &[u8],
     token: &str,
     state: &RouteState,
-    eval_backend: &dyn actions::WebviewEvalBackend,
+    eval_backend: &dyn router::AutomationRouterBackend,
 ) -> HttpResponse {
-    let expected = format!("Bearer {token}");
-    if authorization != Some(expected.as_str()) {
-        return HttpResponse {
-            status: 401,
-            body: json!({"error": "unauthorized"}),
-        };
-    }
-
-    match (method, path) {
-        ("GET", "/health") => HttpResponse {
-            status: 200,
-            body: json!(HealthResponse {
-                ok: true,
-                platform: state.platform.clone(),
-                app_ready: state.app_ready,
-                webview_ready: state.webview_ready,
-                sidecar_ready: state.sidecar_ready,
-            }),
-        },
-        ("GET", "/state") => HttpResponse {
-            status: 200,
-            body: json!(StateResponse {
-                window: state.window.clone(),
-                webview: state.webview.clone(),
-                sidecar: state.sidecar.clone(),
-            }),
-        },
-        ("POST", "/webview/eval") => {
-            let request = match actions::parse_webview_eval_request(body) {
-                Ok(request) => request,
-                Err(error) => {
-                    return HttpResponse {
-                        status: 400,
-                        body: json!({ "error": error }),
-                    }
-                }
-            };
-            HttpResponse {
-                status: 200,
-                body: json!(actions::evaluate_webview_script(
-                    eval_backend,
-                    &request.script
-                )),
-            }
-        }
-        _ => HttpResponse {
-            status: 404,
-            body: json!({"error": "not_found"}),
-        },
+    let response = router::route_request(
+        method,
+        path,
+        authorization,
+        body,
+        token,
+        state,
+        eval_backend,
+    );
+    HttpResponse {
+        status: response.status,
+        body: response.body,
     }
 }
 
@@ -179,7 +142,7 @@ fn handle_connection(
     stream: &mut TcpStream,
     token: &str,
     state: &Arc<RwLock<RouteState>>,
-    eval_backend: &Arc<dyn actions::WebviewEvalBackend>,
+    eval_backend: &Arc<dyn router::AutomationRouterBackend>,
 ) -> std::io::Result<()> {
     let request = match parse_http_request(stream) {
         Ok(request) => request,
@@ -351,8 +314,7 @@ fn parse_http_request(stream: &mut TcpStream) -> Result<ParsedHttpRequest, Reque
 }
 
 fn find_header_end(buf: &[u8]) -> Option<usize> {
-    buf.windows(4)
-        .position(|window| window == b"\r\n\r\n")
+    buf.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
 #[cfg(test)]
@@ -429,7 +391,10 @@ struct TestWebviewEvalBackend;
 
 #[cfg(test)]
 impl crate::automation::core::capabilities::WebviewCapability for TestWebviewEvalBackend {
-    fn eval(&self, script: &str) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
+    fn eval(
+        &self,
+        script: &str,
+    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
         Ok(json!({ "echo": script }))
     }
 
@@ -447,6 +412,39 @@ impl crate::automation::core::capabilities::WebviewCapability for TestWebviewEva
 }
 
 #[cfg(test)]
+impl crate::automation::core::capabilities::NativeCapability for TestWebviewEvalBackend {
+    fn invoke(
+        &self,
+        _action: &str,
+        _args: Option<&Value>,
+    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
+        Err(crate::automation::core::errors::AutomationErrorCode::NativeUnavailable)
+    }
+}
+
+#[cfg(test)]
+impl crate::automation::core::capabilities::TestControlCapability for TestWebviewEvalBackend {
+    fn reset(
+        &self,
+        _scopes: &[crate::automation::core::models::ResetScope],
+    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
+        Err(crate::automation::core::errors::AutomationErrorCode::ResetFailed)
+    }
+}
+
+#[cfg(test)]
+impl crate::automation::core::capabilities::WaitCapability for TestWebviewEvalBackend {
+    fn wait_for(
+        &self,
+        _condition: &crate::automation::core::models::WaitCondition,
+        _timeout_ms: u64,
+        _interval_ms: u64,
+    ) -> Result<Value, crate::automation::core::errors::AutomationErrorCode> {
+        Err(crate::automation::core::errors::AutomationErrorCode::Timeout)
+    }
+}
+
+#[cfg(test)]
 fn test_server_with_sample_state(token: &str) -> AutomationServer {
     let state = Arc::new(RwLock::new(RouteState {
         platform: "macos".to_string(),
@@ -457,8 +455,13 @@ fn test_server_with_sample_state(token: &str) -> AutomationServer {
         webview: json!({ "url": "http://127.0.0.1:19880" }),
         sidecar: json!({ "running": true }),
     }));
-    start_loopback_server(0, token.to_string(), state, Arc::new(TestWebviewEvalBackend))
-        .expect("server should start")
+    start_loopback_server(
+        0,
+        token.to_string(),
+        state,
+        Arc::new(TestWebviewEvalBackend),
+    )
+    .expect("server should start")
 }
 
 #[cfg(test)]
@@ -495,7 +498,10 @@ mod tests {
         );
 
         assert_eq!(response.status, 200);
-        assert_eq!(response.body.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            response.body.get("ok").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         assert_eq!(
             response.body.get("platform").and_then(|v| v.as_str()),
             Some("macos")
@@ -663,7 +669,9 @@ mod tests {
         let (unauthorized_status, unauthorized_response) = parse_test_response(&unauthorized_raw);
         assert_eq!(unauthorized_status, 401);
         assert_eq!(
-            unauthorized_response.get("error").and_then(|value| value.as_str()),
+            unauthorized_response
+                .get("error")
+                .and_then(|value| value.as_str()),
             Some("unauthorized")
         );
 
@@ -677,7 +685,10 @@ mod tests {
         let raw = send_test_request(server.local_addr(), &request);
         let (status, response) = parse_test_response(&raw);
         assert_eq!(status, 200);
-        assert_eq!(response.get("ok").and_then(|value| value.as_bool()), Some(true));
+        assert_eq!(
+            response.get("ok").and_then(|value| value.as_bool()),
+            Some(true)
+        );
         assert!(response.get("error").is_some_and(|value| value.is_null()));
         assert_eq!(
             response

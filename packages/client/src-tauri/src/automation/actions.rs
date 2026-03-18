@@ -1,11 +1,9 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::core::capabilities::{
-    self, NativeCapability, WebviewCapability,
-};
+use super::core::capabilities::{self, NativeCapability, WebviewCapability};
 use super::core::errors::AutomationErrorCode;
-use super::core::models::{AutomationEnvelope, NativeActionRequest};
+use super::core::models::{AutomationEnvelope, NativeActionRequest, ResetScope, WaitCondition};
 
 #[derive(Debug, Deserialize)]
 pub struct WebviewEvalRequest {
@@ -38,9 +36,31 @@ impl WebviewCapability for NoopWebviewEvalBackend {
     }
 }
 
+impl NativeCapability for NoopWebviewEvalBackend {
+    fn invoke(&self, _action: &str, _args: Option<&Value>) -> Result<Value, AutomationErrorCode> {
+        Err(AutomationErrorCode::NativeUnavailable)
+    }
+}
+
+impl crate::automation::core::capabilities::TestControlCapability for NoopWebviewEvalBackend {
+    fn reset(&self, _scopes: &[ResetScope]) -> Result<Value, AutomationErrorCode> {
+        Err(AutomationErrorCode::ResetFailed)
+    }
+}
+
+impl crate::automation::core::capabilities::WaitCapability for NoopWebviewEvalBackend {
+    fn wait_for(
+        &self,
+        _condition: &WaitCondition,
+        _timeout_ms: u64,
+        _interval_ms: u64,
+    ) -> Result<Value, AutomationErrorCode> {
+        Err(AutomationErrorCode::UnsupportedCondition)
+    }
+}
+
 pub fn parse_webview_eval_request(body: &[u8]) -> Result<WebviewEvalRequest, &'static str> {
-    let parsed = serde_json::from_slice::<WebviewEvalRequest>(body)
-        .map_err(|_| "invalid_json")?;
+    let parsed = serde_json::from_slice::<WebviewEvalRequest>(body).map_err(|_| "invalid_json")?;
     if parsed.script.trim().is_empty() {
         return Err("missing_script");
     }
@@ -90,7 +110,11 @@ mod tests {
     }
 
     impl NativeCapability for std::sync::Mutex<MockNativeActionBackend> {
-        fn invoke(&self, action: &str, _args: Option<&Value>) -> Result<Value, AutomationErrorCode> {
+        fn invoke(
+            &self,
+            action: &str,
+            _args: Option<&Value>,
+        ) -> Result<Value, AutomationErrorCode> {
             let mut guard = self.lock().expect("lock should succeed");
             match action {
                 "window.focus" => {
