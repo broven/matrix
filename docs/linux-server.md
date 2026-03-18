@@ -22,6 +22,12 @@ Re-run the same install command. The script detects the existing installation, d
 curl -fsSL https://raw.githubusercontent.com/broven/matrix/main/scripts/install-server.sh | sudo bash
 ```
 
+To change port or token during an update, pass them as arguments:
+
+```bash
+curl -fsSL .../install-server.sh | sudo bash -s -- --port 9090 --token new-secret
+```
+
 ## File Layout
 
 | Path | Purpose |

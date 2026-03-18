@@ -214,8 +214,22 @@ main() {
     # Check if already at latest (best-effort, no --version flag yet)
     download_binary "$latest_version"
 
+    # Update config if --port or --token was provided
+    local config_changed=""
+    if [ -n "$PORT" ] && [ -f "$CONFIG_FILE" ]; then
+      sed -i "s/^MATRIX_PORT=.*/MATRIX_PORT=\"${PORT}\"/" "$CONFIG_FILE"
+      ok "Updated port to ${PORT}"
+      config_changed=1
+    fi
+    if [ -n "$TOKEN" ] && [ -f "$CONFIG_FILE" ]; then
+      sed -i "s/^MATRIX_TOKEN=.*/MATRIX_TOKEN=\"${TOKEN}\"/" "$CONFIG_FILE"
+      ok "Updated token"
+      config_changed=1
+    fi
+
     systemctl restart "$SERVICE_NAME"
     ok "Updated to ${latest_version}"
+    [ -n "$config_changed" ] && ok "Configuration updated"
     echo
     info "Check status: systemctl status ${SERVICE_NAME}"
   else
