@@ -18,6 +18,7 @@ import { createTransportRoutes } from "./api/transport/index.js";
 import { SessionManager } from "./session-manager/index.js";
 import { WorktreeManager } from "./worktree-manager/index.js";
 import { CloneManager } from "./clone-manager/index.js";
+import { CommandCache } from "./command-cache.js";
 import type { AgentCapabilities, CreateSessionRequest } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
@@ -32,6 +33,7 @@ const connectionManager = new ConnectionManager();
 const sessionManager = new SessionManager();
 const worktreeManager = new WorktreeManager();
 const cloneManager = new CloneManager();
+const commandCache = new CommandCache();
 const IDLE_SUSPEND_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_SUSPEND_SWEEP_INTERVAL_MS = 60 * 1000;
 
@@ -153,6 +155,14 @@ async function createBridge(
         eventId: "",
       });
 
+      // Cache available commands per worktree+agent
+      if (update.sessionUpdate === "available_commands_update") {
+        const sess = store.getSession(sessionId);
+        if (sess?.worktreeId) {
+          commandCache.set(sess.worktreeId, sess.agentId, update.availableCommands);
+        }
+      }
+
       // Persist structured events
       switch (update.sessionUpdate) {
         case "agent_message_chunk": {
@@ -202,7 +212,6 @@ async function createBridge(
       });
     },
     onClose() {
-      console.log(`[session ${sessionId}] agent process closed`);
       console.log(`[session ${sessionId}] Agent process closed`);
       // Flush any buffered agent message chunks before closing
       flushAgentMessageBuffer(sessionId);
@@ -235,6 +244,26 @@ async function createBridge(
 sessionManager.setBridgeFactory(createBridge);
 
 /**
+ * Push cached commands to a newly created session so the client gets them
+ * before the agent sends its first available_commands_update.
+ */
+function pushCachedCommands(sessionId: string, worktreeId: string | undefined, agentId: string): void {
+  if (!worktreeId) return;
+  const cached = commandCache.get(worktreeId, agentId);
+  if (cached) {
+    connectionManager.broadcastToSession(sessionId, {
+      type: "session:update",
+      sessionId,
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: cached,
+      },
+      eventId: "",
+    });
+  }
+}
+
+/**
  * Helper to create a session inside a worktree (used by repository routes).
  */
 async function createSessionForWorktree(
@@ -251,6 +280,8 @@ async function createSessionForWorktree(
     agentSessionId,
     worktreeId,
   });
+
+  pushCachedCommands(sessionId, worktreeId, agentId);
 
   return { sessionId, modes };
 }
@@ -361,6 +392,8 @@ app.post("/sessions", async (c) => {
       agentSessionId,
       worktreeId,
     });
+
+    pushCachedCommands(sessionId, worktreeId, body.agentId);
 
     return c.json({ sessionId, modes });
   } catch (error) {

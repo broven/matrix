@@ -4,6 +4,7 @@ import type {
   PromptContent,
   StopReason,
   HistoryEntry,
+  AvailableCommand,
 } from "@matrix/protocol";
 import type { Transport } from "./transport/index.js";
 
@@ -17,6 +18,7 @@ export interface PromptCallbacks {
   onHistorySync?: (history: HistoryEntry[]) => void;
   onSuspended?: () => void;
   onRestoring?: () => void;
+  onAvailableCommands?: (commands: AvailableCommand[]) => void;
   onError?: (error: { code: string; message: string }) => void;
 }
 
@@ -27,6 +29,7 @@ interface QueuedResolver {
 export class MatrixSession implements AsyncIterable<SessionUpdate> {
   private callbacks: PromptCallbacks | null = null;
   private listeners = new Set<PromptCallbacks>();
+  availableCommands: AvailableCommand[] = [];
 
   /** Async iterator state */
   private iteratorBuffer: SessionUpdate[] = [];
@@ -126,6 +129,10 @@ export class MatrixSession implements AsyncIterable<SessionUpdate> {
         break;
       case "plan":
         this.dispatch((callbacks) => callbacks.onPlan?.(update));
+        break;
+      case "available_commands_update":
+        this.availableCommands = update.availableCommands;
+        this.dispatch((callbacks) => callbacks.onAvailableCommands?.(update.availableCommands));
         break;
       case "completed":
         this.dispatch((callbacks) => callbacks.onComplete?.({ stopReason: update.stopReason }));
