@@ -36,7 +36,8 @@ export interface AutoUpdateContext {
   dismiss: () => void;
 }
 
-const CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+const INITIAL_DELAY = 2 * 60 * 1000; // 2 minutes after launch
+const CHECK_INTERVAL = 3 * 60 * 60 * 1000; // 3 hours
 
 const CHANNEL_STORAGE_KEY = "matrix:update-channel";
 
@@ -143,10 +144,17 @@ function useAutoUpdateInternal(): AutoUpdateContext {
       setHasChecked(true);
 
       if (result.has_update && result.download_url) {
-        if (dismissedVersion.current === result.version) {
-          setState("idle");
+        // If we already show an available update, only replace if this is a newer version
+        if (current === "available" && updateInfo && result.version === updateInfo.version) {
+          setState("available"); // no change, restore state from "checking"
           return;
         }
+        if (dismissedVersion.current === result.version) {
+          setState(current === "available" ? "available" : "idle");
+          return;
+        }
+        // New or newer version found — reset dismiss and show it
+        dismissedVersion.current = null;
         setUpdateInfo({
           version: result.version,
           downloadUrl: result.download_url,
@@ -154,7 +162,7 @@ function useAutoUpdateInternal(): AutoUpdateContext {
         });
         setState("available");
       } else {
-        setState("idle");
+        setState(current === "available" ? "available" : "idle");
       }
     } catch (e) {
       setHasChecked(true);
@@ -236,13 +244,20 @@ function useAutoUpdateInternal(): AutoUpdateContext {
     };
   }, []);
 
-  // Auto-check on mount + interval (only after channel is loaded)
+  // Auto-check: 2min after launch, then every 3 hours (only after channel is loaded)
   useEffect(() => {
     if (!isTauri() || !isMacOS() || !channelLoaded) return;
 
-    checkForUpdate();
+    const initialTimer = setTimeout(() => {
+      checkForUpdate();
+    }, INITIAL_DELAY);
+
     const interval = setInterval(checkForUpdate, CHECK_INTERVAL);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
   }, [checkForUpdate, channelLoaded]);
 
   return {
