@@ -9,7 +9,7 @@
     "test": "vitest run && node --test test/**/*.test.mjs",
     "test:e2e": "playwright test",
     "tauri": "tauri",
-    "tauri:dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec tauri dev'",
+    "tauri:dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec tauri dev --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"}}\"'",
     "tauri:build": "tauri build",
     "dev:mac": "wireit"
   },
@@ -23,7 +23,7 @@
       ]
     },
     "dev:mac": {
-      "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; SKIP_SIDECAR=true SIDECAR_PORT=$MATRIX_PORT exec tauri dev'",
+      "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; SKIP_SIDECAR=true SIDECAR_PORT=$MATRIX_PORT exec tauri dev --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"}}\"'",
       "service": true,
       "dependencies": [
         "dev",

@@ -5,7 +5,7 @@
   "identifier": "com.matrix.client",
   "build": {
     "beforeBuildCommand": "pnpm build",
-    "devUrl": "http://127.0.0.1:10770",
+    "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../dist"
   },
   "app": {
