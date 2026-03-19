@@ -16,13 +16,15 @@ env-local = """
 BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
 WORKSPACE="${WT_NAME:-${CONDUCTOR_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_NAME}}}"
 
-# Derive 3 unique ports from base port:
+# Derive 4 unique ports from base port:
 #   CLIENT_PORT  = base      (Vite dev server)
 #   HMR_PORT     = base + 1  (Tauri HMR WebSocket)
 #   MATRIX_PORT  = base + 2  (Matrix server)
+#   SIDECAR_PORT = base + 3  (Tauri sidecar server, dev only)
 CLIENT_PORT=$((BASE_PORT))
 HMR_PORT=$((BASE_PORT + 1))
 MATRIX_PORT=$((BASE_PORT + 2))
+SIDECAR_PORT=$((BASE_PORT + 3))
 
 MATRIX_TOKEN=$(head -c 36 /dev/urandom | base64 | tr -d '/+=' | head -c 48)
 
@@ -32,10 +34,11 @@ CLIENT_PORT=$CLIENT_PORT
 HMR_PORT=$HMR_PORT
 MATRIX_PORT=$MATRIX_PORT
 VITE_MATRIX_PORT=$MATRIX_PORT
+SIDECAR_PORT=$SIDECAR_PORT
 MATRIX_TOKEN=$MATRIX_TOKEN
 EOF
 
-echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT"
+echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT sidecar=$SIDECAR_PORT"
 """
 
 build-protocol = """
@@ -56,7 +59,7 @@ fi
 [pre-remove]
 kill-ports = """
 BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
-for offset in 0 1 2; do
+for offset in 0 1 2 3; do
   PORT=$((BASE_PORT + offset))
   lsof -ti :$PORT -sTCP:LISTEN | xargs kill 2>/dev/null || true
 done
