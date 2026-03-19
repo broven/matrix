@@ -4,7 +4,7 @@ import { setBridge } from "../lib/ui";
 import { verifyConnected } from "../lib/flows/connect";
 import { expectVisible } from "../lib/assertions";
 
-describe("01 — Connect to Server", () => {
+describe("Connect to Server", () => {
   it("should have a healthy automation bridge", async () => {
     const bridge = await createBridgeClient();
     setBridge(bridge);

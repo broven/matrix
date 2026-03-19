@@ -28,7 +28,7 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
   };
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 p-6">
+    <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 p-6" data-testid="settings-repo-detail">
       <Card>
         <CardHeader>
           <h3 className="text-2xl font-semibold">{repository.name}</h3>
@@ -60,7 +60,7 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
               Permanently remove this repository and its tracked worktrees from Matrix.
             </div>
           </div>
-          <Button variant="destructive" onClick={() => { setDeleteSource(false); setDeleteError(null); setConfirmingDelete(true); }}>
+          <Button variant="destructive" data-testid="delete-repo-btn" onClick={() => { setDeleteSource(false); setDeleteError(null); setConfirmingDelete(true); }}>
             Delete Repository
           </Button>
         </CardContent>
@@ -79,6 +79,7 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
                 checked={deleteSource}
                 onChange={(e) => setDeleteSource(e.target.checked)}
                 className="size-4 rounded border-border"
+                data-testid="delete-source-checkbox"
               />
               <span className="text-muted-foreground">Also delete source files on disk</span>
             </label>
@@ -89,7 +90,7 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
               <Button variant="outline" onClick={() => setConfirmingDelete(false)} disabled={deleting}>
                 Cancel
               </Button>
-              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              <Button variant="destructive" data-testid="confirm-delete-repo-btn" onClick={handleDelete} disabled={deleting}>
                 {deleting ? "Deleting..." : "Delete"}
               </Button>
             </div>

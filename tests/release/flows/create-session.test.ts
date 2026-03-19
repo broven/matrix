@@ -3,7 +3,7 @@ import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
 import { setBridge, click, type as typeText, waitFor, isVisible } from "../lib/ui";
 import { expectVisible } from "../lib/assertions";
 
-describe("04 — Create Session", () => {
+describe("Create Session", () => {
   let bridge: BridgeClient;
 
   beforeAll(async () => {

@@ -11,7 +11,7 @@ import { expectVisible } from "../lib/assertions";
 const TEST_REPO_URL = "https://github.com/broven/matrix-test-local.git";
 const REPO_NAME = "matrix-test-local";
 
-describe("02 — Add Repository (Open Local)", () => {
+describe("Add Repository (Open Local)", () => {
   let bridge: BridgeClient;
   let cloneDir: string;
 

@@ -9,7 +9,7 @@ const REPO_NAME = "matrix-test-clone";
 // Default clone target based on server config reposPath
 const CLONE_TARGET = `/Users/metajs/Projects/repos/${REPO_NAME}`;
 
-describe("03 — Add Repository (Clone from URL)", () => {
+describe("Add Repository (Clone from URL)", () => {
   let bridge: BridgeClient;
 
   beforeAll(async () => {

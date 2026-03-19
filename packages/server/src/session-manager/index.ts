@@ -261,18 +261,9 @@ export class SessionManager {
     return promise;
   }
 
-  /** Clear all pending restart timers (for test cleanup). */
-  clearAllTimers(): void {
-    for (const entry of this.sessions.values()) {
-      if (entry.restartTimer) {
-        clearTimeout(entry.restartTimer);
-        entry.restartTimer = undefined;
-      }
-    }
-  }
-
-  suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): void {
+  suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): string[] {
     const cutoffMs = nowMs - idleTimeoutMs;
+    const suspendedIds: string[] = [];
 
     for (const session of store.listSessions()) {
       if (session.status !== "active" || !session.recoverable) {
@@ -304,6 +295,9 @@ export class SessionManager {
         suspendedAt: new Date(nowMs).toISOString(),
         closeReason: null,
       });
+      suspendedIds.push(session.sessionId);
     }
+
+    return suspendedIds;
   }
 }

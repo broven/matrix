@@ -48,6 +48,7 @@ export function SettingsSidebar({ repositories, selectedTab, onSelectTab }: Sett
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                 )}
                 onClick={() => onSelectTab({ kind: "repository", repositoryId: repository.id })}
+                data-testid={`settings-repo-tab-${repository.name}`}
               >
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-semibold uppercase text-foreground">
                   {repository.name.slice(0, 1) || "?"}

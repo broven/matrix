@@ -401,6 +401,7 @@ export function AppLayout() {
             size="sm"
             className="w-full justify-start gap-2 rounded-lg text-xs"
             onClick={() => setShowSettings(true)}
+            data-testid="settings-btn"
           >
             <Settings className="size-3.5" />
             Settings

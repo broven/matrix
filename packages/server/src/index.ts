@@ -89,6 +89,10 @@ async function handlePrompt(sessionId: string, prompt: Array<{ type: string; tex
 
   let bridge = sessionManager.getBridge(sessionId);
   if (!bridge && session.status === "suspended" && session.recoverable) {
+    connectionManager.broadcastToSession(sessionId, {
+      type: "session:restoring",
+      sessionId,
+    } as any);
     bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
   }
 
@@ -417,7 +421,13 @@ const server = serve({
 injectWebSocket(server);
 
 const idleSuspendSweepTimer = setInterval(() => {
-  sessionManager.suspendIdleSessions(store, Date.now(), IDLE_SUSPEND_TIMEOUT_MS);
+  const suspendedIds = sessionManager.suspendIdleSessions(store, Date.now(), IDLE_SUSPEND_TIMEOUT_MS);
+  for (const sessionId of suspendedIds) {
+    connectionManager.broadcastToSession(sessionId, {
+      type: "session:suspended",
+      sessionId,
+    } as any);
+  }
 }, IDLE_SUSPEND_SWEEP_INTERVAL_MS);
 idleSuspendSweepTimer.unref();
 
