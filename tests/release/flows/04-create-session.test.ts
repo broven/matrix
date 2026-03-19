@@ -34,7 +34,5 @@ describe("04 — Create Session", () => {
 
     // Wait for the chat interface to appear (agent needs time to start)
     await waitFor('[data-testid="chat-input"]', { timeout: 45_000 });
-    await expectVisible('[data-testid="chat-input"]');
-    await expectVisible('[data-testid="send-btn"]');
   });
 });

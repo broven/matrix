@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Store } from "../store/index.js";
 import { unlinkSync } from "node:fs";
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 
 const DB_PATH = "/tmp/matrix-test.db";
 
