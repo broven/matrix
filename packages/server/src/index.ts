@@ -222,7 +222,7 @@ async function createBridge(
       // Cache available commands per worktree+agent
       if (update.sessionUpdate === "available_commands_update") {
         const sess = store.getSession(sessionId);
-        if (sess?.worktreeId) {
+        if (sess?.worktreeId && sess.agentId) {
           commandCache.set(sess.worktreeId, sess.agentId, update.availableCommands);
         }
       }

@@ -58,6 +58,7 @@ function createAttachedSession() {
     promptWithContent: vi.fn(),
     approveToolCall: vi.fn(),
     rejectToolCall: vi.fn(),
+    availableCommands: [],
   };
 
   return {
