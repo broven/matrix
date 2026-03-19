@@ -15,7 +15,7 @@ export class WorktreeManager {
    * Resolve the `wt` binary path.
    * Priority: bundled binary → PATH → not found (git fallback).
    */
-  async resolveWt(): Promise<string | null> {
+  private async resolveWt(): Promise<string | null> {
     if (this.wtPath !== null) return this.wtPath || null;
 
     // 1. Bundled binary at packages/server/bin/wt
