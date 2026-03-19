@@ -239,6 +239,11 @@ main() {
     # --- Update mode ---
     info "Existing installation detected — updating..."
 
+    # Stop service before replacing binary (Linux refuses to overwrite a running executable)
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+      systemctl stop "$SERVICE_NAME"
+    fi
+
     download_binary "$latest_version"
 
     # Update config if --port, --token, or --channel was provided
