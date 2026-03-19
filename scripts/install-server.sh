@@ -306,6 +306,9 @@ main() {
     info "Check status: systemctl status ${SERVICE_NAME}"
     info "View logs:    journalctl -u ${SERVICE_NAME} -f"
     info "Edit config:  ${CONFIG_FILE}"
+    echo
+    info "Current configuration (${CONFIG_FILE}):"
+    cat "$CONFIG_FILE"
   fi
 }
 
