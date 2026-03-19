@@ -3,14 +3,33 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec vite'",
+    "dev": "wireit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run && node --test test/**/*.test.mjs",
     "test:e2e": "playwright test",
     "tauri": "tauri",
     "tauri:dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec tauri dev'",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "dev:mac": "wireit"
+  },
+  "wireit": {
+    "dev": {
+      "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec vite'",
+      "service": true,
+      "dependencies": [
+        "../protocol:dev",
+        "../sdk:dev"
+      ]
+    },
+    "dev:mac": {
+      "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; SKIP_SIDECAR=true SIDECAR_PORT=$MATRIX_PORT exec tauri dev'",
+      "service": true,
+      "dependencies": [
+        "dev",
+        "../server:dev:mac"
+      ]
+    }
   },
   "dependencies": {
     "@matrix/protocol": "workspace:*",

@@ -12,7 +12,13 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "wireit"
+  },
+  "wireit": {
+    "dev": {
+      "command": "tsc --watch --preserveWatchOutput",
+      "service": true
+    }
   },
   "devDependencies": {
     "typescript": "^5.7.0"

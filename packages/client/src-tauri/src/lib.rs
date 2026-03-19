@@ -131,78 +131,89 @@ fn initialize_desktop_runtime(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sidecar_port = resolve_sidecar_port();
-    let port_str = sidecar_port.to_string();
 
     #[cfg(any(test, debug_assertions))]
     append_automation_startup_log(&format!("entered_desktop_setup sidecar_port={sidecar_port}"));
 
-    // Kill any orphaned sidecar processes from previous launches
-    // that may still hold the sidecar port
-    if let Ok(output) = std::process::Command::new("lsof")
-        .args(["-ti", &format!("tcp:{sidecar_port}")])
-        .output()
-    {
-        let pids = String::from_utf8_lossy(&output.stdout);
-        for pid_str in pids.split_whitespace() {
-            if pid_str.trim().is_empty() {
-                continue;
+    let skip_sidecar = std::env::var("SKIP_SIDECAR")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    if skip_sidecar {
+        eprintln!("[matrix-client] SKIP_SIDECAR=true, skipping sidecar spawn (using external dev server on port {sidecar_port})");
+        app.manage(SidecarState(std::sync::Mutex::new(None)));
+        app.manage(SidecarPortState(sidecar_port));
+    } else {
+        let port_str = sidecar_port.to_string();
+
+        // Kill any orphaned sidecar processes from previous launches
+        // that may still hold the sidecar port
+        if let Ok(output) = std::process::Command::new("lsof")
+            .args(["-ti", &format!("tcp:{sidecar_port}")])
+            .output()
+        {
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids.split_whitespace() {
+                if pid_str.trim().is_empty() {
+                    continue;
+                }
+                eprintln!(
+                    "[matrix-client] killing orphaned process on port {}: pid {}",
+                    sidecar_port, pid_str
+                );
+                let _ = std::process::Command::new("kill")
+                    .args(["-TERM", pid_str.trim()])
+                    .output();
             }
-            eprintln!(
-                "[matrix-client] killing orphaned process on port {}: pid {}",
-                sidecar_port, pid_str
-            );
-            let _ = std::process::Command::new("kill")
-                .args(["-TERM", pid_str.trim()])
-                .output();
+            if !pids.trim().is_empty() {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
         }
-        if !pids.trim().is_empty() {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
+
+        use tauri_plugin_shell::ShellExt;
+
+        let resource_dir = app.path().resource_dir()?;
+        let web_dir = resource_dir.join("web");
+
+        let shell = app.shell();
+        let (mut rx, child) = shell
+            .sidecar("matrix-server")?
+            .args([
+                "--port",
+                &port_str,
+                "--local",
+                "true",
+                "--web",
+                &web_dir.to_string_lossy(),
+            ])
+            .spawn()?;
+
+        app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
+        app.manage(SidecarPortState(sidecar_port));
+
+        // Log sidecar output for debugging
+        tauri::async_runtime::spawn(async move {
+            use tauri_plugin_shell::process::CommandEvent;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(line) => {
+                        eprintln!("[matrix-server] {}", String::from_utf8_lossy(&line));
+                    }
+                    CommandEvent::Stderr(line) => {
+                        eprintln!("[matrix-server:err] {}", String::from_utf8_lossy(&line));
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        eprintln!(
+                            "[matrix-server] terminated code={:?} signal={:?}",
+                            payload.code, payload.signal
+                        );
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
     }
-
-    use tauri_plugin_shell::ShellExt;
-
-    let resource_dir = app.path().resource_dir()?;
-    let web_dir = resource_dir.join("web");
-
-    let shell = app.shell();
-    let (mut rx, child) = shell
-        .sidecar("matrix-server")?
-        .args([
-            "--port",
-            &port_str,
-            "--local",
-            "true",
-            "--web",
-            &web_dir.to_string_lossy(),
-        ])
-        .spawn()?;
-
-    app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
-    app.manage(SidecarPortState(sidecar_port));
-
-    // Log sidecar output for debugging
-    tauri::async_runtime::spawn(async move {
-        use tauri_plugin_shell::process::CommandEvent;
-        while let Some(event) = rx.recv().await {
-            match event {
-                CommandEvent::Stdout(line) => {
-                    eprintln!("[matrix-server] {}", String::from_utf8_lossy(&line));
-                }
-                CommandEvent::Stderr(line) => {
-                    eprintln!("[matrix-server:err] {}", String::from_utf8_lossy(&line));
-                }
-                CommandEvent::Terminated(payload) => {
-                    eprintln!(
-                        "[matrix-server] terminated code={:?} signal={:?}",
-                        payload.code, payload.signal
-                    );
-                    break;
-                }
-                _ => {}
-            }
-        }
-    });
 
     #[cfg(any(test, debug_assertions))]
     initialize_automation_runtime(app, sidecar_port);

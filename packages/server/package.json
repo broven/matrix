@@ -6,8 +6,18 @@
   "scripts": {
     "build": "tsc --noEmit",
     "dev": "bun --watch --env-file=../../.env --env-file=../../.env.local src/index.ts",
+    "dev:mac": "wireit",
     "start": "bun --env-file=../../.env --env-file=../../.env.local src/index.ts",
     "test": "bun test"
+  },
+  "wireit": {
+    "dev:mac": {
+      "command": "bun --watch --env-file=../../.env --env-file=../../.env.local src/index.ts -- --local true --db-path ./data/dev.db",
+      "service": true,
+      "dependencies": [
+        "../protocol:dev"
+      ]
+    }
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
