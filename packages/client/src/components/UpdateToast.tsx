@@ -1,6 +1,18 @@
-import { X, Download, RefreshCw } from "lucide-react";
+import { X, Download, RefreshCw, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isTauri } from "@/lib/platform";
 import type { UpdateState, UpdateInfo, DownloadProgress } from "@/hooks/useAutoUpdate";
+
+async function openExternal(url: string) {
+  if (isTauri()) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(url);
+      return;
+    } catch { /* fall through */ }
+  }
+  window.open(url, "_blank");
+}
 
 interface UpdateToastProps {
   state: UpdateState;
@@ -37,12 +49,15 @@ export function UpdateToast({
               <p className="text-sm font-medium">
                 v{updateInfo.version} available
               </p>
-              {updateInfo.releaseNotes && (
-                <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                  {updateInfo.releaseNotes}
-                </p>
-              )}
               <div className="mt-3 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => openExternal(`https://github.com/broven/matrix/releases/tag/v${updateInfo.version}`)}
+                >
+                  <ExternalLink className="mr-1.5 size-3.5" />
+                  Release Notes
+                </Button>
                 <Button size="sm" variant="outline" onClick={onDismiss}>
                   Later
                 </Button>
