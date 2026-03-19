@@ -190,6 +190,43 @@ export function AppLayout() {
     }
   };
 
+  const handleDeleteRepository = async (repositoryId: string) => {
+    if (!client) return;
+
+    const worktreeIds = new Set((worktrees.get(repositoryId) ?? []).map((worktree) => worktree.id));
+    const deletedSessionIds = sessions
+      .filter(
+        (session) =>
+          session.repositoryId === repositoryId ||
+          (session.worktreeId !== null && worktreeIds.has(session.worktreeId)),
+      )
+      .map((session) => session.sessionId);
+
+    setRepositories((previous) => previous.filter((repository) => repository.id !== repositoryId));
+    setWorktrees((previous) => {
+      const next = new Map(previous);
+      next.delete(repositoryId);
+      return next;
+    });
+    setSessions((previous) =>
+      previous.filter((session) => !deletedSessionIds.includes(session.sessionId)),
+    );
+
+    if (selectedSessionId && deletedSessionIds.includes(selectedSessionId)) {
+      setSelectedSessionId(null);
+    }
+
+    try {
+      await client.deleteRepository(repositoryId);
+      void handleRefreshSessions();
+    } catch (error) {
+      console.error("Failed to delete repository:", error);
+      void handleRefreshSessions();
+      const repositories = await client.getRepositories();
+      setRepositories(repositories);
+    }
+  };
+
   const handleCreateSession = async (agentId: string, cwd: string) => {
     if (!client) return null;
 
@@ -377,7 +414,11 @@ export function AppLayout() {
 
       <main className="flex min-w-0 flex-1 flex-col">
         {showSettings ? (
-          <SettingsPage onBack={() => setShowSettings(false)} />
+          <SettingsPage
+            onBack={() => setShowSettings(false)}
+            repositories={repositories}
+            onDeleteRepository={handleDeleteRepository}
+          />
         ) : (
         <>
         <MobileHeader
