@@ -239,6 +239,11 @@ main() {
     # --- Update mode ---
     info "Existing installation detected — updating..."
 
+    # Stop service before replacing binary (Linux refuses to overwrite a running executable)
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+      systemctl stop "$SERVICE_NAME"
+    fi
+
     download_binary "$latest_version"
 
     # Update config if --port, --token, or --channel was provided
@@ -301,6 +306,9 @@ main() {
     info "Check status: systemctl status ${SERVICE_NAME}"
     info "View logs:    journalctl -u ${SERVICE_NAME} -f"
     info "Edit config:  ${CONFIG_FILE}"
+    echo
+    info "Current configuration (${CONFIG_FILE}):"
+    cat "$CONFIG_FILE"
   fi
 }
 
