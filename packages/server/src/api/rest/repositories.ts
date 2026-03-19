@@ -261,8 +261,9 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       targetDir,
       body.branch,
       async (job) => {
-        if (job.status === "completed") {
+        if (job.status !== "failed") {
           // Auto-register the cloned repo (awaited so status reflects registration)
+          // Note: onComplete is called BEFORE status is set to "completed" on success path
           try {
             const isValid = await worktreeManager.validateGitRepo(job.targetDir);
             if (isValid) {
