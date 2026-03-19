@@ -34,14 +34,16 @@ pub fn run() {
         updater::install_update,
     ]);
 
-    let mut app = builder
-        .build(tauri::generate_context!())
-        .expect("error while building Matrix client");
-
     #[cfg(desktop)]
-    initialize_desktop_runtime(&mut app).expect("error while initializing Matrix client");
+    let builder = builder.setup(|app| {
+        initialize_desktop_runtime(app)?;
+        Ok(())
+    });
 
-    app.run(|_, _| {});
+    builder
+        .build(tauri::generate_context!())
+        .expect("error while building Matrix client")
+        .run(|_, _| {});
 }
 
 #[cfg(desktop)]
