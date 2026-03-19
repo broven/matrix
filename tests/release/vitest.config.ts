@@ -6,6 +6,7 @@ export default defineConfig({
     include: ["flows/**/*.test.ts"],
     testTimeout: 60_000,
     hookTimeout: 30_000,
+    globalSetup: ["./global-setup.ts"],
     setupFiles: ["./setup.ts"],
     sequence: {
       sequencer: class {
