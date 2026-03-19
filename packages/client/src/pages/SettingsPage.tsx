@@ -1,39 +1,26 @@
 import { useState } from "react";
-import { ArrowLeft, Plus, Trash2, Wifi, RefreshCw, Info } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Wifi, RefreshCw, Info, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
-import { hasLocalServer, isTauri, isMacOS } from "@/lib/platform";
+import { useServerStore } from "@/hooks/useServerStore";
+import { hasLocalServer, isTauri, isMacOS, isMobilePlatform } from "@/lib/platform";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
-
-interface SavedServer {
-  serverUrl: string;
-  token: string;
-  name: string;
-}
-
-const STORAGE_KEY = "matrix:remoteServers";
-
-function loadSavedServers(): SavedServer[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function saveSavedServers(servers: SavedServer[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(servers));
-}
+import { ShareServerModal } from "@/components/ShareServerModal";
 
 export function SettingsPage({ onBack }: { onBack: () => void }) {
   const { connect, connectionInfo, status } = useMatrixClient();
-  const { state: updateState, updateInfo, checkForUpdate, error: updateError, hasChecked } = useAutoUpdate();
-  const [servers, setServers] = useState(loadSavedServers);
+  const { servers, addServer, removeServer } = useServerStore();
+  const { state: updateState, updateInfo, checkForUpdate, error: updateError, hasChecked, channel, setChannel } = useAutoUpdate();
   const [newUrl, setNewUrl] = useState("");
   const [newToken, setNewToken] = useState("");
   const [newName, setNewName] = useState("");
+  const [shareServer, setShareServer] = useState<{
+    serverUrl: string;
+    token: string;
+    name?: string;
+  } | null>(null);
 
   const handleAdd = () => {
     if (!newUrl || !newToken) return;
@@ -43,27 +30,21 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
     } catch {
       hostLabel = newUrl;
     }
-    const server: SavedServer = {
+    addServer({
       serverUrl: newUrl,
       token: newToken,
       name: newName || hostLabel,
-    };
-    const updated = [...servers, server];
-    setServers(updated);
-    saveSavedServers(updated);
+    });
     setNewUrl("");
     setNewToken("");
     setNewName("");
   };
 
-  const handleRemove = (index: number) => {
-    const updated = servers.filter((_, i) => i !== index);
-    setServers(updated);
-    saveSavedServers(updated);
-  };
-
-  const handleConnect = (server: SavedServer) => {
-    connect({ serverUrl: server.serverUrl, token: server.token });
+  const handleConnect = (server: { serverUrl: string; token: string; id?: string }) => {
+    connect(
+      { serverUrl: server.serverUrl, token: server.token },
+      { source: "saved", serverId: server.id }
+    );
   };
 
   return (
@@ -84,11 +65,26 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
               Current Connection
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground space-y-1">
+          <CardContent className="text-sm text-muted-foreground space-y-2">
             <div>Server: {connectionInfo?.serverUrl ?? "-"}</div>
             <div>Status: {status}</div>
-            {hasLocalServer() && connectionInfo?.serverUrl?.includes("localhost:19880") && (
+            {hasLocalServer() && connectionInfo?.serverUrl && /localhost:19880|127\.0\.0\.1:19880/.test(connectionInfo.serverUrl) && (
               <div className="text-xs text-primary">Local server (sidecar)</div>
+            )}
+            {connectionInfo && !isMobilePlatform() && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setShareServer({
+                    serverUrl: connectionInfo.serverUrl,
+                    token: connectionInfo.token,
+                  })
+                }
+              >
+                <Share2 className="mr-1.5 size-3.5" />
+                Share Connection
+              </Button>
             )}
           </CardContent>
         </Card>
@@ -105,6 +101,18 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
             <CardContent className="text-sm space-y-3">
               <div className="text-muted-foreground">
                 Version: {__APP_VERSION__}
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <label htmlFor="update-channel">Update Channel:</label>
+                <select
+                  id="update-channel"
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value as "stable" | "beta")}
+                  className="rounded border bg-background px-2 py-1 text-sm"
+                >
+                  <option value="stable">Stable</option>
+                  <option value="beta">Beta</option>
+                </select>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -145,8 +153,8 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
             <CardTitle className="text-base">Remote Servers</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {servers.map((server, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-lg border p-3">
+            {servers.map((server) => (
+              <div key={server.id} className="flex items-center gap-2 rounded-lg border p-3">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">{server.name}</div>
                   <div className="text-xs text-muted-foreground truncate">{server.serverUrl}</div>
@@ -154,7 +162,22 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
                 <Button size="sm" variant="outline" onClick={() => handleConnect(server)}>
                   Connect
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => handleRemove(i)}>
+                {!isMobilePlatform() && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      setShareServer({
+                        serverUrl: server.serverUrl,
+                        token: server.token,
+                        name: server.name,
+                      })
+                    }
+                  >
+                    <Share2 className="size-3.5" />
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => removeServer(server.id)}>
                   <Trash2 className="size-3.5" />
                 </Button>
               </div>
@@ -184,6 +207,17 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Share modal */}
+      <ShareServerModal
+        open={shareServer !== null}
+        onOpenChange={(open) => {
+          if (!open) setShareServer(null);
+        }}
+        serverUrl={shareServer?.serverUrl ?? ""}
+        token={shareServer?.token ?? ""}
+        serverName={shareServer?.name}
+      />
     </div>
   );
 }

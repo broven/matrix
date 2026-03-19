@@ -23,7 +23,7 @@ function isTerminalSessionError(code: string) {
 function getInputPlaceholder(status: ViewStatus) {
   switch (status) {
     case "active":
-      return "Message the active session...";
+      return "Ask to make changes, @mention files, run /commands";
     case "suspended":
       return "Send a message to resume this session...";
     case "restoring":
@@ -248,6 +248,8 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
         onSend={handleSend}
         disabled={inputDisabled}
         placeholder={getInputPlaceholder(viewStatus)}
+        isProcessing={isProcessing}
+        agentName={sessionInfo.agentId}
       />
     </div>
   );

@@ -5,8 +5,10 @@ import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
 import { generateToken } from "./auth/token.js";
+import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
+import { discoverAgents } from "./agent-manager/discovery.js";
 import { Store } from "./store/index.js";
 import { AcpBridge } from "./acp-bridge/index.js";
 import { createRestRoutes } from "./api/rest/index.js";
@@ -14,20 +16,20 @@ import { setupWebSocket } from "./api/ws/index.js";
 import { ConnectionManager } from "./api/ws/connection-manager.js";
 import { createTransportRoutes } from "./api/transport/index.js";
 import { SessionManager } from "./session-manager/index.js";
-import type { CreateSessionRequest } from "@matrix/protocol";
+import { WorktreeManager } from "./worktree-manager/index.js";
+import type { AgentCapabilities, CreateSessionRequest } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
-import { buildConnectionUri } from "./connect-info.js";
+import { buildConnectionUri, getLocalIp } from "./connect-info.js";
 
 const config = loadConfig();
-const serverToken = config.localMode
-  ? "local"
-  : (process.env.MATRIX_TOKEN || generateToken());
+const serverToken = process.env.MATRIX_TOKEN || getPersistedToken();
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);
 store.normalizeSessionsOnStartup();
 const connectionManager = new ConnectionManager();
 const sessionManager = new SessionManager();
+const worktreeManager = new WorktreeManager();
 const IDLE_SUSPEND_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_SUSPEND_SWEEP_INTERVAL_MS = 60 * 1000;
 
@@ -42,8 +44,9 @@ function flushAgentMessageBuffer(sessionId: string): void {
   }
 }
 
-// Register configured agents
-for (const agent of config.agents) {
+// Discover and register ACP agents
+const discoveredAgents = await discoverAgents();
+for (const agent of discoveredAgents) {
   agentManager.register(agent);
 }
 
@@ -111,6 +114,13 @@ function handlePermissionResponse(sessionId: string, toolCallId: string, outcome
   if (bridge) {
     bridge.respondPermission(toolCallId, outcome);
   }
+}
+
+function validateCapabilities(caps: AgentCapabilities | null): string[] {
+  // No hard requirements for now — all mainstream agents should work.
+  // Add checks here as needed, e.g.:
+  // if (!caps?.promptCapabilities?.embeddedContext) missing.push("embeddedContext");
+  return [];
 }
 
 /**
@@ -199,6 +209,14 @@ async function createBridge(
   });
 
   await bridge.initialize({ name: "matrix-server", version: "0.1.0" });
+
+  // Validate agent capabilities
+  const missing = validateCapabilities(bridge.capabilities);
+  if (missing.length > 0) {
+    bridge.destroy();
+    throw new Error(`Agent "${agentId}" missing required capabilities: ${missing.join(", ")}`);
+  }
+
   const sessionResult = restoreAgentSessionId
     ? await bridge.loadSession(restoreAgentSessionId, cwd) as any
     : await bridge.createSession(cwd) as any;
@@ -213,6 +231,27 @@ async function createBridge(
 
 // Register the bridge factory for auto-restart
 sessionManager.setBridgeFactory(createBridge);
+
+/**
+ * Helper to create a session inside a worktree (used by repository routes).
+ */
+async function createSessionForWorktree(
+  agentId: string,
+  cwd: string,
+  worktreeId: string,
+): Promise<{ sessionId: string; modes: { currentModeId: string; availableModes: unknown[] } }> {
+  const sessionId = `sess_${nanoid()}`;
+  const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, agentId, cwd);
+
+  sessionManager.register(sessionId, bridge, agentId, cwd);
+  store.createSession(sessionId, agentId, cwd, {
+    recoverable,
+    agentSessionId,
+    worktreeId,
+  });
+
+  return { sessionId, modes };
+}
 
 const app = new Hono();
 
@@ -238,9 +277,45 @@ app.use("/agents", authMiddleware(serverToken));
 app.use("/agents/*", authMiddleware(serverToken));
 app.use("/sessions", authMiddleware(serverToken));
 app.use("/sessions/*", authMiddleware(serverToken));
+app.use("/repositories", authMiddleware(serverToken));
+app.use("/repositories/*", authMiddleware(serverToken));
+app.use("/worktrees", authMiddleware(serverToken));
+app.use("/worktrees/*", authMiddleware(serverToken));
+
+function isLoopbackRequest(c: any): boolean {
+  const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
+  if (!addr) return false;
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+}
+
+// Auth info endpoint — loopback only, lets desktop app fetch its token
+app.get("/api/auth-info", (c) => {
+  if (!isLoopbackRequest(c)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  return c.json({ token: serverToken });
+});
+
+// Local IP endpoint — loopback only, for sidecar QR code generation
+app.get("/api/local-ip", (c) => {
+  if (!isLoopbackRequest(c)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  const ip = getLocalIp();
+  if (!ip) {
+    return c.json({ error: "No LAN address found" }, 404);
+  }
+  return c.json({ ip });
+});
 
 // REST routes
-app.route("/", createRestRoutes(agentManager, store, sessionManager));
+app.route("/", createRestRoutes({
+  agentManager,
+  store,
+  sessionManager,
+  worktreeManager,
+  createSessionForWorktree,
+}));
 app.route("/", createTransportRoutes({
   connectionManager,
   serverToken,
@@ -254,14 +329,32 @@ app.route("/", createTransportRoutes({
 app.post("/sessions", async (c) => {
   const body = await c.req.json<CreateSessionRequest>();
 
+  // Resolve cwd: from worktreeId or direct cwd
+  let cwd = body.cwd;
+  let worktreeId: string | undefined;
+
+  if (body.worktreeId) {
+    const worktree = store.getWorktree(body.worktreeId);
+    if (!worktree) {
+      return c.json({ error: "Worktree not found" }, 404);
+    }
+    cwd = worktree.path;
+    worktreeId = body.worktreeId;
+  }
+
+  if (!cwd) {
+    return c.json({ error: "cwd or worktreeId is required" }, 400);
+  }
+
   const sessionId = `sess_${nanoid()}`;
   try {
-    const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, body.agentId, body.cwd);
+    const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, body.agentId, cwd);
 
-    sessionManager.register(sessionId, bridge, body.agentId, body.cwd);
-    store.createSession(sessionId, body.agentId, body.cwd, {
+    sessionManager.register(sessionId, bridge, body.agentId, cwd);
+    store.createSession(sessionId, body.agentId, cwd, {
       recoverable,
       agentSessionId,
+      worktreeId,
     });
 
     return c.json({ sessionId, modes });
@@ -290,7 +383,7 @@ if (config.webDir) {
   app.get("/*", async (c, next) => {
     const p = c.req.path;
     // Skip API routes and WebSocket endpoint
-    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     const res = await serveStatic({ root: resolvedWebDir })(c, next);
@@ -300,7 +393,7 @@ if (config.webDir) {
   // SPA fallback: serve index.html for non-API GET requests
   app.get("/*", async (c, next) => {
     const p = c.req.path;
-    if (p === "/ws" || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);
@@ -330,4 +423,4 @@ const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port
 console.log(`\n  Connect URI: ${connectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
-console.log(`\n  Registered agents: ${config.agents.map((a) => a.name).join(", ")}\n`);
+console.log(`\n  Discovered agents: ${discoveredAgents.map((a) => a.name).join(", ")}\n`);

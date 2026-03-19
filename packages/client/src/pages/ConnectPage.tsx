@@ -1,238 +1,478 @@
-import { useEffect, useState } from "react";
-import QRCode from "qrcode";
-import { Wifi, ShieldCheck, QrCode } from "lucide-react";
+import { useState } from "react";
+import {
+  Wifi,
+  WifiOff,
+  Plus,
+  Trash2,
+  Share2,
+  Loader2,
+  ScanLine,
+  Server,
+  Pencil,
+} from "lucide-react";
 import { useMatrixClient } from "../hooks/useMatrixClient";
-import { hasLocalServer } from "@/lib/platform";
+import { useServerStore, type SavedServer } from "../hooks/useServerStore";
+import { hasLocalServer, isMobilePlatform } from "@/lib/platform";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ShareServerModal } from "@/components/ShareServerModal";
 
-function buildConnectionUri(serverUrl: string, token: string): string {
-  const params = new URLSearchParams({ serverUrl, token });
-  return `matrix://connect?${params.toString()}`;
-}
-
-function maskToken(token: string) {
-  if (!token) return "-";
-  if (token.length <= 8) return token;
-  return `${token.slice(0, 4)}...${token.slice(-4)}`;
-}
+type AddMode = "manual" | "scan" | null;
 
 export function ConnectPage() {
-  const { connect, status, connectionInfo, restoreLastConnection } = useMatrixClient();
-  const [serverUrl, setServerUrl] = useState(
-    hasLocalServer() ? "http://localhost:19880" : "https://"
-  );
-  const [token, setToken] = useState("");
-  const [error, setError] = useState("");
-  const [qrDataUrl, setQrDataUrl] = useState("");
+  const { connect, status, connectionInfo, disconnect } = useMatrixClient();
+  const { servers, addServer, removeServer } = useServerStore();
 
-  useEffect(() => {
-    restoreLastConnection();
-    const saved = sessionStorage.getItem("matrix:lastConnection");
-    if (saved) {
-      const { serverUrl: url, token: savedToken } = JSON.parse(saved) as {
-        serverUrl: string;
-        token: string;
-      };
-      setServerUrl(url);
-      setToken(savedToken);
+  // Add server form
+  const [addMode, setAddMode] = useState<AddMode>(null);
+  const [newUrl, setNewUrl] = useState("");
+  const [newToken, setNewToken] = useState("");
+  const [newName, setNewName] = useState("");
+
+  // Share modal
+  const [shareServer, setShareServer] = useState<{
+    serverUrl: string;
+    token: string;
+    name?: string;
+  } | null>(null);
+
+  const handleAddServer = () => {
+    if (!newUrl || !newToken) return;
+    let name = newName;
+    if (!name) {
+      try {
+        name = new URL(newUrl).host;
+      } catch {
+        name = newUrl;
+      }
     }
-  }, [restoreLastConnection]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const paramUrl = params.get("serverUrl");
-    const paramToken = params.get("token");
-    const autoConnect = params.get("autoConnect") === "1";
-
-    if (paramUrl) setServerUrl(paramUrl);
-    if (paramToken) setToken(paramToken);
-
-    if (autoConnect && paramUrl && paramToken) {
-      connect({ serverUrl: paramUrl, token: paramToken });
-      // Clean URL after auto-connect
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, [connect]);
-
-  useEffect(() => {
-    if (!serverUrl || !token) {
-      setQrDataUrl("");
-      return;
-    }
-
-    void QRCode.toDataURL(buildConnectionUri(serverUrl, token), {
-      margin: 1,
-      width: 224,
-    }).then(setQrDataUrl);
-  }, [serverUrl, token]);
-
-  const handleConnect = () => {
-    if (!serverUrl || !token) {
-      setError("Server URL and token are required.");
-      return;
-    }
-
-    setError("");
-    connect({ serverUrl, token });
+    addServer({ name, serverUrl: newUrl, token: newToken });
+    setNewUrl("");
+    setNewToken("");
+    setNewName("");
+    setAddMode(null);
   };
 
-  const connectionUri = serverUrl && token ? buildConnectionUri(serverUrl, token) : "";
+  const handleConnect = (server: SavedServer) => {
+    connect(
+      { serverUrl: server.serverUrl, token: server.token },
+      { source: "saved", serverId: server.id }
+    );
+  };
+
+  const handleConnectManual = () => {
+    if (!newUrl || !newToken) return;
+    // Also save to server store
+    let name = newName;
+    if (!name) {
+      try {
+        name = new URL(newUrl).host;
+      } catch {
+        name = newUrl;
+      }
+    }
+    addServer({ name, serverUrl: newUrl, token: newToken });
+    connect(
+      { serverUrl: newUrl, token: newToken },
+      { source: "manual" }
+    );
+    setNewUrl("");
+    setNewToken("");
+    setNewName("");
+    setAddMode(null);
+  };
+
+  const isConnectedTo = (server: SavedServer) =>
+    connectionInfo?.serverUrl === server.serverUrl && status === "connected";
+
+  const isLocalConnected =
+    connectionInfo?.serverUrl?.includes("127.0.0.1:19880") && status === "connected";
 
   return (
     <div className="surface-grid relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_color-mix(in_oklch,var(--primary)_18%,transparent),transparent_35%),radial-gradient(circle_at_bottom_right,_color-mix(in_oklch,var(--warning)_20%,transparent),transparent_32%)]" />
-      <div className="relative grid w-full max-w-6xl gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,420px)]">
-        <Card className="border-border/70 bg-card/90 shadow-2xl shadow-primary/5 backdrop-blur">
-          <CardHeader className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-2">
-                <Badge variant="outline" className="w-fit rounded-full px-3 py-1 uppercase tracking-[0.25em]">
-                  Matrix
-                </Badge>
-                <CardTitle className="text-4xl font-semibold tracking-tight">
-                  Connect to your ACP server.
-                </CardTitle>
-                <CardDescription className="max-w-xl text-base leading-7">
-                  Pair this client with an existing Matrix backend, keep the session token local,
-                  and jump straight into active agent sessions.
-                </CardDescription>
+
+      <div className="relative w-full max-w-2xl space-y-6">
+        {/* Header */}
+        <div className="space-y-2 text-center">
+          <Badge
+            variant="outline"
+            className="mx-auto w-fit rounded-full px-3 py-1 uppercase tracking-[0.25em]"
+          >
+            Matrix
+          </Badge>
+          <h1 className="text-4xl font-semibold tracking-tight">Servers</h1>
+          <p className="text-base text-muted-foreground">
+            Manage your Matrix server connections.
+          </p>
+        </div>
+
+        {/* Local sidecar server (Desktop only) */}
+        {hasLocalServer() && (
+          <Card className="border-border/70 bg-card/90 backdrop-blur">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
+                <Server className="size-5 text-primary" />
               </div>
-              <Badge
-                variant={status === "connected" ? "default" : "secondary"}
-                className="rounded-full px-3 py-1"
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Local Server</span>
+                  <Badge variant="secondary" className="text-xs">
+                    sidecar
+                  </Badge>
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  http://127.0.0.1:19880
+                </div>
+              </div>
+              <StatusBadge
+                connected={isLocalConnected ?? false}
+                connecting={
+                  connectionInfo?.serverUrl?.includes("127.0.0.1:19880") &&
+                  status === "connecting"
+                }
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  // Fetch the real token from the local server
+                  try {
+                    const res = await fetch("http://127.0.0.1:19880/api/auth-info");
+                    const { token: realToken } = await res.json() as { token: string };
+                    setShareServer({
+                      serverUrl: "http://127.0.0.1:19880",
+                      token: realToken,
+                      name: "Local Server",
+                    });
+                  } catch {
+                    setShareServer({
+                      serverUrl: "http://127.0.0.1:19880",
+                      token: connectionInfo?.token ?? "",
+                      name: "Local Server",
+                    });
+                  }
+                }}
               >
-                <Wifi className="mr-1 size-3.5" />
-                {status}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="space-y-5">
-              <div className="grid gap-2">
-                <label className="text-sm font-medium text-foreground" htmlFor="server-url">
-                  Server URL
-                </label>
-                <Input
-                  id="server-url"
-                  type="url"
-                  value={serverUrl}
-                  onChange={(event) => setServerUrl(event.target.value)}
-                  placeholder="http://localhost:8080"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm font-medium text-foreground" htmlFor="access-token">
-                  Access Token
-                </label>
-                <Input
-                  id="access-token"
-                  type="password"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                  placeholder="Paste your server token"
-                />
-              </div>
-
-              {error ? (
-                <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {error}
-                </p>
-              ) : null}
-
-              <div className="flex flex-wrap items-center gap-3">
-                <Button onClick={handleConnect} disabled={status === "connecting"} size="lg">
-                  {status === "connecting" ? "Connecting..." : "Connect"}
-                </Button>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <ShieldCheck className="size-4" />
-                  Session details are restored locally from `sessionStorage`.
-                </div>
-              </div>
-
-              <div className="grid gap-3 rounded-2xl border border-border/60 bg-muted/40 p-4 text-sm">
-                <div className="flex items-center gap-2 font-medium">
-                  <ShieldCheck className="size-4 text-primary" />
-                  Connection details
-                </div>
-                <div className="grid gap-2 text-muted-foreground">
-                  <div>
-                    <span className="font-medium text-foreground">Server:</span>{" "}
-                    {connectionInfo?.serverUrl ?? serverUrl ?? "-"}
-                  </div>
-                  <div>
-                    <span className="font-medium text-foreground">Token:</span>{" "}
-                    {connectionInfo?.tokenMasked ?? maskToken(token)}
-                  </div>
-                  <div>
-                    <span className="font-medium text-foreground">Transport:</span>{" "}
-                    {connectionInfo?.transport ?? "auto"}
-                  </div>
-                  <div>
-                    <span className="font-medium text-foreground">Source:</span>{" "}
-                    {connectionInfo?.source ?? "manual"}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <Card className="border-border/60 bg-background/80 shadow-none">
-              <CardHeader className="space-y-2">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <QrCode className="size-4 text-primary" />
-                  Connection QR
-                </CardTitle>
-                <CardDescription>
-                  Scan from another Matrix client or copy the deep link below.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <div className="grid min-h-56 place-items-center rounded-2xl border border-dashed border-border bg-muted/40 p-4">
-                  {qrDataUrl ? (
-                    <img
-                      src={qrDataUrl}
-                      alt="Connection QR"
-                      width={224}
-                      height={224}
-                      className="rounded-xl"
-                    />
-                  ) : (
-                    <p className="max-w-48 text-center text-sm text-muted-foreground">
-                      Enter both values to generate a QR code for this connection.
-                    </p>
-                  )}
-                </div>
-                <div className="grid gap-2">
-                  <label className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                    Deep Link
-                  </label>
-                  <Input readOnly value={connectionUri} className="font-mono text-xs" />
-                </div>
-              </CardContent>
-            </Card>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-6">
-          <Card className="border-border/60 bg-card/85 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="text-lg">What changes in the redesign</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm text-muted-foreground">
-              <p>
-                Desktop keeps sessions pinned in a sidebar. Mobile swaps that for a slide-out
-                drawer so the message stream stays centered.
-              </p>
-              <p>
-                The interface follows your system theme automatically and keeps code, diffs, and
-                tool cards readable in both modes.
-              </p>
+                <Share2 className="size-3.5" />
+              </Button>
             </CardContent>
           </Card>
-        </div>
+        )}
+
+        {/* Saved servers */}
+        {servers.length > 0 && (
+          <Card className="border-border/70 bg-card/90 backdrop-blur">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Remote Servers</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {servers.map((server) => (
+                <div
+                  key={server.id}
+                  className="flex items-center gap-3 rounded-lg border border-border/60 bg-background/50 p-3"
+                >
+                  <div className="flex size-9 items-center justify-center rounded-lg bg-muted">
+                    <Server className="size-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">
+                      {server.name}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {server.serverUrl}
+                    </div>
+                  </div>
+                  <StatusBadge
+                    connected={isConnectedTo(server)}
+                    connecting={
+                      connectionInfo?.serverUrl === server.serverUrl &&
+                      status === "connecting"
+                    }
+                  />
+                  <div className="flex items-center gap-1">
+                    {!isConnectedTo(server) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleConnect(server)}
+                      >
+                        Connect
+                      </Button>
+                    )}
+                    {isConnectedTo(server) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={disconnect}
+                      >
+                        Disconnect
+                      </Button>
+                    )}
+                    {!isMobilePlatform() && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setShareServer({
+                            serverUrl: server.serverUrl,
+                            token: server.token,
+                            name: server.name,
+                          })
+                        }
+                      >
+                        <Share2 className="size-3.5" />
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeServer(server.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Add server */}
+        <Card className="border-border/70 bg-card/90 backdrop-blur">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Add Server</CardTitle>
+            <CardDescription>
+              Connect to a remote Matrix server by entering its details or
+              scanning a QR code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {addMode === null && (
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => setAddMode("manual")}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  <Pencil className="mr-2 size-4" />
+                  Manual Input
+                </Button>
+                {isMobilePlatform() && (
+                  <Button
+                    onClick={() => setAddMode("scan")}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <ScanLine className="mr-2 size-4" />
+                    Scan QR Code
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {addMode === "manual" && (
+              <div className="space-y-3">
+                <Input
+                  placeholder="Server name (optional)"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+                <Input
+                  placeholder="Server URL (https://...)"
+                  type="url"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                />
+                <Input
+                  placeholder="Access token"
+                  type="password"
+                  value={newToken}
+                  onChange={(e) => setNewToken(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleConnectManual}
+                    disabled={!newUrl || !newToken}
+                    className="flex-1"
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add & Connect
+                  </Button>
+                  <Button
+                    onClick={handleAddServer}
+                    variant="outline"
+                    disabled={!newUrl || !newToken}
+                  >
+                    Save Only
+                  </Button>
+                  <Button
+                    onClick={() => setAddMode(null)}
+                    variant="ghost"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {addMode === "scan" && (
+              <ScanQRView
+                onResult={(url, token) => {
+                  let name: string;
+                  try {
+                    name = new URL(url).host;
+                  } catch {
+                    name = url;
+                  }
+                  addServer({ name, serverUrl: url, token });
+                  connect(
+                    { serverUrl: url, token },
+                    { source: "manual" }
+                  );
+                  setAddMode(null);
+                }}
+                onCancel={() => setAddMode(null)}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Share modal */}
+      <ShareServerModal
+        open={shareServer !== null}
+        onOpenChange={(open) => {
+          if (!open) setShareServer(null);
+        }}
+        serverUrl={shareServer?.serverUrl ?? ""}
+        token={shareServer?.token ?? ""}
+        serverName={shareServer?.name}
+      />
+    </div>
+  );
+}
+
+function StatusBadge({
+  connected,
+  connecting,
+}: {
+  connected: boolean;
+  connecting?: boolean | null;
+}) {
+  if (connecting) {
+    return (
+      <Badge variant="secondary" className="gap-1">
+        <Loader2 className="size-3 animate-spin" />
+        Connecting
+      </Badge>
+    );
+  }
+  if (connected) {
+    return (
+      <Badge variant="default" className="gap-1">
+        <Wifi className="size-3" />
+        Online
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="gap-1 text-muted-foreground">
+      <WifiOff className="size-3" />
+      Offline
+    </Badge>
+  );
+}
+
+function ScanQRView({
+  onResult,
+  onCancel,
+}: {
+  onResult: (serverUrl: string, token: string) => void;
+  onCancel: () => void;
+}) {
+  const [error, setError] = useState("");
+  const [scanning, setScanning] = useState(false);
+
+  const startScan = async () => {
+    setScanning(true);
+    setError("");
+    try {
+      const { scan, Format } = await import("@tauri-apps/plugin-barcode-scanner");
+      const result = await scan({ formats: [Format.QRCode], windowed: false });
+
+      // Parse matrix://connect?serverUrl=...&token=...
+      const content = typeof result === "string" ? result : (result as any)?.content;
+      if (!content) {
+        setError("No QR code detected.");
+        setScanning(false);
+        return;
+      }
+
+      const url = new URL(content);
+      if (url.protocol !== "matrix:" || url.pathname !== "//connect") {
+        // Try parsing as matrix://connect?...
+        const serverUrl = url.searchParams.get("serverUrl");
+        const token = url.searchParams.get("token");
+        if (serverUrl && token) {
+          onResult(serverUrl, token);
+          return;
+        }
+        setError("Invalid QR code format. Expected a Matrix connection QR.");
+        setScanning(false);
+        return;
+      }
+
+      const serverUrl = url.searchParams.get("serverUrl");
+      const token = url.searchParams.get("token");
+      if (!serverUrl || !token) {
+        setError("QR code missing serverUrl or token.");
+        setScanning(false);
+        return;
+      }
+
+      onResult(serverUrl, token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Scan failed");
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 text-center">
+      <p className="text-sm text-muted-foreground">
+        Point your camera at a Matrix server QR code.
+      </p>
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2 justify-center">
+        <Button onClick={startScan} disabled={scanning}>
+          {scanning ? (
+            <>
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Scanning...
+            </>
+          ) : (
+            <>
+              <ScanLine className="mr-2 size-4" />
+              Start Scan
+            </>
+          )}
+        </Button>
+        <Button onClick={onCancel} variant="ghost">
+          Cancel
+        </Button>
       </div>
     </div>
   );

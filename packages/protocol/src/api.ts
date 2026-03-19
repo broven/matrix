@@ -1,9 +1,12 @@
 import type { SessionModes, SessionId } from "./session.js";
+import type { RepositoryId, WorktreeId } from "./repository.js";
 
 /** POST /sessions request */
 export interface CreateSessionRequest {
   agentId: string;
-  cwd: string;
+  /** @deprecated Use worktreeId instead for new sessions */
+  cwd?: string;
+  worktreeId?: WorktreeId;
 }
 
 /** POST /sessions response */
@@ -24,6 +27,9 @@ export interface SessionInfo {
   lastActiveAt: string;
   suspendedAt: string | null;
   closeReason: string | null;
+  worktreeId: string | null;
+  repositoryId: string | null;
+  branch: string | null;
 }
 
 /** GET /agents response item */
@@ -32,6 +38,8 @@ export interface AgentListItem {
   name: string;
   command: string;
   available: boolean;
+  icon?: string;
+  description?: string;
 }
 
 /** History entry type discriminator */

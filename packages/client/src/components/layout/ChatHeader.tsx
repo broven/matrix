@@ -1,57 +1,56 @@
 import type { SessionInfo } from "@matrix/protocol";
-import { FolderRoot, Radio } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { GitBranch } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ChatHeaderProps {
   session: SessionInfo;
+  repositoryName?: string;
   isProcessing: boolean;
   sessionStatus: SessionInfo["status"];
   statusMessage?: string | null;
 }
 
-function getStatusBadge(sessionStatus: SessionInfo["status"]) {
-  switch (sessionStatus) {
-    case "active":
-      return { variant: "secondary" as const, label: "Active" };
-    case "restoring":
-      return { variant: "default" as const, label: "Restoring" };
-    case "suspended":
-      return { variant: "outline" as const, label: "Suspended" };
-    case "closed":
-      return { variant: "outline" as const, label: "Closed" };
-  }
-}
-
-export function ChatHeader({ session, isProcessing, sessionStatus, statusMessage }: ChatHeaderProps) {
-  const sessionBadge = getStatusBadge(sessionStatus);
-
+export function ChatHeader({ session, repositoryName, isProcessing, sessionStatus }: ChatHeaderProps) {
   return (
-    <header className="hidden border-b border-border bg-background/90 px-6 py-4 backdrop-blur md:flex md:items-center md:justify-between">
-      <div className="space-y-1">
+    <header className="hidden items-center justify-between border-b border-border/50 bg-background px-6 py-3 md:flex">
+      <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="rounded-full px-2.5 py-0.5">
-            Session
-          </Badge>
-          <Badge variant={sessionBadge.variant} className="rounded-full px-2.5 py-0.5">
-            {sessionBadge.label}
-          </Badge>
-          <h1 className="text-lg font-semibold tracking-tight">{session.agentId}</h1>
+          <div
+            className={cn(
+              "size-2 rounded-full",
+              sessionStatus === "active" && "bg-success",
+              sessionStatus === "restoring" && "bg-primary animate-pulse",
+              sessionStatus === "suspended" && "bg-amber-400",
+              sessionStatus === "closed" && "bg-muted-foreground/40",
+            )}
+          />
+          <h1 className="text-sm font-medium">{session.agentId}</h1>
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <FolderRoot className="size-4" />
-          <span className="truncate">{session.cwd}</span>
-        </div>
-        {statusMessage ? (
-          <p className="max-w-2xl text-xs text-muted-foreground">{statusMessage}</p>
-        ) : null}
+        {session.branch ? (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {repositoryName && <span>{repositoryName}</span>}
+            {repositoryName && <span>/</span>}
+            <GitBranch className="size-3" />
+            <span>{session.branch}</span>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">{session.cwd}</span>
+        )}
       </div>
-      <Badge
-        variant={isProcessing || sessionStatus === "restoring" ? "default" : "secondary"}
-        className="rounded-full px-3 py-1"
-      >
-        <Radio className="mr-1 size-3.5" />
-        {sessionStatus === "restoring" ? "Restoring" : isProcessing ? "Working" : "Idle"}
-      </Badge>
+      <div className="flex items-center gap-3">
+        {(isProcessing || sessionStatus === "restoring") && (
+          <div className="flex items-center gap-1.5">
+            <div className="flex gap-0.5">
+              <span className="thinking-dot size-1 rounded-full bg-primary" />
+              <span className="thinking-dot size-1 rounded-full bg-primary" />
+              <span className="thinking-dot size-1 rounded-full bg-primary" />
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {sessionStatus === "restoring" ? "Restoring" : "Thinking"}
+            </span>
+          </div>
+        )}
+      </div>
     </header>
   );
 }

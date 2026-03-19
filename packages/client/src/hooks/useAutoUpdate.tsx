@@ -20,12 +20,16 @@ export interface DownloadProgress {
   total: number;
 }
 
+export type UpdateChannel = "stable" | "beta";
+
 export interface AutoUpdateContext {
   state: UpdateState;
   updateInfo: UpdateInfo | null;
   progress: DownloadProgress;
   error: string | null;
   hasChecked: boolean;
+  channel: UpdateChannel;
+  setChannel: (channel: UpdateChannel) => void;
   checkForUpdate: () => Promise<void>;
   downloadUpdate: () => Promise<void>;
   installUpdate: () => Promise<void>;
@@ -33,6 +37,46 @@ export interface AutoUpdateContext {
 }
 
 const CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+
+const CHANNEL_STORAGE_KEY = "matrix:update-channel";
+
+let channelStore: any = null;
+
+async function getChannelStore() {
+  if (channelStore) return channelStore;
+  if (!isTauri()) return null;
+  try {
+    const { LazyStore } = await import("@tauri-apps/plugin-store");
+    channelStore = new LazyStore("settings.json");
+    return channelStore;
+  } catch {
+    return null;
+  }
+}
+
+async function loadChannel(): Promise<UpdateChannel> {
+  try {
+    const store = await getChannelStore();
+    if (store) {
+      const val: string | undefined = await store.get(CHANNEL_STORAGE_KEY);
+      if (val === "beta") return "beta";
+    }
+  } catch {
+    // Fall through to default
+  }
+  return "stable";
+}
+
+async function persistChannel(channel: UpdateChannel): Promise<void> {
+  try {
+    const store = await getChannelStore();
+    if (store) {
+      await store.set(CHANNEL_STORAGE_KEY, channel);
+    }
+  } catch {
+    // Silently ignore persistence failures
+  }
+}
 
 const UpdateContext = createContext<AutoUpdateContext | null>(null);
 
@@ -60,6 +104,8 @@ function useAutoUpdateInternal(): AutoUpdateContext {
   const [error, setError] = useState<string | null>(null);
   const [dmgPath, setDmgPath] = useState<string | null>(null);
   const [hasChecked, setHasChecked] = useState(false);
+  const [channel, setChannelState] = useState<UpdateChannel>("stable");
+  const [channelLoaded, setChannelLoaded] = useState(false);
   const dismissedVersion = useRef<string | null>(null);
   const stateRef = useRef<UpdateState>("idle");
 
@@ -67,6 +113,14 @@ function useAutoUpdateInternal(): AutoUpdateContext {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // Load channel on mount
+  useEffect(() => {
+    loadChannel().then((ch) => {
+      setChannelState(ch);
+      setChannelLoaded(true);
+    });
+  }, []);
 
   const checkForUpdate = useCallback(async () => {
     if (!isTauri() || !isMacOS()) return;
@@ -84,7 +138,7 @@ function useAutoUpdateInternal(): AutoUpdateContext {
         version: string;
         download_url: string;
         release_notes: string;
-      }>("check_update");
+      }>("check_update", { channel });
 
       setHasChecked(true);
 
@@ -107,6 +161,13 @@ function useAutoUpdateInternal(): AutoUpdateContext {
       setError(e instanceof Error ? e.message : String(e));
       setState("idle");
     }
+  }, [channel]);
+
+  const setChannel = useCallback((ch: UpdateChannel) => {
+    setChannelState(ch);
+    persistChannel(ch);
+    // The useEffect watching [checkForUpdate] will re-check automatically
+    // since channel change recreates checkForUpdate
   }, []);
 
   const downloadUpdate = useCallback(async () => {
@@ -175,14 +236,14 @@ function useAutoUpdateInternal(): AutoUpdateContext {
     };
   }, []);
 
-  // Auto-check on mount + interval
+  // Auto-check on mount + interval (only after channel is loaded)
   useEffect(() => {
-    if (!isTauri() || !isMacOS()) return;
+    if (!isTauri() || !isMacOS() || !channelLoaded) return;
 
     checkForUpdate();
     const interval = setInterval(checkForUpdate, CHECK_INTERVAL);
     return () => clearInterval(interval);
-  }, [checkForUpdate]);
+  }, [checkForUpdate, channelLoaded]);
 
   return {
     state,
@@ -190,6 +251,8 @@ function useAutoUpdateInternal(): AutoUpdateContext {
     progress,
     error,
     hasChecked,
+    channel,
+    setChannel,
     checkForUpdate,
     downloadUpdate,
     installUpdate,

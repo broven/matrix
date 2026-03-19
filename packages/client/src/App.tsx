@@ -1,4 +1,6 @@
+import { useEffect, useRef } from "react";
 import { MatrixClientProvider, useMatrixClient } from "./hooks/useMatrixClient";
+import { ServerStoreProvider, useServerStore } from "./hooks/useServerStore";
 import { AppLayout } from "./components/layout/AppLayout";
 import { ConnectPage } from "./pages/ConnectPage";
 import { UpdateToast } from "./components/UpdateToast";
@@ -20,8 +22,60 @@ function AutoUpdateToast() {
   );
 }
 
+/**
+ * Handles deep-link URL params and auto-reconnect for saved servers.
+ * Runs on all platforms (desktop + mobile) since it's in AppContent.
+ */
+function useAutoReconnect() {
+  const { connect, status } = useMatrixClient();
+  const { addServer } = useServerStore();
+  const didAutoReconnect = useRef(false);
+
+  // Parse deep-link URL params: ?serverUrl=...&token=...&autoConnect=1
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paramUrl = params.get("serverUrl");
+    const paramToken = params.get("token");
+    const autoConnect = params.get("autoConnect") === "1";
+
+    if (autoConnect && paramUrl && paramToken) {
+      let name: string;
+      try {
+        name = new URL(paramUrl).host;
+      } catch {
+        name = paramUrl;
+      }
+      addServer({ name, serverUrl: paramUrl, token: paramToken });
+      connect({ serverUrl: paramUrl, token: paramToken }, { source: "manual" });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [connect, addServer]);
+
+  // Auto-reconnect last saved connection from sessionStorage
+  useEffect(() => {
+    if (didAutoReconnect.current) return;
+    // On desktop, the local sidecar auto-connect in useMatrixClient takes precedence
+    if (hasLocalServer()) return;
+    if (status !== "offline") return;
+    didAutoReconnect.current = true;
+
+    const saved = sessionStorage.getItem("matrix:lastConnection");
+    if (saved) {
+      const { serverUrl, token, serverId } = JSON.parse(saved) as {
+        serverUrl: string;
+        token: string;
+        serverId?: string;
+      };
+      connect({ serverUrl, token }, { source: "storage", serverId });
+    }
+  }, [connect, status]);
+}
+
 function AppContent() {
   const { client } = useMatrixClient();
+
+  // Run auto-reconnect/deep-link on all platforms
+  useAutoReconnect();
 
   // Desktop with local server: skip ConnectPage, go straight to AppLayout
   // Auto-connect happens in the background via useMatrixClient
@@ -40,9 +94,11 @@ function AppContent() {
 export function App() {
   return (
     <MatrixClientProvider>
-      <UpdateProvider>
-        <AppContent />
-      </UpdateProvider>
+      <ServerStoreProvider>
+        <UpdateProvider>
+          <AppContent />
+        </UpdateProvider>
+      </ServerStoreProvider>
     </MatrixClientProvider>
   );
 }

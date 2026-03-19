@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import type { AgentListItem, SessionInfo } from "@matrix/protocol";
-import { PanelLeftOpen, Plus, Settings } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
+import { MessageSquarePlus } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { AddRepositoryDialog } from "@/components/repository/AddRepositoryDialog";
+import { NewWorktreeDialog } from "@/components/worktree/NewWorktreeDialog";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Settings } from "lucide-react";
 
 const SESSION_STATUS_ORDER: Record<SessionInfo["status"], number> = {
   active: 0,
@@ -29,14 +32,21 @@ export function AppLayout() {
   const { client, status } = useMatrixClient();
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [repositories, setRepositories] = useState<RepositoryInfo[]>([]);
+  const [worktrees, setWorktrees] = useState<Map<string, WorktreeInfo[]>>(new Map());
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAddRepo, setShowAddRepo] = useState(false);
+  const [worktreeDialogRepo, setWorktreeDialogRepo] = useState<RepositoryInfo | null>(null);
 
+  // Load initial data
   useEffect(() => {
     if (!client) {
       setAgents([]);
       setSessions([]);
+      setRepositories([]);
+      setWorktrees(new Map());
       setSelectedSessionId(null);
       return;
     }
@@ -45,15 +55,34 @@ export function AppLayout() {
 
     const load = async () => {
       try {
-        const [agentItems, sessionItems] = await Promise.all([
+        const [agentItems, sessionItems, repoItems] = await Promise.all([
           client.getAgents(),
           client.getSessions(),
+          client.getRepositories(),
         ]);
 
         if (cancelled) return;
 
         setAgents(agentItems);
         setSessions(sessionItems);
+        setRepositories(repoItems);
+
+        // Load worktrees for each repo
+        const wtMap = new Map<string, WorktreeInfo[]>();
+        await Promise.all(
+          repoItems.map(async (repo) => {
+            try {
+              const wts = await client.getWorktrees(repo.id);
+              wtMap.set(repo.id, wts);
+            } catch {
+              wtMap.set(repo.id, []);
+            }
+          }),
+        );
+
+        if (!cancelled) {
+          setWorktrees(wtMap);
+        }
       } catch (error) {
         console.error("Failed to load layout data:", error);
       }
@@ -66,6 +95,7 @@ export function AppLayout() {
     };
   }, [client, status]);
 
+  // Auto-select session
   useEffect(() => {
     if (sessions.length === 0) {
       setSelectedSessionId(null);
@@ -113,6 +143,22 @@ export function AppLayout() {
     }
   };
 
+  const handleRefreshWorktrees = useCallback(async () => {
+    if (!client) return;
+    const wtMap = new Map<string, WorktreeInfo[]>();
+    await Promise.all(
+      repositories.map(async (repo) => {
+        try {
+          const wts = await client.getWorktrees(repo.id);
+          wtMap.set(repo.id, wts);
+        } catch {
+          wtMap.set(repo.id, []);
+        }
+      }),
+    );
+    setWorktrees(wtMap);
+  }, [client, repositories]);
+
   const handleDeleteSession = async (sessionId: string) => {
     if (!client) return;
 
@@ -145,6 +191,9 @@ export function AppLayout() {
       lastActiveAt: new Date().toISOString(),
       suspendedAt: null,
       closeReason: null,
+      worktreeId: null,
+      repositoryId: null,
+      branch: null,
     };
 
     setSessions((previous) => {
@@ -159,45 +208,94 @@ export function AppLayout() {
     return session.sessionId;
   };
 
+  const handleAddRepository = async (path: string, name?: string) => {
+    if (!client) return;
+    const repo = await client.addRepository({ path, name });
+    setRepositories((prev) => [repo, ...prev]);
+    setWorktrees((prev) => new Map(prev).set(repo.id, []));
+  };
+
+  const handleCreateWorktree = async (
+    repoId: string,
+    branch: string,
+    baseBranch: string,
+    agentId: string,
+    taskDescription?: string,
+  ) => {
+    if (!client) return;
+
+    const result = await client.createWorktree(repoId, {
+      branch,
+      baseBranch,
+      agentId,
+      taskDescription,
+    });
+
+    // Refresh worktrees and sessions
+    void handleRefreshWorktrees();
+    void handleRefreshSessions();
+
+    // Select the new session
+    if (result.session?.sessionId) {
+      setSelectedSessionId(result.session.sessionId);
+      setMobileSidebarOpen(false);
+    }
+  };
+
+  const handleDeleteWorktree = async (worktreeId: string) => {
+    if (!client) return;
+    try {
+      await client.deleteWorktree(worktreeId);
+      void handleRefreshWorktrees();
+      void handleRefreshSessions();
+    } catch (error) {
+      console.error("Failed to delete worktree:", error);
+    }
+  };
+
+  const sidebarContent = (
+    <Sidebar
+      agents={agents}
+      sessions={sortedSessions}
+      repositories={repositories}
+      worktrees={worktrees}
+      connectionStatus={status}
+      selectedSessionId={selectedSessionId}
+      onSelectSession={(sessionId) => {
+        setSelectedSessionId(sessionId);
+        setMobileSidebarOpen(false);
+      }}
+      onCreateSession={handleCreateSession}
+      onDeleteSession={handleDeleteSession}
+      onAddRepository={() => setShowAddRepo(true)}
+      onCreateWorktree={(repoId) => {
+        const repo = repositories.find((r) => r.id === repoId);
+        if (repo) setWorktreeDialogRepo(repo);
+      }}
+      onDeleteWorktree={handleDeleteWorktree}
+    />
+  );
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <aside className="hidden h-full w-[280px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
-        <Sidebar
-          agents={agents}
-          sessions={sortedSessions}
-          connectionStatus={status}
-          selectedSessionId={selectedSessionId}
-          onSelectSession={(sessionId) => setSelectedSessionId(sessionId)}
-          onCreateSession={handleCreateSession}
-          onDeleteSession={handleDeleteSession}
-        />
+      <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+        {sidebarContent}
         <div className="border-t border-sidebar-border p-2">
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start gap-2"
+            className="w-full justify-start gap-2 rounded-lg text-xs"
             onClick={() => setShowSettings(true)}
           >
-            <Settings className="size-4" />
+            <Settings className="size-3.5" />
             Settings
           </Button>
         </div>
       </aside>
 
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-        <SheetContent side="left" className="w-[86vw] max-w-[320px] border-sidebar-border bg-sidebar p-0">
-          <Sidebar
-            agents={agents}
-            sessions={sortedSessions}
-            connectionStatus={status}
-            selectedSessionId={selectedSessionId}
-            onSelectSession={(sessionId) => {
-              setSelectedSessionId(sessionId);
-              setMobileSidebarOpen(false);
-            }}
-            onCreateSession={handleCreateSession}
-            onDeleteSession={handleDeleteSession}
-          />
+        <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar p-0">
+          {sidebarContent}
         </SheetContent>
       </Sheet>
 
@@ -219,23 +317,23 @@ export function AppLayout() {
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">
-            <div className="max-w-md space-y-4 rounded-[1.75rem] border border-dashed border-border bg-card/70 p-8 text-center shadow-sm">
-              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <PanelLeftOpen className="size-6" />
+            <div className="max-w-sm space-y-5 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-accent text-muted-foreground">
+                <MessageSquarePlus className="size-5" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-2xl font-semibold tracking-tight">No session selected</h2>
+                <h2 className="text-xl font-semibold tracking-tight">No session selected</h2>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  Pick a session from the sidebar or create a new one to open the chat view.
+                  Add a repository and create a worktree to get started.
                 </p>
               </div>
               <Button
-                className="w-full sm:w-auto"
-                onClick={() => setMobileSidebarOpen(true)}
+                className="rounded-xl"
+                onClick={() => setShowAddRepo(true)}
                 variant="outline"
+                size="sm"
               >
-                <Plus className="size-4" />
-                Open Sessions
+                Add Repository
               </Button>
             </div>
           </div>
@@ -243,6 +341,23 @@ export function AppLayout() {
         </>
         )}
       </main>
+
+      {/* Dialogs */}
+      {showAddRepo && (
+        <AddRepositoryDialog
+          onAdd={handleAddRepository}
+          onClose={() => setShowAddRepo(false)}
+        />
+      )}
+
+      {worktreeDialogRepo && (
+        <NewWorktreeDialog
+          repository={worktreeDialogRepo}
+          agents={agents}
+          onCreateWorktree={handleCreateWorktree}
+          onClose={() => setWorktreeDialogRepo(null)}
+        />
+      )}
     </div>
   );
 }
