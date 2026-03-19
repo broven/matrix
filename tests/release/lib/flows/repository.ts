@@ -1,5 +1,5 @@
 import type { BridgeClient } from "../bridge-client";
-import { click, type as typeText, waitFor, waitForGone, isVisible } from "../ui";
+import { click, type as typeText, waitFor, isVisible } from "../ui";
 
 /**
  * Add a local repository via the Open Project dialog.
@@ -70,16 +70,6 @@ export async function cloneFromUrl(
   await click('[data-testid="clone-submit-btn"]');
 }
 
-/**
- * Delete a repository/session via context menu.
- */
-export async function deleteSession(
-  bridge: BridgeClient,
-): Promise<void> {
-  await click('[data-testid="delete-repo-option"]');
-  await waitFor('[data-testid="confirm-delete-btn"]');
-  await click('[data-testid="confirm-delete-btn"]');
-}
 
 /**
  * Check if a repo item exists in the sidebar.

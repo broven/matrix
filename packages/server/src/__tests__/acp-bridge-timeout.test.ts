@@ -68,25 +68,33 @@ describe("AcpBridge request timeout", () => {
   it("rejects all pending requests when agent process closes", async () => {
     const { process, bridge } = createBridge();
 
-    const p1 = bridge.request("method1", {});
-    const p2 = bridge.request("method2", {});
+    const p1 = bridge.request("method1", {}).catch((e: Error) => e);
+    const p2 = bridge.request("method2", {}).catch((e: Error) => e);
 
     process.emit("close");
 
-    await expect(p1).rejects.toThrow("Agent process closed");
-    await expect(p2).rejects.toThrow("Agent process closed");
+    const e1 = await p1;
+    const e2 = await p2;
+    expect(e1).toBeInstanceOf(Error);
+    expect((e1 as Error).message).toBe("Agent process closed");
+    expect(e2).toBeInstanceOf(Error);
+    expect((e2 as Error).message).toBe("Agent process closed");
   });
 
   it("rejects all pending requests when bridge is destroyed", async () => {
     const { bridge } = createBridge();
 
-    const p1 = bridge.request("method1", {});
-    const p2 = bridge.request("method2", {});
+    const p1 = bridge.request("method1", {}).catch((e: Error) => e);
+    const p2 = bridge.request("method2", {}).catch((e: Error) => e);
 
     bridge.destroy();
 
-    await expect(p1).rejects.toThrow("Bridge destroyed");
-    await expect(p2).rejects.toThrow("Bridge destroyed");
+    const e1 = await p1;
+    const e2 = await p2;
+    expect(e1).toBeInstanceOf(Error);
+    expect((e1 as Error).message).toBe("Bridge destroyed");
+    expect(e2).toBeInstanceOf(Error);
+    expect((e2 as Error).message).toBe("Bridge destroyed");
   });
 
   it("does not reject already-resolved requests on close", async () => {

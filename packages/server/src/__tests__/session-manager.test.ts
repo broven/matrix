@@ -33,6 +33,8 @@ describe("SessionManager", () => {
   });
 
   afterEach(() => {
+    sessionManager.clearAllTimers();
+    vi.useRealTimers();
     store.close();
     try { unlinkSync(DB_PATH); } catch {}
     try { unlinkSync(DB_PATH + "-wal"); } catch {}
@@ -197,11 +199,14 @@ describe("SessionManager", () => {
       sessionManager.handleAgentClose("sess_1", store, connectionManager);
 
       // Before delay (1000ms), bridge should not be replaced
-      await vi.advanceTimersByTimeAsync(500);
+      vi.advanceTimersByTime(500);
       expect(sessionManager.getBridge("sess_1")).toBe(bridge);
 
       // After delay, bridge should be replaced
-      await vi.advanceTimersByTimeAsync(600);
+      vi.advanceTimersByTime(600);
+      // Flush microtasks so async restartAgent completes
+      await new Promise(resolve => queueMicrotask(resolve));
+      await new Promise(resolve => queueMicrotask(resolve));
       expect(sessionManager.getBridge("sess_1")).toBe(newBridge);
 
       vi.useRealTimers();
@@ -225,7 +230,10 @@ describe("SessionManager", () => {
 
       // First crash + successful restart
       sessionManager.handleAgentClose("sess_1", store, connectionManager);
-      await vi.advanceTimersByTimeAsync(1100);
+      vi.advanceTimersByTime(1100);
+      // Flush microtasks so async restartAgent completes
+      await new Promise(resolve => queueMicrotask(resolve));
+      await new Promise(resolve => queueMicrotask(resolve));
 
       // After successful restart, another crash should be attempt 1 again
       const messages: any[] = [];
