@@ -14,6 +14,13 @@
       "tintColor": "#F59E0B",
       "versions": [
         {
+          "version": "0.8.0-alpha.2",
+          "date": "2026-03-19",
+          "downloadURL": "https://github.com/broven/matrix/releases/download/v0.8.0-alpha.2/Matrix_v0.8.0-alpha.2.ipa",
+          "size": 3088854,
+          "minOSVersion": "16.0"
+        },
+        {
           "version": "0.8.0-alpha.1",
           "date": "2026-03-19",
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.8.0-alpha.1/Matrix_v0.8.0-alpha.1.ipa",
