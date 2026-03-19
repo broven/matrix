@@ -100,8 +100,14 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     // Optionally delete source files on disk (before removing DB records)
     const deleteSource = c.req.query("deleteSource") === "true";
     if (deleteSource) {
-      const { resolve } = await import("node:path");
-      const resolved = resolve(repo.path);
+      const { realpath, rm } = await import("node:fs/promises");
+
+      let resolved: string;
+      try {
+        resolved = await realpath(repo.path);
+      } catch {
+        return c.json({ error: `Path does not exist: ${repo.path}` }, 400);
+      }
 
       // Safety: refuse to delete paths that are too shallow (e.g. /, /home, /Users/foo)
       const segments = resolved.split("/").filter(Boolean);
@@ -109,9 +115,8 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
         return c.json({ error: `Refusing to delete path: ${resolved} (too shallow)` }, 400);
       }
 
-      const { rm } = await import("node:fs/promises");
       try {
-        await rm(resolved, { recursive: true, force: true });
+        await rm(resolved, { recursive: true });
         console.log(`[repo] Deleted source files: ${resolved}`);
       } catch (error) {
         console.error(`[repo] Failed to delete source files ${resolved}:`, error);

@@ -12,12 +12,16 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteSource, setDeleteSource] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleDelete = async () => {
     setDeleting(true);
+    setDeleteError(null);
     try {
       await onDeleteRepository(repository.id, deleteSource);
       setConfirmingDelete(false);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Failed to delete repository");
     } finally {
       setDeleting(false);
     }
@@ -78,6 +82,9 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
               />
               <span className="text-muted-foreground">Also delete source files on disk</span>
             </label>
+            {deleteError && (
+              <p className="mt-3 text-sm text-destructive">{deleteError}</p>
+            )}
             <div className="mt-6 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setConfirmingDelete(false)} disabled={deleting}>
                 Cancel

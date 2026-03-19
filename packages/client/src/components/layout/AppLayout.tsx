@@ -225,6 +225,7 @@ export function AppLayout() {
       setRepositories(freshRepositories);
       await handleRefreshWorktrees();
       await handleRefreshSessions();
+      throw error;
     }
   };
 
