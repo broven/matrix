@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { HistoryEntry, SessionInfo, SessionUpdate } from "@matrix/protocol";
+import type { AvailableCommand, HistoryEntry, SessionInfo, SessionUpdate } from "@matrix/protocol";
 import type { MatrixSession, PromptCallbacks } from "@matrix/sdk";
 import { nanoid } from "nanoid";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
@@ -55,6 +55,7 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewStatus, setViewStatus] = useState<ViewStatus>(sessionInfo.status);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const addEvent = useCallback((type: string, data: SessionUpdate) => {
@@ -123,6 +124,7 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
       onToolCallUpdate: (toolCall) => addEvent("tool_call_update", toolCall),
       onPermissionRequest: (request) => addEvent("permission_request", request),
       onPlan: (plan) => addEvent("plan", plan),
+      onAvailableCommands: (commands) => setAvailableCommands(commands),
       onHistorySync: (history) => replaceEventsFromHistory(history),
       onSuspended: () => {
         setIsProcessing(false);
@@ -167,6 +169,11 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
         });
       },
     });
+
+    // Check for commands that may have arrived before callback registration
+    if (attachedSession.availableCommands.length > 0) {
+      setAvailableCommands(attachedSession.availableCommands);
+    }
 
     void attachedSession.getHistory().then((history) => {
       replaceEventsFromHistory(history);
@@ -250,6 +257,7 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
         placeholder={getInputPlaceholder(viewStatus)}
         isProcessing={isProcessing}
         agentName={sessionInfo.agentId}
+        availableCommands={availableCommands}
       />
     </div>
   );

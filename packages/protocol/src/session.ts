@@ -82,6 +82,16 @@ export type PermissionOutcome =
   | { outcome: "cancelled" }
   | { outcome: "selected"; optionId: string };
 
+/** Available command from an agent */
+export interface AvailableCommand {
+  name: string;
+  description?: string;
+  input?: {
+    type: "unstructured";
+    hint?: string;
+  };
+}
+
 /** Session update types sent from server to client */
 export type SessionUpdate =
   | {
@@ -117,6 +127,10 @@ export type SessionUpdate =
         content?: ToolCallContent[];
       };
       options: PermissionOption[];
+    }
+  | {
+      sessionUpdate: "available_commands_update";
+      availableCommands: AvailableCommand[];
     }
   | {
       sessionUpdate: "completed";
