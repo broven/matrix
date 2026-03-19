@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { MatrixClient, type MatrixClientConfig } from "@matrix/sdk";
 import type { ConnectionStatus } from "@matrix/protocol";
-import { hasLocalServer } from "@/lib/platform";
+import { hasLocalServer, getLocalServerUrl } from "@/lib/platform";
 
 interface ConnectionInfo {
   serverUrl: string;
@@ -100,18 +100,18 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
     if (!hasLocalServer()) return;
     if (connectedRef.current) return;
 
-    const LOCAL_SERVER_URL = "http://127.0.0.1:19880";
     let cancelled = false;
 
     const tryConnect = async () => {
+      const localServerUrl = await getLocalServerUrl();
       // Poll until sidecar is ready (up to ~15 seconds)
       for (let i = 0; i < 60 && !cancelled; i++) {
         try {
-          const res = await fetch(`${LOCAL_SERVER_URL}/api/auth-info`);
+          const res = await fetch(`${localServerUrl}/api/auth-info`);
           if (res.ok) {
             const { token } = await res.json() as { token: string };
             if (!cancelled && !connectedRef.current) {
-              connect({ serverUrl: LOCAL_SERVER_URL, token }, { source: "storage" });
+              connect({ serverUrl: localServerUrl, token }, { source: "storage" });
             }
             return;
           }

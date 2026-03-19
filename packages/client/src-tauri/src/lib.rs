@@ -15,6 +15,30 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 mod updater;
 
+/// Resolve sidecar port: in dev mode read SIDECAR_PORT env var, fallback to 19880.
+/// In release mode always returns 19880.
+#[cfg(desktop)]
+fn resolve_sidecar_port() -> u16 {
+    #[cfg(any(test, debug_assertions))]
+    {
+        if let Ok(port_str) = std::env::var("SIDECAR_PORT") {
+            if let Ok(port) = port_str.parse::<u16>() {
+                return port;
+            }
+        }
+    }
+    19880
+}
+
+#[cfg(desktop)]
+struct SidecarPortState(u16);
+
+#[tauri::command]
+#[cfg(desktop)]
+fn get_sidecar_port(state: tauri::State<SidecarPortState>) -> u16 {
+    state.0
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(all(desktop, any(test, debug_assertions)))]
@@ -32,7 +56,11 @@ pub fn run() {
         updater::check_update,
         updater::download_update,
         updater::install_update,
+        get_sidecar_port,
     ]);
+
+    #[cfg(all(desktop, not(target_os = "macos")))]
+    let builder = builder.invoke_handler(tauri::generate_handler![get_sidecar_port,]);
 
     #[cfg(desktop)]
     let builder = builder.setup(|app| {
@@ -102,13 +130,16 @@ fn automation_debug_log_path() -> std::io::Result<PathBuf> {
 fn initialize_desktop_runtime(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let sidecar_port = resolve_sidecar_port();
+    let port_str = sidecar_port.to_string();
+
     #[cfg(any(test, debug_assertions))]
-    append_automation_startup_log("entered_desktop_setup");
+    append_automation_startup_log(&format!("entered_desktop_setup sidecar_port={sidecar_port}"));
 
     // Kill any orphaned sidecar processes from previous launches
-    // that may still hold port 19880
+    // that may still hold the sidecar port
     if let Ok(output) = std::process::Command::new("lsof")
-        .args(["-ti", "tcp:19880"])
+        .args(["-ti", &format!("tcp:{sidecar_port}")])
         .output()
     {
         let pids = String::from_utf8_lossy(&output.stdout);
@@ -117,8 +148,8 @@ fn initialize_desktop_runtime(
                 continue;
             }
             eprintln!(
-                "[matrix-client] killing orphaned process on port 19880: pid {}",
-                pid_str
+                "[matrix-client] killing orphaned process on port {}: pid {}",
+                sidecar_port, pid_str
             );
             let _ = std::process::Command::new("kill")
                 .args(["-TERM", pid_str.trim()])
@@ -139,7 +170,7 @@ fn initialize_desktop_runtime(
         .sidecar("matrix-server")?
         .args([
             "--port",
-            "19880",
+            &port_str,
             "--local",
             "true",
             "--web",
@@ -148,6 +179,7 @@ fn initialize_desktop_runtime(
         .spawn()?;
 
     app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
+    app.manage(SidecarPortState(sidecar_port));
 
     // Log sidecar output for debugging
     tauri::async_runtime::spawn(async move {
@@ -173,23 +205,35 @@ fn initialize_desktop_runtime(
     });
 
     #[cfg(any(test, debug_assertions))]
-    initialize_automation_runtime(app);
+    initialize_automation_runtime(app, sidecar_port);
 
     let main_window = app.get_webview_window("main").unwrap();
+
+    // Dev mode: set window title and icon badge
+    #[cfg(any(test, debug_assertions))]
+    {
+        set_dev_window_title(&main_window, sidecar_port);
+
+        #[cfg(target_os = "macos")]
+        apply_dev_icon_badge();
+    }
+
     std::thread::spawn(move || {
         use std::net::TcpStream;
         use std::time::Duration;
 
+        let addr = format!("127.0.0.1:{sidecar_port}");
         for _ in 0..60 {
             if TcpStream::connect_timeout(
-                &"127.0.0.1:19880".parse().unwrap(),
+                &addr.parse().unwrap(),
                 Duration::from_millis(200),
             )
             .is_ok()
             {
                 std::thread::sleep(Duration::from_millis(300));
-                let _ =
-                    main_window.eval("window.location.replace('http://127.0.0.1:19880')");
+                let _ = main_window.eval(&format!(
+                    "window.location.replace('http://127.0.0.1:{sidecar_port}')"
+                ));
                 return;
             }
             std::thread::sleep(Duration::from_millis(250));
@@ -197,6 +241,83 @@ fn initialize_desktop_runtime(
     });
 
     Ok(())
+}
+
+/// Set window title to "Matrix [DEV - <worktree-name> :<port>]" in dev mode.
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn set_dev_window_title(window: &tauri::WebviewWindow, port: u16) {
+    let worktree_name = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "dev".to_string());
+    let title = format!("Matrix [DEV - {worktree_name} :{port}]");
+    let _ = window.set_title(&title);
+}
+
+/// Overlay a red "DEV" badge on the app icon (Dock + title bar).
+#[cfg(all(target_os = "macos", any(test, debug_assertions)))]
+fn apply_dev_icon_badge() {
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::{NSPoint, NSRect, NSSize, NSString};
+    use objc::{class, msg_send, sel, sel_impl};
+
+    unsafe {
+        let app: id = msg_send![class!(NSApplication), sharedApplication];
+        let icon: id = msg_send![app, applicationIconImage];
+        if icon == nil {
+            return;
+        }
+
+        let size: NSSize = msg_send![icon, size];
+
+        // Create a mutable copy to draw on
+        let new_icon: id = msg_send![icon, copy];
+        let _: () = msg_send![new_icon, lockFocus];
+
+        // Badge: red circle in top-right corner (38% of icon size)
+        let badge_diameter = size.width * 0.38;
+        let margin = size.width * 0.02;
+        let badge_rect = NSRect::new(
+            NSPoint::new(
+                size.width - badge_diameter - margin,
+                size.height - badge_diameter - margin,
+            ),
+            NSSize::new(badge_diameter, badge_diameter),
+        );
+
+        let badge_color: id = msg_send![class!(NSColor),
+            colorWithRed: 0.85f64
+            green: 0.18f64
+            blue: 0.12f64
+            alpha: 1.0f64
+        ];
+        let _: () = msg_send![badge_color, setFill];
+        let circle: id =
+            msg_send![class!(NSBezierPath), bezierPathWithOvalInRect: badge_rect];
+        let _: () = msg_send![circle, fill];
+
+        // "DEV" text centered in badge
+        let font_size = badge_diameter * 0.38;
+        let font: id = msg_send![class!(NSFont), boldSystemFontOfSize: font_size];
+        let white: id = msg_send![class!(NSColor), whiteColor];
+
+        let attrs: id = msg_send![class!(NSMutableDictionary), new];
+        let font_key = NSString::alloc(nil).init_str("NSFont");
+        let color_key = NSString::alloc(nil).init_str("NSColor");
+        let _: () = msg_send![attrs, setObject: font forKey: font_key];
+        let _: () = msg_send![attrs, setObject: white forKey: color_key];
+
+        let text = NSString::alloc(nil).init_str("DEV");
+        let text_size: NSSize = msg_send![text, sizeWithAttributes: attrs];
+        let text_origin = NSPoint::new(
+            badge_rect.origin.x + (badge_diameter - text_size.width) / 2.0,
+            badge_rect.origin.y + (badge_diameter - text_size.height) / 2.0,
+        );
+        let _: () = msg_send![text, drawAtPoint: text_origin withAttributes: attrs];
+
+        let _: () = msg_send![new_icon, unlockFocus];
+        let _: () = msg_send![app, setApplicationIconImage: new_icon];
+    }
 }
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
@@ -235,19 +356,23 @@ impl automation::runtime::desktop::DesktopWindowFacade for TauriWindowFacade {
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
 #[allow(dead_code)]
-struct TauriSidecarFacade(tauri::AppHandle);
+struct TauriSidecarFacade {
+    handle: tauri::AppHandle,
+    port: u16,
+}
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
 impl automation::runtime::desktop::DesktopSidecarFacade for TauriSidecarFacade {
     fn status(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
         use std::net::TcpStream;
         use std::time::Duration;
+        let addr = format!("127.0.0.1:{}", self.port);
         let running = TcpStream::connect_timeout(
-            &"127.0.0.1:19880".parse().unwrap(),
+            &addr.parse().unwrap(),
             Duration::from_millis(200),
         )
         .is_ok();
-        Ok(json!({"running": running, "port": 19880}))
+        Ok(json!({"running": running, "port": self.port}))
     }
 
     fn restart(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
@@ -255,12 +380,13 @@ impl automation::runtime::desktop::DesktopSidecarFacade for TauriSidecarFacade {
     }
 
     fn state(&self) -> serde_json::Value {
-        self.status().unwrap_or_else(|_| json!({"running": false, "port": 19880}))
+        self.status()
+            .unwrap_or_else(|_| json!({"running": false, "port": self.port}))
     }
 }
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
-fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
+fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>, sidecar_port: u16) {
     append_automation_startup_log("entered_automation_setup");
     let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
         .ok()
@@ -284,11 +410,11 @@ fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
             "visible": true
         }),
         webview: json!({
-            "url": "http://127.0.0.1:19880"
+            "url": format!("http://127.0.0.1:{sidecar_port}")
         }),
         sidecar: json!({
             "running": true,
-            "port": 19880
+            "port": sidecar_port
         }),
     }));
 
@@ -299,7 +425,10 @@ fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
     let app_handle_for_facades = app.handle().clone();
     let desktop_adapter = automation::runtime::desktop::DesktopAutomationAdapter::new(
         TauriWindowFacade(app_handle_for_facades.clone()),
-        TauriSidecarFacade(app_handle_for_facades),
+        TauriSidecarFacade {
+            handle: app_handle_for_facades,
+            port: sidecar_port,
+        },
     );
 
     let composite_backend = automation::runtime::composite::DesktopRuntimeBackend::new(
