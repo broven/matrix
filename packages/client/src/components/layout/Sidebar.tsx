@@ -109,7 +109,7 @@ function WorktreeItem({ worktree, sessions, selected, onSelect, onDelete }: Work
     <>
       <div
         className={cn(
-          "group flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
+          "group flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-lg px-2.5 py-2 text-left transition-colors",
           selected ? "bg-accent" : "hover:bg-accent/50",
         )}
         data-testid={`worktree-item-${worktree.branch}`}
@@ -140,6 +140,26 @@ function WorktreeItem({ worktree, sessions, selected, onSelect, onDelete }: Work
               {activeSession.agentId}
             </p>
           )}
+        </div>
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirming(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              setConfirming(true);
+            }
+          }}
+          aria-label="Delete worktree"
+          data-testid="delete-worktree-btn"
+        >
+          <X className="size-3.5" />
         </div>
       </div>
 
@@ -312,7 +332,7 @@ export function Sidebar({
                 </div>
 
                 <CollapsibleContent>
-                  <div className="ml-4 space-y-0.5 border-l border-border/40 pl-2">
+                  <div className="ml-4 min-w-0 space-y-0.5 border-l border-border/40 pl-2">
                     {repoWorktrees.length === 0 ? (
                       <div className="px-3 py-2 text-xs text-muted-foreground/60">
                         No worktrees

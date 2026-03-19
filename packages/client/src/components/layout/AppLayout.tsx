@@ -190,6 +190,45 @@ export function AppLayout() {
     }
   };
 
+  const handleDeleteRepository = async (repositoryId: string, deleteSource: boolean) => {
+    if (!client) return;
+
+    const worktreeIds = new Set((worktrees.get(repositoryId) ?? []).map((worktree) => worktree.id));
+    const deletedSessionIds = sessions
+      .filter(
+        (session) =>
+          session.repositoryId === repositoryId ||
+          (session.worktreeId !== null && worktreeIds.has(session.worktreeId)),
+      )
+      .map((session) => session.sessionId);
+
+    setRepositories((previous) => previous.filter((repository) => repository.id !== repositoryId));
+    setWorktrees((previous) => {
+      const next = new Map(previous);
+      next.delete(repositoryId);
+      return next;
+    });
+    setSessions((previous) =>
+      previous.filter((session) => !deletedSessionIds.includes(session.sessionId)),
+    );
+
+    if (selectedSessionId && deletedSessionIds.includes(selectedSessionId)) {
+      setSelectedSessionId(null);
+    }
+
+    try {
+      await client.deleteRepository(repositoryId, deleteSource);
+      void handleRefreshSessions();
+    } catch (error) {
+      console.error("Failed to delete repository:", error);
+      const freshRepositories = await client.getRepositories();
+      setRepositories(freshRepositories);
+      await handleRefreshWorktrees();
+      await handleRefreshSessions();
+      throw error;
+    }
+  };
+
   const handleCreateSession = async (agentId: string, cwd: string) => {
     if (!client) return null;
 
@@ -362,6 +401,7 @@ export function AppLayout() {
             size="sm"
             className="w-full justify-start gap-2 rounded-lg text-xs"
             onClick={() => setShowSettings(true)}
+            data-testid="settings-btn"
           >
             <Settings className="size-3.5" />
             Settings
@@ -377,7 +417,11 @@ export function AppLayout() {
 
       <main className="flex min-w-0 flex-1 flex-col">
         {showSettings ? (
-          <SettingsPage onBack={() => setShowSettings(false)} />
+          <SettingsPage
+            onBack={() => setShowSettings(false)}
+            repositories={repositories}
+            onDeleteRepository={handleDeleteRepository}
+          />
         ) : (
         <>
         <MobileHeader

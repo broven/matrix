@@ -15,7 +15,7 @@ Interact with the running Matrix macOS dev client through the local HTTP automat
 The dev app must be running:
 
 ```bash
-pnpm --filter @matrix/client tauri:dev
+pnpm dev:mac
 ```
 
 ## Step 1: Read Discovery
@@ -176,7 +176,7 @@ curl --noproxy "*" -s -X POST \
 - **503 or HTML errors**: Add `--noproxy "*"` to curl commands
 - **401 Unauthorized**: Use the token from the current `automation.json`
 - **webview_unavailable**: Frontend bridge not installed or timed out — wait and retry
-- **Process died**: Restart with `pnpm --filter @matrix/client tauri:dev`
+- **Process died**: Restart with `pnpm dev:mac`
 
 ## Reference
 

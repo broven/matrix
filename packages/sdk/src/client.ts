@@ -147,10 +147,12 @@ export class MatrixClient {
     return res.json();
   }
 
-  async deleteRepository(id: string): Promise<void> {
-    const res = await this.fetch(`/repositories/${id}`, { method: "DELETE" });
+  async deleteRepository(id: string, deleteSource = false): Promise<void> {
+    const url = deleteSource ? `/repositories/${id}?deleteSource=true` : `/repositories/${id}`;
+    const res = await this.fetch(url, { method: "DELETE" });
     if (!res.ok) {
-      throw new Error(`Failed to delete repository ${id}: ${res.status}`);
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error || `Failed to delete repository ${id}: ${res.status}`);
     }
   }
 

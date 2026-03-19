@@ -179,7 +179,7 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
         <div
           role="button"
           tabIndex={0}
-          className="flex size-6 items-center justify-center rounded-md opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10"
+          className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
           onClick={(event) => {
             event.stopPropagation();
             triggerDelete();
@@ -192,8 +192,9 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
             }
           }}
           aria-label="Delete session"
+          data-testid="delete-session-btn"
         >
-          <X className="size-3.5 text-muted-foreground hover:text-destructive" />
+          <X className="size-3.5" />
         </div>
       </div>
 

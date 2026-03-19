@@ -1,21 +1,38 @@
-import { describe, it, beforeAll } from "vitest";
+import { describe, it, beforeAll, afterAll } from "vitest";
+import { rm } from "node:fs/promises";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
-import { setBridge, waitForGone, isVisible, getValue } from "../lib/ui";
+import { setBridge, waitFor, waitForGone, isVisible, getValue, typeChar } from "../lib/ui";
+import { resetUI, ensureWorktree, removeAllRepos } from "../lib/flows/setup";
 
-describe("06 — Selecting a slash command inserts it without sending", () => {
+describe("Slash command 选择后不自动发送", () => {
   let bridge: BridgeClient;
+  let repoPath: string;
 
   beforeAll(async () => {
     bridge = await createBridgeClient();
     setBridge(bridge);
+
+    await resetUI(bridge);
+    await removeAllRepos(bridge).catch(() => {});
+
+    const wt = await ensureWorktree(bridge);
+    repoPath = wt.repoPath;
   });
 
-  it("should insert command into input without auto-sending", async () => {
-    // Ensure dropdown is open (from test 05)
-    const hasDropdown = await isVisible('[data-testid="slash-command-dropdown"]');
-    if (!hasDropdown) {
-      throw new Error("No slash command dropdown — test 05 must run first");
-    }
+  afterAll(async () => {
+    await removeAllRepos(bridge).catch(() => {});
+    await rm(repoPath, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("选择一个 slash command 后仅填入输入框，不自动发送", async () => {
+    await waitFor('[data-testid="chat-input"]');
+
+    // Wait for availableCommands to arrive from the session
+    await new Promise((r) => setTimeout(r, 2_000));
+
+    // Type "/" to open dropdown
+    await typeChar('[data-testid="chat-input"]', "/");
+    await waitFor('[data-testid="slash-command-dropdown"]', { timeout: 5_000 });
 
     // mousedown on the first command item (dropdown uses onMouseDown, not onClick)
     await bridge.eval(`
