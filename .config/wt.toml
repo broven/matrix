@@ -5,6 +5,8 @@ ROOT="${WT_ROOT:-${CONDUCTOR_ROOT_PATH:-${SUPERSET_ROOT_PATH}}}"
 pnpm install
 """
 
+ensure-dirs = "mkdir -p packages/client/dist"
+
 copy-env = """
 # env fallback: Worktrunk -> Conductor -> Superset
 ROOT="${WT_ROOT:-${CONDUCTOR_ROOT_PATH:-${SUPERSET_ROOT_PATH}}}"
