@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
-import { generateToken } from "./auth/token.js";
+import { generateToken, maskToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
@@ -417,10 +417,11 @@ const idleSuspendSweepTimer = setInterval(() => {
 idleSuspendSweepTimer.unref();
 
 console.log(`\n  Matrix Server running on http://${config.host}:${config.port}`);
-console.log(`\n  Auth token: ${serverToken}`);
+console.log(`\n  Auth token: ${maskToken(serverToken)}`);
 const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
 const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
-console.log(`\n  Connect URI: ${connectionUri}`);
+const maskedConnectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, maskToken(serverToken));
+console.log(`\n  Connect URI: ${maskedConnectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
 console.log(`\n  Discovered agents: ${discoveredAgents.map((a) => a.name).join(", ")}\n`);
