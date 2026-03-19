@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SessionItem } from "@/components/layout/SessionItem";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AddRepositoryMenu } from "@/components/repository/AddRepositoryMenu";
 
 interface SidebarProps {
   agents: AgentListItem[];
@@ -18,7 +19,8 @@ interface SidebarProps {
   onSelectSession: (sessionId: string) => void;
   onCreateSession: (agentId: string, cwd: string) => Promise<string | null>;
   onDeleteSession: (sessionId: string) => void;
-  onAddRepository: () => void;
+  onOpenProject: () => void;
+  onCloneFromUrl: () => void;
   onCreateWorktree: (repoId: string) => void;
   onDeleteWorktree: (worktreeId: string) => void;
 }
@@ -40,7 +42,8 @@ export function Sidebar({
   onSelectSession,
   onCreateSession,
   onDeleteSession,
-  onAddRepository,
+  onOpenProject,
+  onCloneFromUrl,
   onCreateWorktree,
   onDeleteWorktree,
 }: SidebarProps) {
@@ -265,14 +268,10 @@ export function Sidebar({
       </ScrollArea>
 
       <div className="space-y-2 border-t border-sidebar-border px-4 py-4">
-        <Button
-          className="w-full justify-center gap-2 rounded-xl text-sm"
-          onClick={onAddRepository}
-          size="sm"
-        >
-          <FolderGit2 className="size-4" />
-          Add Repository
-        </Button>
+        <AddRepositoryMenu
+          onOpenProject={onOpenProject}
+          onCloneFromUrl={onCloneFromUrl}
+        />
       </div>
     </div>
   );

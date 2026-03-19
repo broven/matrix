@@ -54,3 +54,53 @@ export interface CreateWorktreeResponse {
     modes: { currentModeId: string; availableModes: unknown[] };
   };
 }
+
+// ── Filesystem ────────────────────────────────────────────────────
+
+/** Single entry returned by the filesystem listing API */
+export interface FsEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  isGitRepo: boolean;
+}
+
+/** GET /fs/list response */
+export interface FsListResponse {
+  entries: FsEntry[];
+}
+
+// ── Clone ─────────────────────────────────────────────────────────
+
+/** POST /repositories/clone request */
+export interface CloneRepositoryRequest {
+  url: string;
+  targetDir?: string;
+  branch?: string;
+}
+
+/** POST /repositories/clone response */
+export interface CloneRepositoryResponse {
+  jobId: string;
+}
+
+/** Clone job status */
+export type CloneJobStatus = "cloning" | "completed" | "failed";
+
+/** GET /repositories/clone/:jobId response */
+export interface CloneJobInfo {
+  jobId: string;
+  status: CloneJobStatus;
+  url: string;
+  targetDir: string;
+  repositoryId?: string;
+  error?: string;
+}
+
+// ── Server Config ─────────────────────────────────────────────────
+
+/** Per-server path configuration */
+export interface ServerConfig {
+  reposPath: string;
+  worktreesPath: string;
+}

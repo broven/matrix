@@ -17,6 +17,7 @@ import { ConnectionManager } from "./api/ws/connection-manager.js";
 import { createTransportRoutes } from "./api/transport/index.js";
 import { SessionManager } from "./session-manager/index.js";
 import { WorktreeManager } from "./worktree-manager/index.js";
+import { CloneManager } from "./clone-manager/index.js";
 import type { AgentCapabilities, CreateSessionRequest } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
@@ -30,6 +31,7 @@ store.normalizeSessionsOnStartup();
 const connectionManager = new ConnectionManager();
 const sessionManager = new SessionManager();
 const worktreeManager = new WorktreeManager();
+const cloneManager = new CloneManager();
 const IDLE_SUSPEND_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_SUSPEND_SWEEP_INTERVAL_MS = 60 * 1000;
 
@@ -281,6 +283,8 @@ app.use("/repositories", authMiddleware(serverToken));
 app.use("/repositories/*", authMiddleware(serverToken));
 app.use("/worktrees", authMiddleware(serverToken));
 app.use("/worktrees/*", authMiddleware(serverToken));
+app.use("/fs/*", authMiddleware(serverToken));
+app.use("/server/*", authMiddleware(serverToken));
 
 function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
@@ -314,6 +318,7 @@ app.route("/", createRestRoutes({
   store,
   sessionManager,
   worktreeManager,
+  cloneManager,
   createSessionForWorktree,
 }));
 app.route("/", createTransportRoutes({
@@ -383,7 +388,7 @@ if (config.webDir) {
   app.get("/*", async (c, next) => {
     const p = c.req.path;
     // Skip API routes and WebSocket endpoint
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     const res = await serveStatic({ root: resolvedWebDir })(c, next);
@@ -393,7 +398,7 @@ if (config.webDir) {
   // SPA fallback: serve index.html for non-API GET requests
   app.get("/*", async (c, next) => {
     const p = c.req.path;
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
       return next();
     }
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);
