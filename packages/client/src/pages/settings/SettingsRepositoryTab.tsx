@@ -56,7 +56,7 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
               Permanently remove this repository and its tracked worktrees from Matrix.
             </div>
           </div>
-          <Button variant="destructive" onClick={() => setConfirmingDelete(true)}>
+          <Button variant="destructive" onClick={() => { setDeleteSource(false); setConfirmingDelete(true); }}>
             Delete Repository
           </Button>
         </CardContent>

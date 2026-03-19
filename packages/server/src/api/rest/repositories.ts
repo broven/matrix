@@ -97,21 +97,29 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       }, 500);
     }
 
-    store.deleteRepository(id);
-
-    // Optionally delete source files on disk
+    // Optionally delete source files on disk (before removing DB records)
     const deleteSource = c.req.query("deleteSource") === "true";
     if (deleteSource) {
+      const { resolve } = await import("node:path");
+      const resolved = resolve(repo.path);
+
+      // Safety: refuse to delete paths that are too shallow (e.g. /, /home, /Users/foo)
+      const segments = resolved.split("/").filter(Boolean);
+      if (segments.length < 3) {
+        return c.json({ error: `Refusing to delete path: ${resolved} (too shallow)` }, 400);
+      }
+
       const { rm } = await import("node:fs/promises");
       try {
-        await rm(repo.path, { recursive: true, force: true });
-        console.log(`[repo] Deleted source files: ${repo.path}`);
+        await rm(resolved, { recursive: true, force: true });
+        console.log(`[repo] Deleted source files: ${resolved}`);
       } catch (error) {
-        console.error(`[repo] Failed to delete source files ${repo.path}:`, error);
-        // DB records already removed — don't fail the request
+        console.error(`[repo] Failed to delete source files ${resolved}:`, error);
+        return c.json({ error: `Failed to delete source files: ${resolved}` }, 500);
       }
     }
 
+    store.deleteRepository(id);
     return c.json({ ok: true });
   });
 

@@ -221,10 +221,10 @@ export function AppLayout() {
       void handleRefreshSessions();
     } catch (error) {
       console.error("Failed to delete repository:", error);
-      void handleRefreshSessions();
-      void handleRefreshWorktrees();
       const freshRepositories = await client.getRepositories();
       setRepositories(freshRepositories);
+      await handleRefreshWorktrees();
+      await handleRefreshSessions();
     }
   };
 
