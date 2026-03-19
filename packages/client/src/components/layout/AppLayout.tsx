@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
-import { MessageSquarePlus } from "lucide-react";
+import { MessageSquarePlus, AlertCircle, X } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
@@ -41,6 +41,8 @@ export function AppLayout() {
   const [showOpenProject, setShowOpenProject] = useState(false);
   const [showCloneFromUrl, setShowCloneFromUrl] = useState(false);
   const [worktreeDialogRepo, setWorktreeDialogRepo] = useState<RepositoryInfo | null>(null);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [cloningRepos, setCloningRepos] = useState<Map<string, string>>(new Map()); // jobId → repoName
   const clonePollIntervals = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
 
   // Clean up clone poll intervals on unmount
@@ -233,8 +235,10 @@ export function AppLayout() {
     });
   };
 
-  const handleCloneStarted = useCallback((jobId: string) => {
+  const handleCloneStarted = useCallback((jobId: string, repoName: string) => {
     if (!client) return;
+    setCloneError(null);
+    setCloningRepos((prev) => new Map(prev).set(jobId, repoName));
     // Poll for clone completion
     const poll = setInterval(async () => {
       try {
@@ -242,6 +246,11 @@ export function AppLayout() {
         if (job.status === "completed") {
           clearInterval(poll);
           clonePollIntervals.current.delete(poll);
+          setCloningRepos((prev) => {
+            const next = new Map(prev);
+            next.delete(jobId);
+            return next;
+          });
           // Refresh repositories to pick up the auto-registered repo
           const repos = await client.getRepositories();
           setRepositories(repos);
@@ -260,11 +269,21 @@ export function AppLayout() {
         } else if (job.status === "failed") {
           clearInterval(poll);
           clonePollIntervals.current.delete(poll);
-          console.error("Clone failed:", job.error);
+          setCloningRepos((prev) => {
+            const next = new Map(prev);
+            next.delete(jobId);
+            return next;
+          });
+          setCloneError(job.error || "Clone failed");
         }
       } catch {
         clearInterval(poll);
         clonePollIntervals.current.delete(poll);
+        setCloningRepos((prev) => {
+          const next = new Map(prev);
+          next.delete(jobId);
+          return next;
+        });
       }
     }, 2000);
     clonePollIntervals.current.add(poll);
@@ -314,6 +333,7 @@ export function AppLayout() {
       sessions={sortedSessions}
       repositories={repositories}
       worktrees={worktrees}
+      cloningRepos={cloningRepos}
       connectionStatus={status}
       selectedSessionId={selectedSessionId}
       onSelectSession={(sessionId) => {
@@ -397,6 +417,24 @@ export function AppLayout() {
         </>
         )}
       </main>
+
+      {/* Clone error notification */}
+      {cloneError && (
+        <div className="fixed bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 shadow-lg backdrop-blur">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="flex-1 text-sm">
+            <p className="font-medium text-destructive">Clone failed</p>
+            <p className="mt-1 text-muted-foreground">{cloneError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCloneError(null)}
+            className="shrink-0 rounded-md p-1 hover:bg-accent"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
 
       {/* Dialogs */}
       {showOpenProject && client && (

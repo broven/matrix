@@ -10,7 +10,7 @@ import { parseRepoName } from "@matrix/protocol";
 
 interface CloneFromUrlDialogProps {
   client: MatrixClient;
-  onCloneStarted: (jobId: string) => void;
+  onCloneStarted: (jobId: string, repoName: string) => void;
   onClose: () => void;
 }
 
@@ -42,7 +42,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
         targetDir: targetDir.trim() || undefined,
         branch: branch.trim() || undefined,
       });
-      onCloneStarted(jobId);
+      onCloneStarted(jobId, targetDir.trim() || parseRepoName(url.trim()));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to clone repository");

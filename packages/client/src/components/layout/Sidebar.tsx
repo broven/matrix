@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AgentListItem, ConnectionStatus, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
-import { Plus, Search, ChevronRight, ChevronDown, GitBranch, FolderGit2 } from "lucide-react";
+import { Plus, Search, ChevronRight, ChevronDown, GitBranch, FolderGit2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,6 +14,7 @@ interface SidebarProps {
   sessions: SessionInfo[];
   repositories: RepositoryInfo[];
   worktrees: Map<string, WorktreeInfo[]>;
+  cloningRepos: Map<string, string>;
   connectionStatus: ConnectionStatus;
   selectedSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
@@ -37,6 +38,7 @@ export function Sidebar({
   sessions,
   repositories,
   worktrees,
+  cloningRepos,
   connectionStatus,
   selectedSessionId,
   onSelectSession,
@@ -69,7 +71,7 @@ export function Sidebar({
     [sessions],
   );
 
-  const totalItems = repositories.length + legacySessions.length;
+  const totalItems = repositories.length + legacySessions.length + cloningRepos.size;
 
   const toggleRepo = (repoId: string) => {
     setCollapsedRepos((prev) => {
@@ -125,6 +127,16 @@ export function Sidebar({
 
       <ScrollArea className="min-h-0 flex-1 px-2">
         <div className="space-y-1 pb-4">
+          {/* Cloning repositories */}
+          {Array.from(cloningRepos.entries()).map(([jobId, repoName]) => (
+            <div key={jobId} className="flex items-center gap-2 rounded-lg px-3 py-2.5">
+              <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+              <FolderGit2 className="size-3.5 text-muted-foreground" />
+              <span className="truncate text-sm font-medium text-muted-foreground">{repoName}</span>
+              <span className="ml-auto text-xs text-muted-foreground/60">Cloning...</span>
+            </div>
+          ))}
+
           {/* Repositories with worktrees */}
           {repositories.map((repo) => {
             const repoWorktrees = worktrees.get(repo.id) ?? [];
@@ -249,7 +261,7 @@ export function Sidebar({
             </>
           )}
 
-          {repositories.length === 0 && legacySessions.length === 0 && (
+          {repositories.length === 0 && legacySessions.length === 0 && cloningRepos.size === 0 && (
             <div className="px-3 py-8 text-center">
               <p className="text-sm text-muted-foreground">No repositories</p>
               <p className="mt-1 text-xs text-muted-foreground/60">
