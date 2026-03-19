@@ -222,8 +222,9 @@ export function AppLayout() {
     } catch (error) {
       console.error("Failed to delete repository:", error);
       void handleRefreshSessions();
-      const repositories = await client.getRepositories();
-      setRepositories(repositories);
+      void handleRefreshWorktrees();
+      const freshRepositories = await client.getRepositories();
+      setRepositories(freshRepositories);
     }
   };
 

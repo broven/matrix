@@ -142,6 +142,7 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
           <div className="min-h-0 flex-1 overflow-y-auto bg-background">
             {selectedRepository ? (
               <SettingsRepositoryTab
+                key={selectedRepository.id}
                 repository={selectedRepository}
                 onDeleteRepository={handleDeleteSelectedRepository}
               />
