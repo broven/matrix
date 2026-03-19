@@ -6,11 +6,13 @@ use crate::automation::core::errors::AutomationErrorCode;
 use crate::automation::core::models::ResetScope;
 use crate::automation::runtime::router::{AutomationRouterBackend, RouteStateSnapshot};
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub trait IosAppFacade: Send + Sync {
     fn reload(&self) -> Result<Value, AutomationErrorCode>;
     fn state(&self) -> Value;
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub trait IosWebviewFacade: Send + Sync {
     fn reset(&self, scopes: &[ResetScope]) -> Result<Value, AutomationErrorCode>;
     fn state(&self) -> Value;
@@ -42,17 +44,20 @@ where
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub struct IosSimulatorAdapter<A, W> {
     app: A,
     webview: W,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl<A, W> IosSimulatorAdapter<A, W> {
     pub fn new(app: A, webview: W) -> Self {
         Self { app, webview }
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl<A: IosAppFacade, W: IosWebviewFacade> IosSimulatorAdapter<A, W> {
     pub fn state(&self) -> RouteStateSnapshot {
         RouteStateSnapshot {

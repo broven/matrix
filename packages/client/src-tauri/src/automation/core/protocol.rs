@@ -1,24 +1,15 @@
+#![cfg_attr(not(test), allow(unused_imports, dead_code))]
+
 pub use super::errors::AutomationErrorCode;
-pub use super::models::AutomationEnvelope;
-pub type NativeActionRequest = super::models::NativeActionRequest;
-pub type ResetRequest = super::models::ResetRequest;
-pub type ResetScope = super::models::ResetScope;
-pub type WaitCondition = super::models::WaitCondition;
-pub type WaitRequest = super::models::WaitRequest;
-pub type WebviewEventRequest = super::models::WebviewEventRequest;
-
-pub fn success<T>(result: T) -> AutomationEnvelope<T> {
-    AutomationEnvelope::success(result)
-}
-
-pub fn failure<T>(error: AutomationErrorCode) -> AutomationEnvelope<T> {
-    AutomationEnvelope::failure(error)
-}
+pub use super::models::{
+    AutomationEnvelope, NativeActionRequest, ResetRequest, ResetScope, WaitCondition, WaitRequest,
+    WebviewEventRequest,
+};
 
 #[cfg(test)]
 mod tests {
     use super::{
-        failure, success, AutomationErrorCode, NativeActionRequest, ResetRequest, ResetScope,
+        AutomationEnvelope, AutomationErrorCode, NativeActionRequest, ResetRequest, ResetScope,
         WaitCondition, WaitRequest, WebviewEventRequest,
     };
     use serde_json::{json, to_value};
@@ -84,7 +75,7 @@ mod tests {
 
     #[test]
     fn serializes_envelope_shape() {
-        let envelope = success(json!({ "status": "ready" }));
+        let envelope = AutomationEnvelope::success(json!({ "status": "ready" }));
         let serialized = to_value(envelope).expect("envelope should serialize");
 
         assert_eq!(
@@ -99,7 +90,8 @@ mod tests {
 
     #[test]
     fn serializes_failure_with_stable_error_code() {
-        let envelope = failure::<serde_json::Value>(AutomationErrorCode::UnsupportedAction);
+        let envelope =
+            AutomationEnvelope::<serde_json::Value>::failure(AutomationErrorCode::UnsupportedAction);
         let serialized = to_value(envelope).expect("envelope should serialize");
 
         assert_eq!(

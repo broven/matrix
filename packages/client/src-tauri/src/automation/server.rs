@@ -31,6 +31,7 @@ impl AutomationServer {
         self.addr
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn shutdown(mut self) -> std::io::Result<()> {
         let _ = self.stop_tx.send(());
         if let Some(handle) = self.join_handle.take() {

@@ -16,6 +16,7 @@ pub trait WebviewCapability {
         name: &str,
         payload: Option<&Value>,
     ) -> Result<Value, AutomationErrorCode>;
+    #[allow(dead_code)]
     fn snapshot(&self) -> Result<Value, AutomationErrorCode>;
 }
 
@@ -62,6 +63,7 @@ pub fn dispatch_webview_event<C: WebviewCapability + ?Sized>(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn snapshot_webview<C: WebviewCapability + ?Sized>(capability: &C) -> AutomationEnvelope<Value> {
     match capability.snapshot() {
         Ok(result) => AutomationEnvelope::success(result),

@@ -6,12 +6,14 @@ use crate::automation::core::errors::AutomationErrorCode;
 use crate::automation::core::models::ResetScope;
 use crate::automation::runtime::router::{AutomationRouterBackend, RouteStateSnapshot};
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub trait DesktopWindowFacade: Send + Sync {
     fn focus(&self) -> Result<Value, AutomationErrorCode>;
     fn reload(&self) -> Result<Value, AutomationErrorCode>;
     fn state(&self) -> Value;
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub trait DesktopSidecarFacade: Send + Sync {
     fn status(&self) -> Result<Value, AutomationErrorCode>;
     fn restart(&self) -> Result<Value, AutomationErrorCode>;
@@ -52,17 +54,20 @@ where
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub struct DesktopAutomationAdapter<W, S> {
     window: W,
     sidecar: S,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl<W, S> DesktopAutomationAdapter<W, S> {
     pub fn new(window: W, sidecar: S) -> Self {
         Self { window, sidecar }
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 impl<W: DesktopWindowFacade, S: DesktopSidecarFacade> DesktopAutomationAdapter<W, S> {
     pub fn state(&self) -> RouteStateSnapshot {
         RouteStateSnapshot {

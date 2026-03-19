@@ -40,9 +40,11 @@ pub fn run() {
 }
 
 #[cfg(desktop)]
+#[allow(dead_code)]
 struct SidecarState(std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
+#[allow(dead_code)]
 struct AutomationServerState(std::sync::Mutex<Option<automation::server::AutomationServer>>);
 
 #[cfg(all(desktop, any(test, debug_assertions)))]

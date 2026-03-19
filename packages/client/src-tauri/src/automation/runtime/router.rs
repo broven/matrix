@@ -1,6 +1,5 @@
 use serde_json::{json, Value};
 
-use crate::automation::actions;
 use crate::automation::core::capabilities::{
     self, NativeCapability, TestControlCapability, WaitCapability, WebviewCapability,
 };
@@ -9,6 +8,11 @@ use crate::automation::core::models::{
     AutomationEnvelope, NativeActionRequest, ResetRequest, WaitRequest, WebviewEventRequest,
 };
 use serde::Serialize;
+
+#[derive(serde::Deserialize)]
+struct WebviewEvalRequest {
+    script: String,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,15 +103,21 @@ pub fn route_request(
             }),
         },
         ("POST", "/webview/eval") => {
-            let request = match actions::parse_webview_eval_request(body) {
+            let request = match serde_json::from_slice::<WebviewEvalRequest>(body) {
                 Ok(request) => request,
-                Err(error) => {
+                Err(_) => {
                     return RouterResponse {
                         status: 400,
-                        body: json!({ "error": error }),
+                        body: json!({ "error": "invalid_json" }),
                     }
                 }
             };
+            if request.script.trim().is_empty() {
+                return RouterResponse {
+                    status: 400,
+                    body: json!({ "error": "missing_script" }),
+                };
+            }
             let Some(capability) = backend.webview_capability() else {
                 return capability_unavailable_response(AutomationErrorCode::WebviewUnavailable);
             };
