@@ -8,7 +8,8 @@
     "dev": "bun --watch --env-file=../../.env --env-file=../../.env.local src/index.ts",
     "dev:mac": "wireit",
     "start": "bun --env-file=../../.env --env-file=../../.env.local src/index.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "download-wt": "bun run scripts/download-wt.ts"
   },
   "wireit": {
     "dev:mac": {
