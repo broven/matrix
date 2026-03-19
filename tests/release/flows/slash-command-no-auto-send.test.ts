@@ -2,7 +2,7 @@ import { describe, it, beforeAll, afterAll } from "vitest";
 import { rm } from "node:fs/promises";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
 import { setBridge, waitFor, waitForGone, isVisible, getValue, typeChar } from "../lib/ui";
-import { resetUI, ensureWorktree, removeAllRepos } from "../lib/flows/setup";
+import { resetUI, ensureWorktree, removeAllRepos, spawnAgentViaMessage } from "../lib/flows/setup";
 
 describe("Slash command 选择后不自动发送", () => {
   let bridge: BridgeClient;
@@ -17,7 +17,10 @@ describe("Slash command 选择后不自动发送", () => {
 
     const wt = await ensureWorktree(bridge);
     repoPath = wt.repoPath;
-  });
+
+    // Spawn agent by sending a message (lazy init)
+    await spawnAgentViaMessage(bridge);
+  }, 120_000);
 
   afterAll(async () => {
     await removeAllRepos(bridge).catch(() => {});
@@ -26,9 +29,6 @@ describe("Slash command 选择后不自动发送", () => {
 
   it("选择一个 slash command 后仅填入输入框，不自动发送", async () => {
     await waitFor('[data-testid="chat-input"]');
-
-    // Wait for availableCommands to arrive from the session
-    await new Promise((r) => setTimeout(r, 2_000));
 
     // Type "/" to open dropdown
     await typeChar('[data-testid="chat-input"]', "/");
@@ -52,10 +52,10 @@ describe("Slash command 选择后不自动发送", () => {
       throw new Error(`Expected input to start with "/" but got: "${inputValue}"`);
     }
 
-    // Verify message was NOT sent — no agent message should appear
-    const hasAgentMessage = await isVisible('[data-testid="agent-message"]');
-    if (hasAgentMessage) {
-      throw new Error("Message was auto-sent after selecting command — should only insert");
+    // Verify message was NOT sent — no new agent message should appear beyond the initial one
+    const msgCount = await bridge.eval(`document.querySelectorAll('[data-testid="assistant-message"]').length`);
+    if ((msgCount as number) > 1) {
+      throw new Error("New message was auto-sent after selecting command — should only insert");
     }
   });
 });

@@ -9,6 +9,25 @@ export interface AgentConfig {
   description?: string;
 }
 
+/** User-defined custom agent */
+export interface CustomAgent {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  icon?: string;
+  description?: string;
+}
+
+/** Environment profile for an agent (built-in or custom) */
+export interface AgentEnvProfile {
+  id: string;
+  parentAgentId: string;
+  name: string;
+  env: Record<string, string>;
+}
+
 /** Agent info returned after ACP initialize */
 export interface AgentInfo {
   name: string;

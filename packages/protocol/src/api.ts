@@ -17,6 +17,7 @@ export interface CreateSessionResponse {
 export interface SessionInfo {
   sessionId: SessionId;
   agentId: string | null;
+  profileId: string | null;
   cwd: string;
   createdAt: string;
   status: "active" | "closed";
@@ -38,6 +39,14 @@ export interface AgentListItem {
   available: boolean;
   icon?: string;
   description?: string;
+  source: "builtin" | "custom";
+  profiles: AgentEnvProfileSummary[];
+}
+
+/** Profile summary included in agent list */
+export interface AgentEnvProfileSummary {
+  id: string;
+  name: string;
 }
 
 /** History entry type discriminator */

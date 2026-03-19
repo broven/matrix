@@ -27,6 +27,7 @@ vi.mock("@/components/ui/scroll-area", () => ({
 const baseSessionInfo: SessionInfo = {
   sessionId: "sess_test",
   agentId: "assistant",
+  profileId: null,
   cwd: "/tmp/workspace",
   createdAt: "2026-03-14T10:00:00.000Z",
   status: "active",
@@ -41,7 +42,7 @@ const baseSessionInfo: SessionInfo = {
 };
 
 const testAgents = [
-  { id: "assistant", name: "Assistant", command: "assistant", available: true },
+  { id: "assistant", name: "Assistant", command: "assistant", available: true, source: "builtin" as const, profiles: [] },
 ];
 
 function createAttachedSession() {

@@ -6,6 +6,7 @@ import { SessionItem } from "@/components/layout/SessionItem";
 const session: SessionInfo = {
   sessionId: "sess-1",
   agentId: "claude",
+  profileId: null,
   cwd: "/tmp/workspace",
   createdAt: "2026-03-19T08:00:00.000Z",
   status: "active",

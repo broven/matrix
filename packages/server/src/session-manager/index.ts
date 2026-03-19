@@ -13,6 +13,7 @@ export interface SessionBridgeFactory {
     agentId: string,
     cwd: string,
     restoreAgentSessionId?: string | null,
+    profileId?: string,
   ): Promise<{
     bridge: AcpBridge;
     modes: { currentModeId: string; availableModes: unknown[] };
@@ -229,6 +230,7 @@ export class SessionManager {
           session.agentId!,
           session.cwd,
           session.agentSessionId,
+          session.profileId ?? undefined,
         );
         this.register(sessionId, bridge, session.agentId!, session.cwd);
         store.updateSessionState(sessionId, {

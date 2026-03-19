@@ -44,6 +44,7 @@ export function SessionView({ sessionInfo, agents, onSessionInfoChange }: Sessio
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(sessionInfo.agentId);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(sessionInfo.profileId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load default agent from server config if no agent selected
@@ -214,13 +215,13 @@ export function SessionView({ sessionInfo, agents, onSessionInfoChange }: Sessio
         onComplete: () => setIsProcessing(false),
       };
 
-      // Include agentId in the prompt for lazy initialization
+      // Include agentId and profileId in the prompt for lazy initialization
       session.promptWithContent(
-        [{ type: "text", text, agentId: selectedAgentId }],
+        [{ type: "text", text, agentId: selectedAgentId, profileId: selectedProfileId ?? undefined }],
         callbacks,
       );
     },
-    [addEvent, session, viewStatus, selectedAgentId],
+    [addEvent, session, viewStatus, selectedAgentId, selectedProfileId],
   );
 
   const handleCancel = useCallback(() => {
@@ -276,8 +277,11 @@ export function SessionView({ sessionInfo, agents, onSessionInfoChange }: Sessio
         isProcessing={isProcessing}
         agents={agents}
         selectedAgentId={selectedAgentId}
+        selectedProfileId={selectedProfileId}
         onAgentChange={setSelectedAgentId}
+        onProfileChange={setSelectedProfileId}
         availableCommands={availableCommands}
+        agentLocked={Boolean(sessionInfo.agentId)}
       />
     </div>
   );

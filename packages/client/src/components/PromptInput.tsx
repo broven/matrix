@@ -11,8 +11,12 @@ interface Props {
   isProcessing?: boolean;
   agents?: AgentListItem[];
   selectedAgentId: string | null;
+  selectedProfileId: string | null;
   onAgentChange?: (agentId: string) => void;
+  onProfileChange?: (profileId: string | null) => void;
   availableCommands?: AvailableCommand[];
+  /** When true, agent/profile selectors are locked (session already bound to an agent) */
+  agentLocked?: boolean;
 }
 
 function useSlashAutocomplete(
@@ -72,8 +76,11 @@ export function PromptInput({
   isProcessing,
   agents = [],
   selectedAgentId,
+  selectedProfileId,
   onAgentChange,
+  onProfileChange,
   availableCommands = [],
+  agentLocked = false,
 }: Props) {
   const [text, setText] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
@@ -163,8 +170,25 @@ export function PromptInput({
     }
   };
 
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
   const availableAgents = agents.filter((a) => a.available);
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
+  const agentProfiles = selectedAgent?.profiles ?? [];
+  const selectedProfile = agentProfiles.find((p) => p.id === selectedProfileId);
+
+  // Close profile menu on outside click
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [profileMenuOpen]);
 
   return (
     <div className="px-4 pb-4 pt-2 md:px-6">
@@ -227,14 +251,18 @@ export function PromptInput({
               <div className="relative flex items-center gap-2" ref={menuRef}>
                 <button
                   type="button"
-                  onClick={() => setAgentMenuOpen(!agentMenuOpen)}
-                  className="flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                  onClick={() => !agentLocked && setAgentMenuOpen(!agentMenuOpen)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground transition-colors",
+                    agentLocked ? "opacity-60 cursor-default" : "hover:bg-secondary/80",
+                  )}
+                  disabled={agentLocked}
                 >
                   <span className="size-1.5 rounded-full bg-primary" />
                   {selectedAgent?.name ?? "Select agent"}
-                  <ChevronDown className="size-3 text-muted-foreground" />
+                  {!agentLocked && <ChevronDown className="size-3 text-muted-foreground" />}
                 </button>
-                {agentMenuOpen && availableAgents.length > 0 && (
+                {agentMenuOpen && !agentLocked && availableAgents.length > 0 && (
                   <div className="absolute bottom-full left-0 mb-1 min-w-[180px] rounded-lg border border-border bg-popover p-1 shadow-md">
                     {availableAgents.map((agent) => (
                       <button
@@ -242,6 +270,7 @@ export function PromptInput({
                         type="button"
                         onClick={() => {
                           onAgentChange?.(agent.id);
+                          onProfileChange?.(null); // Reset profile on agent change
                           setAgentMenuOpen(false);
                         }}
                         className={cn(
@@ -258,6 +287,62 @@ export function PromptInput({
                   </div>
                 )}
               </div>
+              {/* Profile selector — only when selected agent has profiles */}
+              {agentProfiles.length > 0 && (
+                <div className="relative" ref={profileMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => !agentLocked && setProfileMenuOpen(!profileMenuOpen)}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-full bg-secondary/60 px-2.5 py-1 text-xs font-medium text-secondary-foreground transition-colors",
+                      agentLocked ? "opacity-60 cursor-default" : "hover:bg-secondary/80",
+                    )}
+                    disabled={agentLocked}
+                    data-testid="profile-selector-btn"
+                  >
+                    {selectedProfile?.name ?? "Default"}
+                    <ChevronDown className="size-3 text-muted-foreground" />
+                  </button>
+                  {profileMenuOpen && (
+                    <div className="absolute bottom-full left-0 mb-1 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-md">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onProfileChange?.(null);
+                          setProfileMenuOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                          !selectedProfileId
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/50",
+                        )}
+                      >
+                        Default
+                      </button>
+                      {agentProfiles.map((profile) => (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          onClick={() => {
+                            onProfileChange?.(profile.id);
+                            setProfileMenuOpen(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                            profile.id === selectedProfileId
+                              ? "bg-accent text-accent-foreground"
+                              : "hover:bg-accent/50",
+                          )}
+                          data-testid={`profile-option-${profile.id}`}
+                        >
+                          {profile.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"

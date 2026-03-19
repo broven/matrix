@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { useServerStore } from "@/hooks/useServerStore";
+import { SettingsAgentsTab } from "@/pages/settings/SettingsAgentsTab";
 import { SettingsGeneralTab } from "@/pages/settings/SettingsGeneralTab";
 import { SettingsRepositoryTab } from "@/pages/settings/SettingsRepositoryTab";
 import { SettingsSidebar, type SettingsTab } from "@/pages/settings/SettingsSidebar";
@@ -151,6 +152,14 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
                 key={selectedRepository.id}
                 repository={selectedRepository}
                 onDeleteRepository={handleDeleteSelectedRepository}
+              />
+            ) : selectedTab.kind === "agents" ? (
+              <SettingsAgentsTab
+                agents={agents}
+                onRefreshAgents={() => {
+                  if (!client) return;
+                  client.getAgents().then(setAgents).catch(() => {});
+                }}
               />
             ) : (
               <SettingsGeneralTab

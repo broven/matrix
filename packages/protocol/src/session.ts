@@ -22,7 +22,7 @@ export type StopReason = "end_turn" | "cancelled";
 
 /** Prompt content can be text or a resource */
 export type PromptContent =
-  | { type: "text"; text: string; agentId?: string }
+  | { type: "text"; text: string; agentId?: string; profileId?: string }
   | { type: "resource"; resource: PromptResource };
 
 export interface PromptResource {

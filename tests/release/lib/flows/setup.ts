@@ -169,6 +169,85 @@ export async function findRepoByName(
   return repo?.id ?? null;
 }
 
+/**
+ * Send a chat message to trigger lazy agent spawn.
+ * Uses React's _valueTracker trick + programmatic form submission.
+ * Retries up to 3 times to handle timing issues with React state.
+ */
+export async function sendMessage(
+  bridge: BridgeClient,
+  text: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await waitFor('[data-testid="chat-input"]');
+
+    // Set value using React-compatible approach
+    await bridge.eval(`
+      (() => {
+        const el = document.querySelector('[data-testid="chat-input"]');
+        if (!el) throw new Error('chat-input not found');
+        el.focus();
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLTextAreaElement.prototype, 'value'
+        ).set;
+        nativeSetter.call(el, ${JSON.stringify(text)});
+        const tracker = el._valueTracker;
+        if (tracker) tracker.setValue('');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      })()
+    `);
+
+    // Wait for React to process the state change
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Submit via Enter keydown
+    await bridge.eval(`
+      (() => {
+        const el = document.querySelector('[data-testid="chat-input"]');
+        if (!el) throw new Error('chat-input not found');
+        el.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', keyCode: 13,
+          bubbles: true, cancelable: true
+        }));
+      })()
+    `);
+
+    // Check if the message was sent (input should be cleared or disabled)
+    await new Promise((r) => setTimeout(r, 500));
+    const sent = await bridge.eval(`
+      (() => {
+        const el = document.querySelector('[data-testid="chat-input"]');
+        return el && (el.value === '' || el.disabled);
+      })()
+    `);
+
+    if (sent) return;
+    // If not sent, wait a bit and retry
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+  throw new Error('Failed to send message after 3 attempts');
+}
+
+/**
+ * Send a message and wait for the agent to finish responding.
+ * Used by tests that need an active agent (e.g., slash command tests).
+ */
+export async function spawnAgentViaMessage(
+  bridge: BridgeClient,
+  opts?: { timeoutMs?: number },
+): Promise<void> {
+  await sendMessage(bridge, "hi");
+
+  // Wait for agent to respond — input becomes re-enabled
+  await bridge.wait(
+    {
+      kind: "webview.eval",
+      script: `(() => { const el = document.querySelector('[data-testid="chat-input"]'); return el && !el.disabled; })()`,
+    },
+    { timeoutMs: opts?.timeoutMs ?? 90_000, intervalMs: 1_000 },
+  );
+}
+
 /** Open the settings overlay. */
 export async function openSettings(): Promise<void> {
   await click('[data-testid="settings-btn"]');

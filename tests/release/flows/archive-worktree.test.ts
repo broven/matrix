@@ -38,11 +38,40 @@ describe("归档 Worktree", () => {
   });
 
   it("点击删除后弹出确认对话框", async () => {
+    // Re-open context menu in case it closed between tests
+    const isOpen = await bridge.eval(`!!document.querySelector('[data-testid="delete-repo-option"]')`);
+    if (!isOpen) {
+      await bridge.eval(`
+        (function(){
+          var el = document.querySelector('[data-testid^="worktree-item-"]');
+          el.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, clientX: 100, clientY: 200}));
+          return 'ok';
+        })()
+      `);
+      await waitFor('[data-testid="delete-repo-option"]');
+    }
+
     await click('[data-testid="delete-repo-option"]');
     await waitFor('[data-testid="confirm-delete-btn"]');
   });
 
   it("确认后 worktree 被删除", async () => {
+    // Ensure confirm dialog is still open
+    const isOpen = await bridge.eval(`!!document.querySelector('[data-testid="confirm-delete-btn"]')`);
+    if (!isOpen) {
+      // Re-trigger the delete flow
+      await bridge.eval(`
+        (function(){
+          var el = document.querySelector('[data-testid^="worktree-item-"]');
+          el.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, clientX: 100, clientY: 200}));
+          return 'ok';
+        })()
+      `);
+      await waitFor('[data-testid="delete-repo-option"]');
+      await click('[data-testid="delete-repo-option"]');
+      await waitFor('[data-testid="confirm-delete-btn"]');
+    }
+
     await click('[data-testid="confirm-delete-btn"]');
 
     // Wait for the worktree to disappear

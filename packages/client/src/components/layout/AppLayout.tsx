@@ -234,6 +234,7 @@ export function AppLayout() {
     const optimisticSession: SessionInfo = {
       sessionId,
       agentId: null,
+      profileId: null,
       cwd,
       createdAt: new Date().toISOString(),
       status: "active",

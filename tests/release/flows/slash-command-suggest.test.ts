@@ -2,7 +2,7 @@ import { describe, it, beforeAll, afterAll } from "vitest";
 import { rm } from "node:fs/promises";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
 import { setBridge, waitFor, count, typeChar } from "../lib/ui";
-import { resetUI, ensureWorktree, removeAllRepos } from "../lib/flows/setup";
+import { resetUI, ensureWorktree, removeAllRepos, spawnAgentViaMessage } from "../lib/flows/setup";
 
 describe("Slash command 下拉提示", () => {
   let bridge: BridgeClient;
@@ -17,7 +17,10 @@ describe("Slash command 下拉提示", () => {
 
     const wt = await ensureWorktree(bridge);
     repoPath = wt.repoPath;
-  });
+
+    // Spawn agent by sending a message (lazy init)
+    await spawnAgentViaMessage(bridge);
+  }, 120_000);
 
   afterAll(async () => {
     await removeAllRepos(bridge).catch(() => {});
