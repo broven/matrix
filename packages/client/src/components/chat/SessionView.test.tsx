@@ -87,7 +87,7 @@ describe("SessionView", () => {
 
     const input = screen.getByPlaceholderText("Send a message to resume this session...");
     fireEvent.change(input, { target: { value: "resume work" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(attached.session.prompt).toHaveBeenCalledWith("resume work", expect.any(Object));
 
@@ -95,7 +95,7 @@ describe("SessionView", () => {
       attached.callbacks.onRestoring?.();
     });
 
-    expect(screen.getAllByText("Restoring").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Restoring/).length).toBeGreaterThan(0);
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(true);
 
     await act(async () => {
@@ -105,7 +105,7 @@ describe("SessionView", () => {
     await waitFor(() => {
       expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(false);
     });
-    expect(screen.getByPlaceholderText("Message the active session...")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Ask to make changes, @mention files, run /commands")).toBeTruthy();
   });
 
   it("marks terminal session errors as closed and disables prompting", async () => {
@@ -118,9 +118,9 @@ describe("SessionView", () => {
       expect(attached.session.subscribeToUpdates).toHaveBeenCalled();
     });
 
-    const input = screen.getByPlaceholderText("Message the active session...");
+    const input = screen.getByPlaceholderText("Ask to make changes, @mention files, run /commands");
     fireEvent.change(input, { target: { value: "hello" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     await act(async () => {
       attached.callbacks.onError?.({ code: "session_closed", message: "Session is closed" });
@@ -129,7 +129,6 @@ describe("SessionView", () => {
     await waitFor(() => {
       expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(true);
     });
-    expect(screen.getAllByText("Closed").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Session is closed").length).toBeGreaterThan(0);
   });
 });

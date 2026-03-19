@@ -261,6 +261,16 @@ export class SessionManager {
     return promise;
   }
 
+  /** Clear all pending restart timers (for test cleanup). */
+  clearAllTimers(): void {
+    for (const entry of this.sessions.values()) {
+      if (entry.restartTimer) {
+        clearTimeout(entry.restartTimer);
+        entry.restartTimer = undefined;
+      }
+    }
+  }
+
   suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): void {
     const cutoffMs = nowMs - idleTimeoutMs;
 

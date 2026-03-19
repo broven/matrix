@@ -60,6 +60,7 @@ export function PromptInput({
             disabled={disabled}
             rows={1}
             className="max-h-[200px] min-h-[52px] resize-none border-0 bg-transparent px-4 py-3.5 text-[0.9375rem] leading-relaxed placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
+            data-testid="chat-input"
           />
           <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
             <div className="flex items-center gap-2">
@@ -89,6 +90,7 @@ export function PromptInput({
                     : "bg-muted text-muted-foreground/40",
                 )}
                 aria-label="Send message"
+                data-testid="send-btn"
               >
                 <ArrowUp className="size-4" strokeWidth={2.5} />
               </button>

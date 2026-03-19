@@ -79,6 +79,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
               placeholder="https://github.com/user/repo.git"
               className="rounded-lg"
               autoFocus
+              data-testid="clone-url-input"
             />
           </div>
 
@@ -146,6 +147,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
               className="rounded-lg"
               disabled={cloning || !url.trim()}
               onClick={handleClone}
+              data-testid="clone-submit-btn"
             >
               {cloning ? (
                 <>

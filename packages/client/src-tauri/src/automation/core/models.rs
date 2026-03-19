@@ -54,6 +54,12 @@ pub struct WaitRequest {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MockFileDialogRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AutomationEnvelope<T> {
     pub ok: bool,
     #[serde(default)]

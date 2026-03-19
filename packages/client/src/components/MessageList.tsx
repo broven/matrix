@@ -260,7 +260,7 @@ export function MessageList({ events, onApprove, onReject }: Props) {
 
             if (isOwnMessage) {
               return (
-                <div key={item.key} className="flex justify-end animate-message-in">
+                <div key={item.key} className="flex justify-end animate-message-in" data-testid="message-item">
                   <div className="max-w-[80%] rounded-[1.25rem] rounded-br-md bg-user-bubble px-4 py-2.5 text-[0.9375rem] leading-relaxed text-user-bubble-foreground">
                     <p className="whitespace-pre-wrap">{item.text.slice(2)}</p>
                   </div>
@@ -269,7 +269,7 @@ export function MessageList({ events, onApprove, onReject }: Props) {
             }
 
             return (
-              <div key={item.key} className="group/msg animate-message-in">
+              <div key={item.key} className="group/msg animate-message-in" data-testid="assistant-message">
                 <div className="markdown-content max-w-none text-[0.9375rem] leading-[1.7]">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
                 </div>

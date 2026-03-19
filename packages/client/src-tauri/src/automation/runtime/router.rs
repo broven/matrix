@@ -5,7 +5,8 @@ use crate::automation::core::capabilities::{
 };
 use crate::automation::core::errors::AutomationErrorCode;
 use crate::automation::core::models::{
-    AutomationEnvelope, NativeActionRequest, ResetRequest, WaitRequest, WebviewEventRequest,
+    AutomationEnvelope, MockFileDialogRequest, NativeActionRequest, ResetRequest, WaitRequest,
+    WebviewEventRequest,
 };
 use serde::Serialize;
 
@@ -183,6 +184,24 @@ pub fn route_request(
                 )),
             }
         }
+        ("POST", "/test/mock-file-dialog") => {
+            let request = match serde_json::from_slice::<MockFileDialogRequest>(body) {
+                Ok(request) => request,
+                Err(_) => {
+                    return RouterResponse {
+                        status: 400,
+                        body: json!({ "error": "invalid_json" }),
+                    }
+                }
+            };
+            let Some(capability) = backend.test_control_capability() else {
+                return capability_unavailable_response(AutomationErrorCode::ResetFailed);
+            };
+            RouterResponse {
+                status: 200,
+                body: json!(capabilities::mock_file_dialog(capability, &request.path)),
+            }
+        }
         ("POST", "/wait") => {
             let request = match serde_json::from_slice::<WaitRequest>(body) {
                 Ok(request) => request,
@@ -298,6 +317,10 @@ mod tests {
                 .expect("lock should succeed")
                 .push(scopes.to_vec());
             Ok(json!({ "resetScopes": scopes }))
+        }
+
+        fn mock_file_dialog(&self, path: &str) -> Result<Value, AutomationErrorCode> {
+            Ok(json!({ "mocked": true, "path": path }))
         }
     }
 
