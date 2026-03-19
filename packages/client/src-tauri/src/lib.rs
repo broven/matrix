@@ -29,153 +29,14 @@ pub fn run() {
         updater::install_update,
     ]);
 
-    builder
-        .setup(|app| {
-            #[cfg(all(desktop, any(test, debug_assertions)))]
-            append_automation_startup_log("entered_setup_closure");
+    let mut app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building Matrix client");
 
-            #[cfg(desktop)]
-            {
-                #[cfg(any(test, debug_assertions))]
-                append_automation_startup_log("entered_desktop_setup");
+    #[cfg(desktop)]
+    initialize_desktop_runtime(&mut app).expect("error while initializing Matrix client");
 
-                use tauri_plugin_shell::ShellExt;
-
-                let resource_dir = app
-                    .path()
-                    .resource_dir()
-                    .expect("failed to resolve resource dir");
-                let web_dir = resource_dir.join("web");
-
-                let shell = app.shell();
-                let (mut _rx, child) = shell
-                    .sidecar("matrix-server")
-                    .expect("failed to create sidecar command")
-                    .args([
-                        "--port",
-                        "19880",
-                        "--local",
-                        "true",
-                        "--web",
-                        &web_dir.to_string_lossy(),
-                    ])
-                    .spawn()
-                    .expect("failed to spawn matrix-server sidecar");
-
-                app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
-
-                #[cfg(any(test, debug_assertions))]
-                {
-                    append_automation_startup_log("entered_automation_setup");
-                    let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
-                        .ok()
-                        .and_then(|raw| raw.parse::<u16>().ok())
-                        .unwrap_or(18_765);
-                    append_automation_startup_log(&format!(
-                        "configured_port={configured_port}"
-                    ));
-
-                    let mut automation_state =
-                        automation::state::AutomationState::new(configured_port);
-                    automation_state.app_ready = true;
-                    automation_state.sidecar_ready = true;
-                    automation_state.webview_ready = true;
-
-                    let route_state = Arc::new(RwLock::new(
-                        automation::runtime::router::RouteStateSnapshot {
-                            platform: automation_state.platform.to_string(),
-                            app_ready: automation_state.app_ready,
-                            webview_ready: automation_state.webview_ready,
-                            sidecar_ready: automation_state.sidecar_ready,
-                            window: json!({
-                                "label": "main",
-                                "focused": true,
-                                "visible": true
-                            }),
-                            webview: json!({
-                                "url": "http://127.0.0.1:19880"
-                            }),
-                            sidecar: json!({
-                                "running": true,
-                                "port": 19880
-                            }),
-                        },
-                    ));
-
-                    match automation::server::start_loopback_server(
-                        automation_state.port,
-                        automation_state.token.clone(),
-                        route_state,
-                        Arc::new(automation::runtime::webview::DesktopWebviewBridge::new(
-                            automation::runtime::webview::TauriEventBridgeTransport::new(
-                                app.handle().clone(),
-                            ),
-                        )),
-                    ) {
-                        Ok(automation_server) => {
-                            automation_state.port = automation_server.local_addr().port();
-                            append_automation_startup_log(&format!(
-                                "loopback_server_started port={}",
-                                automation_state.port
-                            ));
-                            match automation_state.write_discovery_file(None) {
-                                Ok(path) => {
-                                    append_automation_startup_log(&format!(
-                                        "discovery_written path={}",
-                                        path.display()
-                                    ));
-                                    println!(
-                                        "  Automation bridge: {} (discovery: {})",
-                                        automation_state.base_url(),
-                                        path.display()
-                                    );
-                                }
-                                Err(error) => {
-                                    append_automation_startup_log(&format!(
-                                        "discovery_write_failed error={error}"
-                                    ));
-                                    eprintln!("  Automation discovery write failed: {error}");
-                                }
-                            }
-                            app.manage(AutomationServerState(std::sync::Mutex::new(Some(
-                                automation_server,
-                            ))));
-                        }
-                        Err(error) => {
-                            append_automation_startup_log(&format!(
-                                "loopback_server_failed error={error}"
-                            ));
-                            eprintln!("  Automation bridge failed to start: {error}");
-                        }
-                    }
-                }
-
-                // Inject a redirect script into the webview to navigate to sidecar URL
-                let main_window = app.get_webview_window("main").unwrap();
-                std::thread::spawn(move || {
-                    use std::net::TcpStream;
-                    use std::time::Duration;
-
-                    for _ in 0..60 {
-                        if TcpStream::connect_timeout(
-                            &"127.0.0.1:19880".parse().unwrap(),
-                            Duration::from_millis(200),
-                        )
-                        .is_ok()
-                        {
-                            std::thread::sleep(Duration::from_millis(300));
-                            let _ = main_window
-                                .eval("window.location.replace('http://127.0.0.1:19880')");
-                            return;
-                        }
-                        std::thread::sleep(Duration::from_millis(250));
-                    }
-                });
-            }
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running Matrix client");
+    app.run(|_, _| {});
 }
 
 #[cfg(desktop)]
@@ -226,4 +87,134 @@ fn automation_debug_log_path() -> std::io::Result<PathBuf> {
         .join("Matrix")
         .join("dev")
         .join("automation-startup.log"))
+}
+
+#[cfg(desktop)]
+fn initialize_desktop_runtime(
+    app: &mut tauri::App<tauri::Wry>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(any(test, debug_assertions))]
+    append_automation_startup_log("entered_desktop_setup");
+
+    use tauri_plugin_shell::ShellExt;
+
+    let resource_dir = app.path().resource_dir()?;
+    let web_dir = resource_dir.join("web");
+
+    let shell = app.shell();
+    let (mut _rx, child) = shell
+        .sidecar("matrix-server")?
+        .args([
+            "--port",
+            "19880",
+            "--local",
+            "true",
+            "--web",
+            &web_dir.to_string_lossy(),
+        ])
+        .spawn()?;
+
+    app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
+
+    #[cfg(any(test, debug_assertions))]
+    initialize_automation_runtime(app);
+
+    let app_handle = app.handle().clone();
+    std::thread::spawn(move || {
+        use std::net::TcpStream;
+        use std::time::Duration;
+
+        for _ in 0..120 {
+            if let Some(main_window) = app_handle.get_webview_window("main") {
+                if TcpStream::connect_timeout(
+                    &"127.0.0.1:19880".parse().unwrap(),
+                    Duration::from_millis(200),
+                )
+                .is_ok()
+                {
+                    std::thread::sleep(Duration::from_millis(300));
+                    let _ = main_window.eval("window.location.replace('http://127.0.0.1:19880')");
+                    return;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    });
+
+    Ok(())
+}
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
+    append_automation_startup_log("entered_automation_setup");
+    let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
+        .ok()
+        .and_then(|raw| raw.parse::<u16>().ok())
+        .unwrap_or(18_765);
+    append_automation_startup_log(&format!("configured_port={configured_port}"));
+
+    let mut automation_state = automation::state::AutomationState::new(configured_port);
+    automation_state.app_ready = true;
+    automation_state.sidecar_ready = true;
+    automation_state.webview_ready = true;
+
+    let route_state = Arc::new(RwLock::new(automation::runtime::router::RouteStateSnapshot {
+        platform: automation_state.platform.to_string(),
+        app_ready: automation_state.app_ready,
+        webview_ready: automation_state.webview_ready,
+        sidecar_ready: automation_state.sidecar_ready,
+        window: json!({
+            "label": "main",
+            "focused": true,
+            "visible": true
+        }),
+        webview: json!({
+            "url": "http://127.0.0.1:19880"
+        }),
+        sidecar: json!({
+            "running": true,
+            "port": 19880
+        }),
+    }));
+
+    match automation::server::start_loopback_server(
+        automation_state.port,
+        automation_state.token.clone(),
+        route_state,
+        Arc::new(automation::runtime::webview::DesktopWebviewBridge::new(
+            automation::runtime::webview::TauriEventBridgeTransport::new(app.handle().clone()),
+        )),
+    ) {
+        Ok(automation_server) => {
+            automation_state.port = automation_server.local_addr().port();
+            append_automation_startup_log(&format!(
+                "loopback_server_started port={}",
+                automation_state.port
+            ));
+            match automation_state.write_discovery_file(None) {
+                Ok(path) => {
+                    append_automation_startup_log(&format!(
+                        "discovery_written path={}",
+                        path.display()
+                    ));
+                    println!(
+                        "  Automation bridge: {} (discovery: {})",
+                        automation_state.base_url(),
+                        path.display()
+                    );
+                }
+                Err(error) => {
+                    append_automation_startup_log(&format!("discovery_write_failed error={error}"));
+                    eprintln!("  Automation discovery write failed: {error}");
+                }
+            }
+            app.manage(AutomationServerState(std::sync::Mutex::new(Some(
+                automation_server,
+            ))));
+        }
+        Err(error) => {
+            append_automation_startup_log(&format!("loopback_server_failed error={error}"));
+            eprintln!("  Automation bridge failed to start: {error}");
+        }
+    }
 }
