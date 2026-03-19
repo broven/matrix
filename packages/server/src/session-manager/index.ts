@@ -269,8 +269,9 @@ export class SessionManager {
    * Reclaim resources for idle sessions by killing agent bridges.
    * Sessions remain "active" — agents are lazily restored on next prompt.
    */
-  suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): void {
+  suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): string[] {
     const cutoffMs = nowMs - idleTimeoutMs;
+    const suspendedIds: string[] = [];
 
     for (const session of store.listSessions()) {
       if (session.status !== "active" || !session.recoverable) {
@@ -301,6 +302,9 @@ export class SessionManager {
       store.updateSessionState(session.sessionId, {
         suspendedAt: new Date(nowMs).toISOString(),
       });
+      suspendedIds.push(session.sessionId);
     }
+
+    return suspendedIds;
   }
 }

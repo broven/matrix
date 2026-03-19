@@ -27,6 +27,7 @@ export const REQUEST_TIMEOUT_MS = 60_000;
 interface InitializeResult {
   capabilities?: AgentCapabilities;
   serverCapabilities?: AgentCapabilities;
+  agentCapabilities?: AgentCapabilities;
 }
 
 export class AcpBridge {
@@ -97,12 +98,12 @@ export class AcpBridge {
     const result = await this.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
+        fs: false,
         terminal: false,
       },
       clientInfo,
     }) as InitializeResult;
-    this.capabilities = result.serverCapabilities ?? result.capabilities ?? null;
+    this.capabilities = result.serverCapabilities ?? result.agentCapabilities ?? result.capabilities ?? null;
     return result;
   }
 

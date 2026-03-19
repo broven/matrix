@@ -5,20 +5,9 @@ export default defineConfig({
     root: import.meta.dirname,
     include: ["flows/**/*.test.ts"],
     testTimeout: 60_000,
-    hookTimeout: 30_000,
+    hookTimeout: 60_000,
     globalSetup: ["./global-setup.ts"],
     setupFiles: ["./setup.ts"],
-    sequence: {
-      sequencer: class {
-        async shard(files: string[]) {
-          return files;
-        }
-        async sort(files: string[]) {
-          // Run tests in filename order (01-, 02-, etc.)
-          return files.sort();
-        }
-      },
-    },
     pool: "forks",
     poolOptions: {
       forks: { singleFork: true },

@@ -125,13 +125,29 @@ export function SessionView({ sessionInfo, agents, onSessionInfoChange }: Sessio
     attachedSession.subscribe();
     setSession(attachedSession);
 
+    const markActiveIfRestoring = () => {
+      setViewStatus((prev) => {
+        if (prev === "restoring") {
+          onSessionInfoChange?.(sessionInfo.sessionId, {
+            status: "active",
+            suspendedAt: null,
+            closeReason: null,
+          });
+          return "active";
+        }
+        return prev;
+      });
+    };
+
     const unsubscribe = attachedSession.subscribeToUpdates({
-      onMessage: (chunk) =>
-        addEvent("message", { sessionUpdate: "agent_message_chunk", content: chunk }),
-      onToolCall: (toolCall) => addEvent("tool_call", toolCall),
-      onToolCallUpdate: (toolCall) => addEvent("tool_call_update", toolCall),
-      onPermissionRequest: (request) => addEvent("permission_request", request),
-      onPlan: (plan) => addEvent("plan", plan),
+      onMessage: (chunk) => {
+        markActiveIfRestoring();
+        addEvent("message", { sessionUpdate: "agent_message_chunk", content: chunk });
+      },
+      onToolCall: (toolCall) => { markActiveIfRestoring(); addEvent("tool_call", toolCall); },
+      onToolCallUpdate: (toolCall) => { markActiveIfRestoring(); addEvent("tool_call_update", toolCall); },
+      onPermissionRequest: (request) => { markActiveIfRestoring(); addEvent("permission_request", request); },
+      onPlan: (plan) => { markActiveIfRestoring(); addEvent("plan", plan); },
       onAvailableCommands: (commands) => setAvailableCommands(commands),
       onHistorySync: (history) => replaceEventsFromHistory(history),
       onSuspended: () => {
