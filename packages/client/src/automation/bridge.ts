@@ -84,7 +84,11 @@ type JsonSafeValue =
 function shouldInstallBridge(options?: InstallOptions): boolean {
   const mode = options?.mode ?? (import.meta.env.MODE as RuntimeMode);
   const dev = options?.dev ?? import.meta.env.DEV;
-  return dev || mode === "test";
+  // Always install when running inside Tauri (even release builds).
+  // The Rust automation server only starts in debug builds, so the bridge
+  // is inert in production — no server listens, no external access.
+  const inTauri = "__TAURI_INTERNALS__" in window;
+  return dev || mode === "test" || inTauri;
 }
 
 function toJsonSafe(value: unknown, path = new WeakSet<object>()): JsonSafeValue {

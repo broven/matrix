@@ -211,8 +211,15 @@ export function AppLayout() {
   const handleAddRepository = async (path: string, name?: string) => {
     if (!client) return;
     const repo = await client.addRepository({ path, name });
-    setRepositories((prev) => [repo, ...prev]);
-    setWorktrees((prev) => new Map(prev).set(repo.id, []));
+    setRepositories((prev) => {
+      // If repo already exists (duplicate path), don't add again
+      if (prev.some((r) => r.id === repo.id)) return prev;
+      return [repo, ...prev];
+    });
+    setWorktrees((prev) => {
+      if (prev.has(repo.id)) return prev;
+      return new Map(prev).set(repo.id, []);
+    });
   };
 
   const handleCreateWorktree = async (

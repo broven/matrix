@@ -131,7 +131,7 @@ export class WorktreeManager {
   // ── wt-based implementations ──────────────────────────────────────
 
   private async createWithWt(repoPath: string, branch: string, baseBranch: string): Promise<string> {
-    const result = await $`wt switch -c ${branch} --base ${baseBranch}`.cwd(repoPath).quiet();
+    const result = await $`wt switch -c ${branch} --base ${baseBranch} --yes`.cwd(repoPath).quiet();
     if (result.exitCode !== 0) {
       throw new Error(`wt switch failed: ${result.stderr.toString()}`);
     }

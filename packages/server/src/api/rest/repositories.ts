@@ -28,6 +28,14 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       return c.json({ error: "path is required" }, 400);
     }
 
+    // Return existing repository if path already added
+    const existing = store.listRepositories().find(
+      (r) => r.path === body.path,
+    );
+    if (existing) {
+      return c.json(existing, 200);
+    }
+
     // Validate it's a git repo
     const isGitRepo = await worktreeManager.validateGitRepo(body.path);
     if (!isGitRepo) {
