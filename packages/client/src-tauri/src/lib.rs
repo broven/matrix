@@ -209,15 +209,17 @@ fn initialize_desktop_runtime(
 
     let main_window = app.get_webview_window("main").unwrap();
 
-    // Dev mode: set window title and icon badge
+    // Dev mode: set window title and inject dev banner
     #[cfg(any(test, debug_assertions))]
     {
-        set_dev_window_title(&main_window, sidecar_port);
-
-        #[cfg(target_os = "macos")]
-        apply_dev_icon_badge();
+        let worktree_name = get_worktree_name();
+        set_dev_window_title(&main_window, &worktree_name, sidecar_port);
+        inject_dev_banner(&main_window, &worktree_name, sidecar_port);
     }
 
+    // In release mode, redirect webview to sidecar URL (which serves embedded frontend).
+    // In dev mode, webview stays on Vite dev server and connects to sidecar via invoke/fetch.
+    #[cfg(not(any(test, debug_assertions)))]
     std::thread::spawn(move || {
         use std::net::TcpStream;
         use std::time::Duration;
@@ -243,81 +245,53 @@ fn initialize_desktop_runtime(
     Ok(())
 }
 
+/// Get worktree name from git toplevel directory.
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn get_worktree_name() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                std::path::Path::new(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "dev".to_string())
+}
+
 /// Set window title to "Matrix [DEV - <worktree-name> :<port>]" in dev mode.
 #[cfg(all(desktop, any(test, debug_assertions)))]
-fn set_dev_window_title(window: &tauri::WebviewWindow, port: u16) {
-    let worktree_name = std::env::current_dir()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "dev".to_string());
+fn set_dev_window_title(window: &tauri::WebviewWindow, worktree_name: &str, port: u16) {
     let title = format!("Matrix [DEV - {worktree_name} :{port}]");
     let _ = window.set_title(&title);
 }
 
-/// Overlay a red "DEV" badge on the app icon (Dock + title bar).
-#[cfg(all(target_os = "macos", any(test, debug_assertions)))]
-fn apply_dev_icon_badge() {
-    use cocoa::base::{id, nil};
-    use cocoa::foundation::{NSPoint, NSRect, NSSize, NSString};
-    use objc::{class, msg_send, sel, sel_impl};
-
-    unsafe {
-        let app: id = msg_send![class!(NSApplication), sharedApplication];
-        let icon: id = msg_send![app, applicationIconImage];
-        if icon == nil {
-            return;
-        }
-
-        let size: NSSize = msg_send![icon, size];
-
-        // Create a mutable copy to draw on
-        let new_icon: id = msg_send![icon, copy];
-        let _: () = msg_send![new_icon, lockFocus];
-
-        // Badge: red circle in top-right corner (38% of icon size)
-        let badge_diameter = size.width * 0.38;
-        let margin = size.width * 0.02;
-        let badge_rect = NSRect::new(
-            NSPoint::new(
-                size.width - badge_diameter - margin,
-                size.height - badge_diameter - margin,
-            ),
-            NSSize::new(badge_diameter, badge_diameter),
-        );
-
-        let badge_color: id = msg_send![class!(NSColor),
-            colorWithRed: 0.85f64
-            green: 0.18f64
-            blue: 0.12f64
-            alpha: 1.0f64
-        ];
-        let _: () = msg_send![badge_color, setFill];
-        let circle: id =
-            msg_send![class!(NSBezierPath), bezierPathWithOvalInRect: badge_rect];
-        let _: () = msg_send![circle, fill];
-
-        // "DEV" text centered in badge
-        let font_size = badge_diameter * 0.38;
-        let font: id = msg_send![class!(NSFont), boldSystemFontOfSize: font_size];
-        let white: id = msg_send![class!(NSColor), whiteColor];
-
-        let attrs: id = msg_send![class!(NSMutableDictionary), new];
-        let font_key = NSString::alloc(nil).init_str("NSFont");
-        let color_key = NSString::alloc(nil).init_str("NSColor");
-        let _: () = msg_send![attrs, setObject: font forKey: font_key];
-        let _: () = msg_send![attrs, setObject: white forKey: color_key];
-
-        let text = NSString::alloc(nil).init_str("DEV");
-        let text_size: NSSize = msg_send![text, sizeWithAttributes: attrs];
-        let text_origin = NSPoint::new(
-            badge_rect.origin.x + (badge_diameter - text_size.width) / 2.0,
-            badge_rect.origin.y + (badge_diameter - text_size.height) / 2.0,
-        );
-        let _: () = msg_send![text, drawAtPoint: text_origin withAttributes: attrs];
-
-        let _: () = msg_send![new_icon, unlockFocus];
-        let _: () = msg_send![app, setApplicationIconImage: new_icon];
-    }
+/// Inject a dev banner into the webview.
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn inject_dev_banner(window: &tauri::WebviewWindow, worktree_name: &str, port: u16) {
+    let js = format!(
+        r#"(function() {{
+  if (document.getElementById('__matrix_dev_banner')) return;
+  var b = document.createElement('div');
+  b.id = '__matrix_dev_banner';
+  b.textContent = 'DEV — {worktree_name} :{port}';
+  b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#e67e22;color:#fff;text-align:center;font:bold 11px system-ui;padding:2px 0;pointer-events:none;opacity:0.9;';
+  document.body.prepend(b);
+  document.body.style.paddingTop = '20px';
+}})()"#
+    );
+    let w = window.clone();
+    std::thread::spawn(move || {
+        // Wait for webview content to load
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let _ = w.eval(&js);
+    });
 }
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
