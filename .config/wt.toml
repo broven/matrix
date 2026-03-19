@@ -16,7 +16,8 @@ cp "$ROOT/.env" .env 2>/dev/null || echo 'No .env found in root, skipping'
 env-local = """
 # env fallback: Worktrunk -> Conductor -> Superset
 BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
-WORKSPACE="${WT_NAME:-${CONDUCTOR_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_NAME}}}"
+WORKSPACE_RAW="${WT_NAME:-${CONDUCTOR_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_NAME}}}"
+WORKSPACE="$(echo "$WORKSPACE_RAW" | tr ' ' '-')"
 
 # Derive 4 unique ports from base port:
 #   CLIENT_PORT  = base      (Vite dev server)
@@ -31,7 +32,7 @@ SIDECAR_PORT=$((BASE_PORT + 3))
 MATRIX_TOKEN=$(head -c 36 /dev/urandom | base64 | tr -d '/+=' | head -c 48)
 
 cat > .env.local << EOF
-WORKSPACE_NAME=$WORKSPACE
+WORKSPACE_NAME="$WORKSPACE"
 CLIENT_PORT=$CLIENT_PORT
 HMR_PORT=$HMR_PORT
 MATRIX_PORT=$MATRIX_PORT

@@ -1,6 +1,72 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+/// Build a reqwest client that respects macOS system proxy settings.
+fn build_http_client() -> reqwest::Client {
+    if let Some(proxy) = get_macos_system_proxy() {
+        if let Ok(p) = reqwest::Proxy::all(&proxy) {
+            if let Ok(client) = reqwest::Client::builder().proxy(p).build() {
+                return client;
+            }
+        }
+    }
+    reqwest::Client::new()
+}
+
+/// Read the HTTP/HTTPS proxy URL from macOS system settings via `scutil --proxy`.
+fn get_macos_system_proxy() -> Option<String> {
+    // Try environment variables first (may be set by terminal or launch context)
+    for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+        if let Ok(val) = std::env::var(var) {
+            if !val.is_empty() {
+                return Some(val);
+            }
+        }
+    }
+
+    // Read macOS system proxy via scutil
+    let output = std::process::Command::new("scutil")
+        .arg("--proxy")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_scutil_proxy(&text)
+}
+
+/// Parse `scutil --proxy` output to extract the active HTTP/HTTPS proxy URL.
+fn parse_scutil_proxy(text: &str) -> Option<String> {
+    let get_val = |key: &str| -> Option<String> {
+        text.lines()
+            .find(|line| line.trim().starts_with(&format!("{} :", key)))
+            .and_then(|line| line.split(':').nth(1))
+            .map(|v| v.trim().to_string())
+    };
+
+    // Try HTTPS proxy first, then HTTP
+    for (enable_key, host_key, port_key) in [
+        ("HTTPSEnable", "HTTPSProxy", "HTTPSPort"),
+        ("HTTPEnable", "HTTPProxy", "HTTPPort"),
+    ] {
+        if get_val(enable_key).as_deref() == Some("1") {
+            if let Some(host) = get_val(host_key) {
+                if !host.is_empty() {
+                    let port = get_val(port_key).unwrap_or_default();
+                    if !port.is_empty() && port != "0" {
+                        return Some(format!("http://{}:{}", host, port));
+                    } else {
+                        return Some(format!("http://{}", host));
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 const GITHUB_OWNER: &str = "broven";
 const GITHUB_REPO: &str = "matrix";
 const ALLOWED_DOWNLOAD_HOSTS: &[&str] = &[
@@ -121,7 +187,7 @@ pub async fn check_update(app: AppHandle, channel: Option<String>) -> Result<Upd
     let current_version = app.config().version.clone().unwrap_or_default();
     let channel = channel.unwrap_or_else(|| "stable".to_string());
 
-    let client = reqwest::Client::new();
+    let client = build_http_client();
 
     let release = if channel == "beta" {
         // Fetch all releases, pick the one with the highest semver
@@ -210,7 +276,7 @@ pub async fn download_update(app: AppHandle, url: String) -> Result<String, Stri
 
     let dest = cache.join("update.dmg");
 
-    let client = reqwest::Client::new();
+    let client = build_http_client();
     let response = client
         .get(&url)
         .header("User-Agent", "matrix-client")
@@ -565,5 +631,71 @@ mod tests {
         // github.com is NOT a suffix of "github.com.evil.com"
         let url = "https://github.com.evil.com/some/path";
         assert!(validate_download_url(url).is_err());
+    }
+
+    // ── parse_scutil_proxy ────────────────────────────────────────────
+
+    #[test]
+    fn parse_proxy_https_enabled() {
+        let output = r#"<dictionary> {
+  HTTPSEnable : 1
+  HTTPSPort : 6152
+  HTTPSProxy : 127.0.0.1
+}"#;
+        assert_eq!(
+            parse_scutil_proxy(output),
+            Some("http://127.0.0.1:6152".to_string()),
+        );
+    }
+
+    #[test]
+    fn parse_proxy_http_only() {
+        let output = r#"<dictionary> {
+  HTTPEnable : 1
+  HTTPPort : 8080
+  HTTPProxy : proxy.example.com
+  HTTPSEnable : 0
+}"#;
+        assert_eq!(
+            parse_scutil_proxy(output),
+            Some("http://proxy.example.com:8080".to_string()),
+        );
+    }
+
+    #[test]
+    fn parse_proxy_none_enabled() {
+        let output = r#"<dictionary> {
+  HTTPEnable : 0
+  HTTPSEnable : 0
+}"#;
+        assert_eq!(parse_scutil_proxy(output), None);
+    }
+
+    #[test]
+    fn parse_proxy_prefers_https() {
+        let output = r#"<dictionary> {
+  HTTPEnable : 1
+  HTTPPort : 8080
+  HTTPProxy : http-proxy.local
+  HTTPSEnable : 1
+  HTTPSPort : 8443
+  HTTPSProxy : https-proxy.local
+}"#;
+        assert_eq!(
+            parse_scutil_proxy(output),
+            Some("http://https-proxy.local:8443".to_string()),
+        );
+    }
+
+    #[test]
+    fn parse_proxy_no_port() {
+        let output = r#"<dictionary> {
+  HTTPEnable : 1
+  HTTPProxy : proxy.local
+}"#;
+        assert_eq!(
+            parse_scutil_proxy(output),
+            Some("http://proxy.local".to_string()),
+        );
     }
 }
