@@ -21,12 +21,31 @@ export async function addLocalRepo(
   // Type the project path directly into the input
   await typeText('[data-testid="path-input"]', repoPath);
 
+  // Small delay to let React update + server-side validation
+  await new Promise((r) => setTimeout(r, 500));
+
+  // Check for validation errors before clicking confirm
+  const bodyText = (await bridge.eval("document.body.innerText")) as string;
+  if (bodyText.includes("Not a valid git repository")) {
+    throw new Error(`addLocalRepo: server says "${repoPath}" is not a valid git repository`);
+  }
+
   // Click confirm ("Open Project" button)
   await click('[data-testid="confirm-btn"]');
 
   // Wait for the repo to appear in the sidebar
   const expectedName = opts?.name ?? repoPath.split("/").pop() ?? "";
-  await waitFor(`[data-testid="repo-item-${expectedName}"]`, { timeout: 10_000 });
+  try {
+    await waitFor(`[data-testid="repo-item-${expectedName}"]`, { timeout: 10_000 });
+  } catch {
+    // Dump diagnostics on failure
+    const diag = (await bridge.eval(
+      "({testids: Array.from(document.querySelectorAll('[data-testid]')).map(el => el.getAttribute('data-testid')), body: document.body.innerText.substring(0, 500)})",
+    )) as { testids: string[]; body: string };
+    throw new Error(
+      `addLocalRepo: repo-item-${expectedName} not found after 10s.\nTestids: ${diag.testids.join(", ")}\nBody: ${diag.body}`,
+    );
+  }
 }
 
 /**
