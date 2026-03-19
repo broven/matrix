@@ -1,0 +1,23 @@
+# Pre-Release Flow Tests
+
+每次发版前必须跑通的核心流程测试。通过 Automation Bridge 驱动真实 Tauri 应用。
+
+## 运行
+
+```bash
+pnpm dev:mac                    # 先启动 dev app
+pnpm test:release               # 跑全部（跳过 @real-agent）
+pnpm test:release:real-agent    # 包含真实 agent 测试
+```
+
+## Test Cases
+
+| # | 文件 | 验证内容 |
+|---|------|----------|
+| 01 | connect-server | 验证 app 启动后能连上 sidecar，UI 显示已连接状态 |
+| 02 | add-repo-open-local | 通过 Open Project 对话框添加一个本地 git 仓库，验证出现在 sidebar |
+| 03 | add-repo-clone-url | 通过 Clone from URL 对话框克隆远程仓库，验证 clone 完成后出现在 sidebar |
+| 04 | create-session | 在已有 repo 上创建 worktree + session，验证聊天界面加载出来 |
+| 05 | send-prompt | 发送一条 prompt 给 agent 并收到响应（仅 `REAL_AGENT=1` 时运行） |
+| 06 | session-recovery | reload 页面后验证 session 恢复、历史消息还在 |
+| 07 | delete-repository | 通过右键菜单删除 worktree，验证确认后被移除 |
