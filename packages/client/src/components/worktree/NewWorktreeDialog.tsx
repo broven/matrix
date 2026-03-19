@@ -92,6 +92,7 @@ export function NewWorktreeDialog({
               placeholder="feat/my-feature"
               className="rounded-lg"
               autoFocus
+              data-testid="worktree-branch-input"
             />
           </div>
 
@@ -146,6 +147,7 @@ export function NewWorktreeDialog({
               className="rounded-lg"
               disabled={creating || !branch.trim() || !baseBranch.trim() || !agentId}
               onClick={handleCreate}
+              data-testid="create-worktree-btn"
             >
               {creating ? "Creating..." : "Create Worktree"}
             </Button>

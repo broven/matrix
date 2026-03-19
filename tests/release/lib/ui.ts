@@ -20,6 +20,9 @@ export async function click(selector: string): Promise<void> {
     (() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('click: element not found: ' + ${JSON.stringify(selector)});
+      // Radix UI components require pointer events, not just .click()
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1 }));
+      el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
       el.click();
     })()
   `);

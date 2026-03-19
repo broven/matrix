@@ -3,17 +3,14 @@ import { click, type as typeText, waitFor, waitForGone, isVisible } from "../ui"
 
 /**
  * Add a local repository via the Open Project dialog.
- * Requires the mock-file-dialog endpoint or manual path entry.
+ * Types the path directly into the path input (no native file dialog needed).
  */
 export async function addLocalRepo(
   bridge: BridgeClient,
   repoPath: string,
   opts?: { name?: string },
 ): Promise<void> {
-  // Pre-seed the mock file dialog so the native picker returns this path
-  await bridge.mockFileDialog(repoPath);
-
-  // Open the Add Repository menu
+  // Open the Add Repository dropdown menu
   await click('[data-testid="add-repo-btn"]');
   await waitFor('[data-testid="open-local-option"]');
 
@@ -21,10 +18,10 @@ export async function addLocalRepo(
   await click('[data-testid="open-local-option"]');
   await waitFor('[data-testid="path-input"]');
 
-  // Type the project path
+  // Type the project path directly into the input
   await typeText('[data-testid="path-input"]', repoPath);
 
-  // Click confirm
+  // Click confirm ("Open Project" button)
   await click('[data-testid="confirm-btn"]');
 
   // Wait for the repo to appear in the sidebar

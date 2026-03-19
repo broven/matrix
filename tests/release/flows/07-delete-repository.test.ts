@@ -11,15 +11,15 @@ describe("07 — Delete Repository", () => {
     setBridge(bridge);
   });
 
-  it("should delete a session via the context menu", async () => {
-    // Assert that repos exist — fail if prior state is not set up
-    const hasSession = await isVisible('[data-testid^="repo-item-"]');
-    expect(hasSession, "Expected at least one repo item to exist from prior tests").toBe(true);
+  it("should delete a worktree via the context menu", async () => {
+    // Assert that a worktree or legacy session item exists from prior tests
+    const hasWorktree = await isVisible('[data-testid^="worktree-item-"]');
+    expect(hasWorktree, "Expected at least one worktree item to exist from prior tests").toBe(true);
 
-    // Trigger the context menu by right-clicking a session
+    // Trigger the context menu by right-clicking a worktree item
     await bridge.eval(`
       (() => {
-        const item = document.querySelector('[data-testid^="repo-item-"]');
+        const item = document.querySelector('[data-testid^="worktree-item-"]');
         if (!item) return;
         const rect = item.getBoundingClientRect();
         item.dispatchEvent(new MouseEvent('contextmenu', {

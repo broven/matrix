@@ -11,7 +11,6 @@ export async function verifyConnected(bridge: BridgeClient): Promise<void> {
     throw new Error("Sidecar is not ready");
   }
 
-  // Wait for connected status indicator in the UI
   await waitFor('[data-testid="connection-status-connected"]', { timeout: 15_000 });
 }
 
