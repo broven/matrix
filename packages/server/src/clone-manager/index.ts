@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { nanoid } from "nanoid";
 import path from "node:path";
+import { parseRepoName } from "@matrix/protocol";
 import type { CloneJobInfo, CloneJobStatus } from "@matrix/protocol";
 
 interface CloneJob {
@@ -10,7 +11,10 @@ interface CloneJob {
   targetDir: string;
   repositoryId?: string;
   error?: string;
+  completedAt?: number;
 }
+
+const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export class CloneManager {
   private jobs = new Map<string, CloneJob>();
@@ -19,12 +23,22 @@ export class CloneManager {
    * Start a clone operation in the background.
    * Returns immediately with a job ID.
    */
+  private static readonly ALLOWED_URL = /^(https?:\/\/|git:\/\/|git@)/;
+  private static readonly SAFE_BRANCH = /^[a-zA-Z0-9._\-/]+$/;
+
   startClone(
     url: string,
     targetDir: string,
     branch?: string,
     onComplete?: (job: CloneJob) => void | Promise<void>,
   ): string {
+    if (!CloneManager.ALLOWED_URL.test(url)) {
+      throw new Error("URL must use https://, http://, git://, or git@ protocol");
+    }
+    if (branch && !CloneManager.SAFE_BRANCH.test(branch)) {
+      throw new Error("Invalid branch name");
+    }
+
     const jobId = `clone_${nanoid()}`;
     const job: CloneJob = {
       jobId,
@@ -41,13 +55,24 @@ export class CloneManager {
   }
 
   getJob(jobId: string): CloneJobInfo | null {
+    this.sweepExpired();
     const job = this.jobs.get(jobId);
     if (!job) return null;
     return { ...job };
   }
 
   listJobs(): CloneJobInfo[] {
+    this.sweepExpired();
     return Array.from(this.jobs.values()).map((j) => ({ ...j }));
+  }
+
+  private sweepExpired(): void {
+    const now = Date.now();
+    for (const [id, job] of this.jobs) {
+      if (job.completedAt && now - job.completedAt > JOB_TTL_MS) {
+        this.jobs.delete(id);
+      }
+    }
   }
 
   private async runClone(
@@ -66,6 +91,7 @@ export class CloneManager {
       if (result.exitCode !== 0) {
         job.status = "failed";
         job.error = result.stderr.toString().trim() || "Clone failed";
+        job.completedAt = Date.now();
       } else {
         // Don't mark completed yet — let onComplete (e.g. auto-registration) finish first
         if (onComplete) {
@@ -76,11 +102,13 @@ export class CloneManager {
           }
         }
         job.status = "completed";
+        job.completedAt = Date.now();
         return;
       }
     } catch (error) {
       job.status = "failed";
       job.error = error instanceof Error ? error.message : "Clone failed";
+      job.completedAt = Date.now();
     }
 
     if (onComplete) {
@@ -92,17 +120,5 @@ export class CloneManager {
     }
   }
 
-  /**
-   * Parse a repo name from a git URL.
-   */
-  static parseRepoName(url: string): string {
-    // Handle SSH: git@github.com:user/repo.git
-    // Handle HTTPS: https://github.com/user/repo.git
-    const cleaned = url.replace(/\.git$/, "").replace(/\/$/, "");
-    const parts = cleaned.split(/[/:]/);
-    const name = parts[parts.length - 1] || "repo";
-    // Sanitize: strip path-traversal sequences and invalid chars
-    const safe = name.replace(/\.\./g, "").replace(/[/\\]/g, "");
-    return safe || "repo";
-  }
+  static parseRepoName = parseRepoName;
 }

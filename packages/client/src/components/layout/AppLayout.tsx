@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
 import { MessageSquarePlus } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
@@ -41,6 +41,16 @@ export function AppLayout() {
   const [showOpenProject, setShowOpenProject] = useState(false);
   const [showCloneFromUrl, setShowCloneFromUrl] = useState(false);
   const [worktreeDialogRepo, setWorktreeDialogRepo] = useState<RepositoryInfo | null>(null);
+  const clonePollIntervals = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
+
+  // Clean up clone poll intervals on unmount
+  useEffect(() => {
+    const intervals = clonePollIntervals.current;
+    return () => {
+      for (const id of intervals) clearInterval(id);
+      intervals.clear();
+    };
+  }, []);
 
   // Load initial data
   useEffect(() => {
@@ -231,6 +241,7 @@ export function AppLayout() {
         const job = await client.getCloneJob(jobId);
         if (job.status === "completed") {
           clearInterval(poll);
+          clonePollIntervals.current.delete(poll);
           // Refresh repositories to pick up the auto-registered repo
           const repos = await client.getRepositories();
           setRepositories(repos);
@@ -248,12 +259,15 @@ export function AppLayout() {
           setWorktrees(wtMap);
         } else if (job.status === "failed") {
           clearInterval(poll);
+          clonePollIntervals.current.delete(poll);
           console.error("Clone failed:", job.error);
         }
       } catch {
         clearInterval(poll);
+        clonePollIntervals.current.delete(poll);
       }
     }, 2000);
+    clonePollIntervals.current.add(poll);
   }, [client]);
 
   const handleCreateWorktree = async (

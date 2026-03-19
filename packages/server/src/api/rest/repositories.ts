@@ -223,6 +223,20 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       return c.json({ error: "url is required" }, 400);
     }
 
+    // Validate URL protocol scheme
+    const allowedSchemes = /^(https?:\/\/|git:\/\/|git@)/;
+    if (!allowedSchemes.test(body.url)) {
+      return c.json({ error: "URL must use https://, http://, git://, or git@ protocol" }, 400);
+    }
+
+    // Validate branch name if provided
+    if (body.branch) {
+      const safeBranch = /^[a-zA-Z0-9._\-/]+$/;
+      if (!safeBranch.test(body.branch)) {
+        return c.json({ error: "Invalid branch name" }, 400);
+      }
+    }
+
     const config = getServerConfig();
     const repoName = (await import("../../clone-manager/index.js")).CloneManager.parseRepoName(body.url);
 

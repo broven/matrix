@@ -48,7 +48,7 @@ export function Sidebar({
   onDeleteWorktree,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(() => new Set(repositories.map((r) => r.id)));
+  const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set());
 
   // Sessions grouped by worktree
   const sessionsByWorktree = useMemo(() => {
@@ -72,7 +72,7 @@ export function Sidebar({
   const totalItems = repositories.length + legacySessions.length;
 
   const toggleRepo = (repoId: string) => {
-    setExpandedRepos((prev) => {
+    setCollapsedRepos((prev) => {
       const next = new Set(prev);
       if (next.has(repoId)) {
         next.delete(repoId);
@@ -83,16 +83,7 @@ export function Sidebar({
     });
   };
 
-  // Ensure new repos are expanded
-  const effectiveExpanded = useMemo(() => {
-    const set = new Set(expandedRepos);
-    for (const repo of repositories) {
-      if (!expandedRepos.has(repo.id)) {
-        set.add(repo.id);
-      }
-    }
-    return set;
-  }, [expandedRepos, repositories]);
+  const isRepoExpanded = (repoId: string) => !collapsedRepos.has(repoId);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -136,7 +127,7 @@ export function Sidebar({
           {/* Repositories with worktrees */}
           {repositories.map((repo) => {
             const repoWorktrees = worktrees.get(repo.id) ?? [];
-            const isExpanded = effectiveExpanded.has(repo.id);
+            const isExpanded = isRepoExpanded(repo.id);
 
             // Filter by query
             if (query) {

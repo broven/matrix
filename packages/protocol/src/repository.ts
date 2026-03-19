@@ -97,6 +97,21 @@ export interface CloneJobInfo {
   error?: string;
 }
 
+// ── Utilities ────────────────────────────────────────────────────
+
+/**
+ * Parse a repository name from a git URL.
+ * Handles SSH (git@github.com:user/repo.git) and HTTPS URLs.
+ */
+export function parseRepoName(url: string): string {
+  const cleaned = url.replace(/\.git$/, "").replace(/\/$/, "");
+  const parts = cleaned.split(/[/:]/);
+  const name = parts[parts.length - 1] || "repo";
+  // Sanitize: strip path-traversal sequences and invalid chars
+  const safe = name.replace(/\.\./g, "").replace(/[/\\]/g, "");
+  return safe || "repo";
+}
+
 // ── Server Config ─────────────────────────────────────────────────
 
 /** Per-server path configuration */

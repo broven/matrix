@@ -6,17 +6,12 @@ import { X, ChevronRight, ChevronDown, FolderOpen, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { FileExplorerDialog } from "@/components/repository/FileExplorerDialog";
 import type { MatrixClient } from "@matrix/sdk";
+import { parseRepoName } from "@matrix/protocol";
 
 interface CloneFromUrlDialogProps {
   client: MatrixClient;
   onCloneStarted: (jobId: string) => void;
   onClose: () => void;
-}
-
-function parseRepoName(url: string): string {
-  const cleaned = url.replace(/\.git$/, "").replace(/\/$/, "");
-  const parts = cleaned.split(/[/:]/);
-  return parts[parts.length - 1] || "repo";
 }
 
 export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFromUrlDialogProps) {
@@ -27,13 +22,12 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [dirManuallyEdited, setDirManuallyEdited] = useState(false);
 
   const handleUrlChange = (value: string) => {
     setUrl(value);
-    if (value.trim()) {
-      setTargetDir(parseRepoName(value.trim()));
-    } else {
-      setTargetDir("");
+    if (!dirManuallyEdited) {
+      setTargetDir(value.trim() ? parseRepoName(value.trim()) : "");
     }
   };
 
@@ -106,7 +100,10 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
                   <div className="flex gap-2">
                     <Input
                       value={targetDir}
-                      onChange={(e) => setTargetDir(e.target.value)}
+                      onChange={(e) => {
+                        setTargetDir(e.target.value);
+                        setDirManuallyEdited(true);
+                      }}
                       placeholder="repo"
                       className="rounded-lg"
                     />
@@ -168,6 +165,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
           client={client}
           onSelect={(dir) => {
             setTargetDir(dir);
+            setDirManuallyEdited(true);
             setShowFileBrowser(false);
           }}
           onClose={() => setShowFileBrowser(false)}

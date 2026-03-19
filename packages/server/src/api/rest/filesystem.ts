@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
@@ -8,26 +8,35 @@ export function filesystemRoutes() {
 
   app.get("/fs/list", async (c) => {
     const rawPath = c.req.query("path");
-    const dirPath = rawPath
-      ? rawPath.replace(/^~/, os.homedir())
-      : os.homedir();
+    const dirPath = path.resolve(
+      rawPath ? rawPath.replace(/^~/, os.homedir()) : os.homedir(),
+    );
 
+    // Path containment: must be within home directory
+    const home = os.homedir();
+    if (!dirPath.startsWith(home + path.sep) && dirPath !== home) {
+      return c.json({ error: "Path must be within the home directory" }, 403);
+    }
+
+    let stat;
     try {
-      const stat = fs.statSync(dirPath);
-      if (!stat.isDirectory()) {
-        return c.json({ error: "Path is not a directory" }, 400);
-      }
+      stat = await fs.stat(dirPath);
     } catch {
       return c.json({ error: "Path does not exist" }, 404);
     }
 
-    let dirents: fs.Dirent[];
+    if (!stat.isDirectory()) {
+      return c.json({ error: "Path is not a directory" }, 400);
+    }
+
+    let dirents;
     try {
-      dirents = fs.readdirSync(dirPath, { withFileTypes: true });
+      dirents = await fs.readdir(dirPath, { withFileTypes: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to read directory";
       return c.json({ error: message }, 403);
     }
+
     const entries: Array<{
       name: string;
       path: string;
@@ -44,7 +53,7 @@ export function filesystemRoutes() {
       const fullPath = path.join(dirPath, dirent.name);
       let isGitRepo = false;
       try {
-        fs.accessSync(path.join(fullPath, ".git"));
+        await fs.access(path.join(fullPath, ".git"));
         isGitRepo = true;
       } catch {
         // not a git repo
