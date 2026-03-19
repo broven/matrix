@@ -3,15 +3,19 @@ import type { AgentManager } from "../../agent-manager/index.js";
 import type { Store } from "../../store/index.js";
 import type { SessionManager } from "../../session-manager/index.js";
 import type { WorktreeManager } from "../../worktree-manager/index.js";
+import type { CloneManager } from "../../clone-manager/index.js";
 import { agentRoutes } from "./agents.js";
 import { sessionRoutes } from "./sessions.js";
 import { repositoryRoutes } from "./repositories.js";
+import { filesystemRoutes } from "./filesystem.js";
+import { serverConfigRoutes } from "./server-config.js";
 
 interface RestRouteDeps {
   agentManager: AgentManager;
   store: Store;
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
+  cloneManager: CloneManager;
   createSessionForWorktree: (
     agentId: string,
     cwd: string,
@@ -27,7 +31,10 @@ export function createRestRoutes(deps: RestRouteDeps) {
     store: deps.store,
     sessionManager: deps.sessionManager,
     worktreeManager: deps.worktreeManager,
+    cloneManager: deps.cloneManager,
     createSessionForWorktree: deps.createSessionForWorktree,
   }));
+  app.route("/", filesystemRoutes());
+  app.route("/", serverConfigRoutes());
   return app;
 }

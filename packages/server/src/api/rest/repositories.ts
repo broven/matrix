@@ -2,12 +2,15 @@ import { Hono } from "hono";
 import type { Store } from "../../store/index.js";
 import type { SessionManager } from "../../session-manager/index.js";
 import type { WorktreeManager } from "../../worktree-manager/index.js";
-import type { AddRepositoryRequest, CreateWorktreeRequest } from "@matrix/protocol";
+import type { AddRepositoryRequest, CloneRepositoryRequest, CreateWorktreeRequest } from "@matrix/protocol";
+import type { CloneManager } from "../../clone-manager/index.js";
+import { getServerConfig } from "./server-config.js";
 
 interface RepositoryRouteDeps {
   store: Store;
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
+  cloneManager: CloneManager;
   createSessionForWorktree: (
     agentId: string,
     cwd: string,
@@ -16,7 +19,7 @@ interface RepositoryRouteDeps {
 }
 
 export function repositoryRoutes(deps: RepositoryRouteDeps) {
-  const { store, sessionManager, worktreeManager, createSessionForWorktree } = deps;
+  const { store, sessionManager, worktreeManager, cloneManager, createSessionForWorktree } = deps;
   const app = new Hono();
 
   // ── Repositories ────────────────────────────────────────────────
@@ -208,6 +211,90 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     // Clean up DB records only after successful git removal
     store.deleteWorktree(id);
     return c.json({ ok: true });
+  });
+
+  // ── Clone ──────────────────────────────────────────────────────
+
+  app.post("/repositories/clone", async (c) => {
+    const body = await c.req.json<CloneRepositoryRequest>();
+    const { default: path } = await import("node:path");
+
+    if (!body.url) {
+      return c.json({ error: "url is required" }, 400);
+    }
+
+    // Validate URL protocol scheme
+    const allowedSchemes = /^(https?:\/\/|git:\/\/|git@)/;
+    if (!allowedSchemes.test(body.url)) {
+      return c.json({ error: "URL must use https://, http://, git://, or git@ protocol" }, 400);
+    }
+
+    // Validate branch name if provided
+    if (body.branch) {
+      const safeBranch = /^[a-zA-Z0-9._\-/]+$/;
+      if (!safeBranch.test(body.branch)) {
+        return c.json({ error: "Invalid branch name" }, 400);
+      }
+    }
+
+    const config = getServerConfig();
+    const repoName = (await import("../../clone-manager/index.js")).CloneManager.parseRepoName(body.url);
+
+    // Determine target directory — always resolve relative to reposPath
+    let targetDir: string;
+    if (body.targetDir && path.isAbsolute(body.targetDir)) {
+      targetDir = path.resolve(body.targetDir);
+    } else {
+      // Use provided name or parsed repo name, always under reposPath
+      const dirName = body.targetDir || repoName;
+      targetDir = path.resolve(config.reposPath, dirName);
+    }
+
+    // Path containment check: absolute paths must be under reposPath
+    const resolvedReposPath = path.resolve(config.reposPath);
+    if (!targetDir.startsWith(resolvedReposPath + path.sep) && targetDir !== resolvedReposPath) {
+      return c.json({ error: "Target directory must be within the configured repos path" }, 400);
+    }
+
+    const jobId = cloneManager.startClone(
+      body.url,
+      targetDir,
+      body.branch,
+      async (job) => {
+        if (job.status === "completed") {
+          // Auto-register the cloned repo (awaited so status reflects registration)
+          try {
+            const isValid = await worktreeManager.validateGitRepo(job.targetDir);
+            if (isValid) {
+              const defaultBranch = await worktreeManager.detectDefaultBranch(job.targetDir);
+              const name = path.basename(job.targetDir);
+              const repo = store.createRepository(name, job.targetDir, {
+                remoteUrl: job.url,
+                defaultBranch,
+              });
+              job.repositoryId = repo.id;
+            }
+          } catch (err) {
+            console.error("[clone] Failed to auto-register repository:", err);
+          }
+        }
+      },
+    );
+
+    return c.json({ jobId }, 202);
+  });
+
+  app.get("/repositories/clone/:jobId", (c) => {
+    const jobId = c.req.param("jobId");
+    const job = cloneManager.getJob(jobId);
+    if (!job) {
+      return c.json({ error: "Clone job not found" }, 404);
+    }
+    return c.json(job);
+  });
+
+  app.get("/repositories/clone-jobs", (c) => {
+    return c.json(cloneManager.listJobs());
   });
 
   return app;

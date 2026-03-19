@@ -11,6 +11,11 @@ import type {
   AddRepositoryRequest,
   CreateWorktreeRequest,
   CreateWorktreeResponse,
+  FsListResponse,
+  CloneRepositoryRequest,
+  CloneRepositoryResponse,
+  CloneJobInfo,
+  ServerConfig,
 } from "@matrix/protocol";
 import { createTransport, type Transport } from "./transport/index.js";
 import { MatrixSession } from "./session.js";
@@ -147,6 +152,71 @@ export class MatrixClient {
     if (!res.ok) {
       throw new Error(`Failed to delete repository ${id}: ${res.status}`);
     }
+  }
+
+  // ── Filesystem ──────────────────────────────────────────────────
+
+  async listDirectory(path?: string): Promise<FsListResponse> {
+    const params = path ? `?path=${encodeURIComponent(path)}` : "";
+    const res = await this.fetch(`/fs/list${params}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to list directory" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // ── Clone ─────────────────────────────────────────────────────
+
+  async cloneRepository(request: CloneRepositoryRequest): Promise<CloneRepositoryResponse> {
+    const res = await this.fetch("/repositories/clone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to start clone" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async getCloneJob(jobId: string): Promise<CloneJobInfo> {
+    const res = await this.fetch(`/repositories/clone/${jobId}`);
+    if (!res.ok) {
+      throw new Error(`Failed to get clone job ${jobId}: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async getCloneJobs(): Promise<CloneJobInfo[]> {
+    const res = await this.fetch("/repositories/clone-jobs");
+    if (!res.ok) {
+      throw new Error(`Failed to get clone jobs: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // ── Server Config ─────────────────────────────────────────────
+
+  async getServerConfig(): Promise<ServerConfig> {
+    const res = await this.fetch("/server/config");
+    if (!res.ok) {
+      throw new Error(`Failed to get server config: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async updateServerConfig(config: Partial<ServerConfig>): Promise<ServerConfig> {
+    const res = await this.fetch("/server/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to update server config: ${res.status}`);
+    }
+    return res.json();
   }
 
   // ── Worktrees ────────────────────────────────────────────────────

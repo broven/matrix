@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SessionItem } from "@/components/layout/SessionItem";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AddRepositoryMenu } from "@/components/repository/AddRepositoryMenu";
 
 interface SidebarProps {
   agents: AgentListItem[];
@@ -18,7 +19,8 @@ interface SidebarProps {
   onSelectSession: (sessionId: string) => void;
   onCreateSession: (agentId: string, cwd: string) => Promise<string | null>;
   onDeleteSession: (sessionId: string) => void;
-  onAddRepository: () => void;
+  onOpenProject: () => void;
+  onCloneFromUrl: () => void;
   onCreateWorktree: (repoId: string) => void;
   onDeleteWorktree: (worktreeId: string) => void;
 }
@@ -40,12 +42,13 @@ export function Sidebar({
   onSelectSession,
   onCreateSession,
   onDeleteSession,
-  onAddRepository,
+  onOpenProject,
+  onCloneFromUrl,
   onCreateWorktree,
   onDeleteWorktree,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
-  const [expandedRepos, setExpandedRepos] = useState<Set<string>>(() => new Set(repositories.map((r) => r.id)));
+  const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set());
 
   // Sessions grouped by worktree
   const sessionsByWorktree = useMemo(() => {
@@ -69,7 +72,7 @@ export function Sidebar({
   const totalItems = repositories.length + legacySessions.length;
 
   const toggleRepo = (repoId: string) => {
-    setExpandedRepos((prev) => {
+    setCollapsedRepos((prev) => {
       const next = new Set(prev);
       if (next.has(repoId)) {
         next.delete(repoId);
@@ -80,16 +83,7 @@ export function Sidebar({
     });
   };
 
-  // Ensure new repos are expanded
-  const effectiveExpanded = useMemo(() => {
-    const set = new Set(expandedRepos);
-    for (const repo of repositories) {
-      if (!expandedRepos.has(repo.id)) {
-        set.add(repo.id);
-      }
-    }
-    return set;
-  }, [expandedRepos, repositories]);
+  const isRepoExpanded = (repoId: string) => !collapsedRepos.has(repoId);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -133,7 +127,7 @@ export function Sidebar({
           {/* Repositories with worktrees */}
           {repositories.map((repo) => {
             const repoWorktrees = worktrees.get(repo.id) ?? [];
-            const isExpanded = effectiveExpanded.has(repo.id);
+            const isExpanded = isRepoExpanded(repo.id);
 
             // Filter by query
             if (query) {
@@ -265,14 +259,10 @@ export function Sidebar({
       </ScrollArea>
 
       <div className="space-y-2 border-t border-sidebar-border px-4 py-4">
-        <Button
-          className="w-full justify-center gap-2 rounded-xl text-sm"
-          onClick={onAddRepository}
-          size="sm"
-        >
-          <FolderGit2 className="size-4" />
-          Add Repository
-        </Button>
+        <AddRepositoryMenu
+          onOpenProject={onOpenProject}
+          onCloneFromUrl={onCloneFromUrl}
+        />
       </div>
     </div>
   );

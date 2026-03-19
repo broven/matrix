@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
 import { MessageSquarePlus } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
@@ -6,7 +6,8 @@ import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SettingsPage } from "@/pages/SettingsPage";
-import { AddRepositoryDialog } from "@/components/repository/AddRepositoryDialog";
+import { OpenProjectDialog } from "@/components/repository/OpenProjectDialog";
+import { CloneFromUrlDialog } from "@/components/repository/CloneFromUrlDialog";
 import { NewWorktreeDialog } from "@/components/worktree/NewWorktreeDialog";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -37,8 +38,19 @@ export function AppLayout() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showAddRepo, setShowAddRepo] = useState(false);
+  const [showOpenProject, setShowOpenProject] = useState(false);
+  const [showCloneFromUrl, setShowCloneFromUrl] = useState(false);
   const [worktreeDialogRepo, setWorktreeDialogRepo] = useState<RepositoryInfo | null>(null);
+  const clonePollIntervals = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
+
+  // Clean up clone poll intervals on unmount
+  useEffect(() => {
+    const intervals = clonePollIntervals.current;
+    return () => {
+      for (const id of intervals) clearInterval(id);
+      intervals.clear();
+    };
+  }, []);
 
   // Load initial data
   useEffect(() => {
@@ -212,7 +224,6 @@ export function AppLayout() {
     if (!client) return;
     const repo = await client.addRepository({ path, name });
     setRepositories((prev) => {
-      // If repo already exists (duplicate path), don't add again
       if (prev.some((r) => r.id === repo.id)) return prev;
       return [repo, ...prev];
     });
@@ -221,6 +232,43 @@ export function AppLayout() {
       return new Map(prev).set(repo.id, []);
     });
   };
+
+  const handleCloneStarted = useCallback((jobId: string) => {
+    if (!client) return;
+    // Poll for clone completion
+    const poll = setInterval(async () => {
+      try {
+        const job = await client.getCloneJob(jobId);
+        if (job.status === "completed") {
+          clearInterval(poll);
+          clonePollIntervals.current.delete(poll);
+          // Refresh repositories to pick up the auto-registered repo
+          const repos = await client.getRepositories();
+          setRepositories(repos);
+          const wtMap = new Map<string, WorktreeInfo[]>();
+          await Promise.all(
+            repos.map(async (repo) => {
+              try {
+                const wts = await client.getWorktrees(repo.id);
+                wtMap.set(repo.id, wts);
+              } catch {
+                wtMap.set(repo.id, []);
+              }
+            }),
+          );
+          setWorktrees(wtMap);
+        } else if (job.status === "failed") {
+          clearInterval(poll);
+          clonePollIntervals.current.delete(poll);
+          console.error("Clone failed:", job.error);
+        }
+      } catch {
+        clearInterval(poll);
+        clonePollIntervals.current.delete(poll);
+      }
+    }, 2000);
+    clonePollIntervals.current.add(poll);
+  }, [client]);
 
   const handleCreateWorktree = async (
     repoId: string,
@@ -274,7 +322,8 @@ export function AppLayout() {
       }}
       onCreateSession={handleCreateSession}
       onDeleteSession={handleDeleteSession}
-      onAddRepository={() => setShowAddRepo(true)}
+      onOpenProject={() => setShowOpenProject(true)}
+      onCloneFromUrl={() => setShowCloneFromUrl(true)}
       onCreateWorktree={(repoId) => {
         const repo = repositories.find((r) => r.id === repoId);
         if (repo) setWorktreeDialogRepo(repo);
@@ -336,7 +385,7 @@ export function AppLayout() {
               </div>
               <Button
                 className="rounded-xl"
-                onClick={() => setShowAddRepo(true)}
+                onClick={() => setShowOpenProject(true)}
                 variant="outline"
                 size="sm"
               >
@@ -350,10 +399,19 @@ export function AppLayout() {
       </main>
 
       {/* Dialogs */}
-      {showAddRepo && (
-        <AddRepositoryDialog
+      {showOpenProject && client && (
+        <OpenProjectDialog
+          client={client}
           onAdd={handleAddRepository}
-          onClose={() => setShowAddRepo(false)}
+          onClose={() => setShowOpenProject(false)}
+        />
+      )}
+
+      {showCloneFromUrl && client && (
+        <CloneFromUrlDialog
+          client={client}
+          onCloneStarted={handleCloneStarted}
+          onClose={() => setShowCloneFromUrl(false)}
         />
       )}
 
