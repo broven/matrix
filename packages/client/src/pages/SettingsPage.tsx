@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, X } from "lucide-react";
-import type { RepositoryInfo, ServerConfig } from "@matrix/protocol";
+import type { AgentListItem, RepositoryInfo, ServerConfig } from "@matrix/protocol";
 import { ShareServerModal } from "@/components/ShareServerModal";
 import { FileExplorerDialog } from "@/components/repository/FileExplorerDialog";
-import type { AgentListItem, ServerConfig } from "@matrix/protocol";
 import { Button } from "@/components/ui/button";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useMatrixClient } from "@/hooks/useMatrixClient";

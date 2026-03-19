@@ -15,6 +15,7 @@ const mockClient = {
     worktreesPath: "~/worktrees",
   }),
   updateServerConfig: vi.fn(),
+  getAgents: vi.fn().mockResolvedValue([]),
 };
 
 vi.mock("@/hooks/useMatrixClient", () => ({

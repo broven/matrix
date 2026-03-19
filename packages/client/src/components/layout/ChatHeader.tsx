@@ -6,7 +6,7 @@ interface ChatHeaderProps {
   session: SessionInfo;
   repositoryName?: string;
   isProcessing: boolean;
-  sessionStatus: "active" | "closed";
+  sessionStatus: "active" | "closed" | "restoring";
   statusMessage?: string | null;
 }
 

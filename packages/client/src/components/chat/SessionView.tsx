@@ -15,7 +15,7 @@ interface SessionViewProps {
   onSessionInfoChange?: (sessionId: string, patch: Partial<SessionInfo>) => void;
 }
 
-type ViewStatus = "active" | "closed";
+type ViewStatus = "active" | "closed" | "restoring";
 
 function isTerminalSessionError(code: string) {
   return code === "session_closed" || code === "session_unavailable" || code === "session_not_found";
