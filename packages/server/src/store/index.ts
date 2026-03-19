@@ -162,21 +162,23 @@ export class Store {
   }
 
   deleteRepository(id: string): void {
-    // Delete all sessions in worktrees of this repo
-    this.db.prepare(
-      `DELETE FROM history WHERE session_id IN (
-        SELECT session_id FROM sessions WHERE worktree_id IN (
+    this.db.transaction(() => {
+      // Delete all sessions in worktrees of this repo
+      this.db.prepare(
+        `DELETE FROM history WHERE session_id IN (
+          SELECT session_id FROM sessions WHERE worktree_id IN (
+            SELECT id FROM worktrees WHERE repository_id = ?
+          )
+        )`
+      ).run(id);
+      this.db.prepare(
+        `DELETE FROM sessions WHERE worktree_id IN (
           SELECT id FROM worktrees WHERE repository_id = ?
-        )
-      )`
-    ).run(id);
-    this.db.prepare(
-      `DELETE FROM sessions WHERE worktree_id IN (
-        SELECT id FROM worktrees WHERE repository_id = ?
-      )`
-    ).run(id);
-    this.db.prepare("DELETE FROM worktrees WHERE repository_id = ?").run(id);
-    this.db.prepare("DELETE FROM repositories WHERE id = ?").run(id);
+        )`
+      ).run(id);
+      this.db.prepare("DELETE FROM worktrees WHERE repository_id = ?").run(id);
+      this.db.prepare("DELETE FROM repositories WHERE id = ?").run(id);
+    })();
   }
 
   private mapRepository(row: Record<string, unknown>): RepositoryInfo {
@@ -232,13 +234,15 @@ export class Store {
   }
 
   deleteWorktree(id: string): void {
-    this.db.prepare(
-      `DELETE FROM history WHERE session_id IN (
-        SELECT session_id FROM sessions WHERE worktree_id = ?
-      )`
-    ).run(id);
-    this.db.prepare("DELETE FROM sessions WHERE worktree_id = ?").run(id);
-    this.db.prepare("DELETE FROM worktrees WHERE id = ?").run(id);
+    this.db.transaction(() => {
+      this.db.prepare(
+        `DELETE FROM history WHERE session_id IN (
+          SELECT session_id FROM sessions WHERE worktree_id = ?
+        )`
+      ).run(id);
+      this.db.prepare("DELETE FROM sessions WHERE worktree_id = ?").run(id);
+      this.db.prepare("DELETE FROM worktrees WHERE id = ?").run(id);
+    })();
   }
 
   getSessionsByWorktree(worktreeId: string): SessionInfo[] {

@@ -105,6 +105,12 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       return c.json({ error: "branch, baseBranch, and agentId are required" }, 400);
     }
 
+    // Validate branch name (git check-ref-format rules)
+    const invalidBranchPattern = /[\x00-\x1f\x7f ~^:?*\[\\]|\.{2}|@\{|\/\/|\.$|\.lock$|^\/|\/$/;
+    if (invalidBranchPattern.test(body.branch) || body.branch.startsWith("-")) {
+      return c.json({ error: "Invalid git branch name" }, 400);
+    }
+
     let worktreePath: string | null = null;
     let worktreeId: string | null = null;
     let sessionId: string | null = null;
