@@ -6,7 +6,21 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "dev": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; exec pnpm -r --parallel dev'",
+    "dev:mac": "wireit",
     "open": "sh -c 'set -a; . ./.env.local; set +a; open \"http://localhost:${CLIENT_PORT:-5173}/?serverUrl=http://localhost:${MATRIX_PORT:-8080}&token=${MATRIX_TOKEN}&autoConnect=1\"'",
     "smoke:mac-automation": "bash scripts/smoke-mac-automation.sh"
+  },
+  "wireit": {
+    "dev:mac": {
+      "dependencies": [
+        "./packages/protocol:dev",
+        "./packages/sdk:dev",
+        "./packages/server:dev:mac",
+        "./packages/client:dev:mac"
+      ]
+    }
+  },
+  "devDependencies": {
+    "wireit": "^0.14.0"
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Wifi,
   WifiOff,
@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useMatrixClient } from "../hooks/useMatrixClient";
 import { useServerStore, type SavedServer } from "../hooks/useServerStore";
-import { hasLocalServer, isMobilePlatform } from "@/lib/platform";
+import { hasLocalServer, isMobilePlatform, getLocalServerUrl } from "@/lib/platform";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +36,14 @@ export function ConnectPage() {
   const [newUrl, setNewUrl] = useState("");
   const [newToken, setNewToken] = useState("");
   const [newName, setNewName] = useState("");
+
+  // Local sidecar URL (may use a custom port in dev mode)
+  const [localServerUrl, setLocalServerUrl] = useState("http://127.0.0.1:19880");
+  useEffect(() => {
+    if (hasLocalServer()) {
+      getLocalServerUrl().then(setLocalServerUrl);
+    }
+  }, []);
 
   // Share modal
   const [shareServer, setShareServer] = useState<{
@@ -94,7 +102,7 @@ export function ConnectPage() {
     connectionInfo?.serverUrl === server.serverUrl && status === "connected";
 
   const isLocalConnected =
-    connectionInfo?.serverUrl?.includes("127.0.0.1:19880") && status === "connected";
+    connectionInfo?.serverUrl === localServerUrl && status === "connected";
 
   return (
     <div className="surface-grid relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
@@ -130,13 +138,13 @@ export function ConnectPage() {
                   </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
-                  http://127.0.0.1:19880
+                  {localServerUrl}
                 </div>
               </div>
               <StatusBadge
                 connected={isLocalConnected ?? false}
                 connecting={
-                  connectionInfo?.serverUrl?.includes("127.0.0.1:19880") &&
+                  connectionInfo?.serverUrl === localServerUrl &&
                   status === "connecting"
                 }
               />
@@ -146,16 +154,16 @@ export function ConnectPage() {
                 onClick={async () => {
                   // Fetch the real token from the local server
                   try {
-                    const res = await fetch("http://127.0.0.1:19880/api/auth-info");
+                    const res = await fetch(`${localServerUrl}/api/auth-info`);
                     const { token: realToken } = await res.json() as { token: string };
                     setShareServer({
-                      serverUrl: "http://127.0.0.1:19880",
+                      serverUrl: localServerUrl,
                       token: realToken,
                       name: "Local Server",
                     });
                   } catch {
                     setShareServer({
-                      serverUrl: "http://127.0.0.1:19880",
+                      serverUrl: localServerUrl,
                       token: connectionInfo?.token ?? "",
                       name: "Local Server",
                     });

@@ -15,6 +15,30 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 mod updater;
 
+/// Resolve sidecar port: in dev mode read SIDECAR_PORT env var, fallback to 19880.
+/// In release mode always returns 19880.
+#[cfg(desktop)]
+fn resolve_sidecar_port() -> u16 {
+    #[cfg(any(test, debug_assertions))]
+    {
+        if let Ok(port_str) = std::env::var("SIDECAR_PORT") {
+            if let Ok(port) = port_str.parse::<u16>() {
+                return port;
+            }
+        }
+    }
+    19880
+}
+
+#[cfg(desktop)]
+struct SidecarPortState(u16);
+
+#[tauri::command]
+#[cfg(desktop)]
+fn get_sidecar_port(state: tauri::State<SidecarPortState>) -> u16 {
+    state.0
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(all(desktop, any(test, debug_assertions)))]
@@ -32,7 +56,11 @@ pub fn run() {
         updater::check_update,
         updater::download_update,
         updater::install_update,
+        get_sidecar_port,
     ]);
+
+    #[cfg(all(desktop, not(target_os = "macos")))]
+    let builder = builder.invoke_handler(tauri::generate_handler![get_sidecar_port,]);
 
     #[cfg(desktop)]
     let builder = builder.setup(|app| {
@@ -102,94 +130,123 @@ fn automation_debug_log_path() -> std::io::Result<PathBuf> {
 fn initialize_desktop_runtime(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(any(test, debug_assertions))]
-    append_automation_startup_log("entered_desktop_setup");
+    let sidecar_port = resolve_sidecar_port();
 
-    // Kill any orphaned sidecar processes from previous launches
-    // that may still hold port 19880
-    if let Ok(output) = std::process::Command::new("lsof")
-        .args(["-ti", "tcp:19880"])
-        .output()
-    {
-        let pids = String::from_utf8_lossy(&output.stdout);
-        for pid_str in pids.split_whitespace() {
-            if pid_str.trim().is_empty() {
-                continue;
+    #[cfg(any(test, debug_assertions))]
+    append_automation_startup_log(&format!("entered_desktop_setup sidecar_port={sidecar_port}"));
+
+    let skip_sidecar = std::env::var("SKIP_SIDECAR")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    if skip_sidecar {
+        eprintln!("[matrix-client] SKIP_SIDECAR=true, skipping sidecar spawn (using external dev server on port {sidecar_port})");
+        app.manage(SidecarState(std::sync::Mutex::new(None)));
+        app.manage(SidecarPortState(sidecar_port));
+    } else {
+        let port_str = sidecar_port.to_string();
+
+        // Kill any orphaned sidecar processes from previous launches
+        // that may still hold the sidecar port
+        if let Ok(output) = std::process::Command::new("lsof")
+            .args(["-ti", &format!("tcp:{sidecar_port}")])
+            .output()
+        {
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids.split_whitespace() {
+                if pid_str.trim().is_empty() {
+                    continue;
+                }
+                eprintln!(
+                    "[matrix-client] killing orphaned process on port {}: pid {}",
+                    sidecar_port, pid_str
+                );
+                let _ = std::process::Command::new("kill")
+                    .args(["-TERM", pid_str.trim()])
+                    .output();
             }
-            eprintln!(
-                "[matrix-client] killing orphaned process on port 19880: pid {}",
-                pid_str
-            );
-            let _ = std::process::Command::new("kill")
-                .args(["-TERM", pid_str.trim()])
-                .output();
+            if !pids.trim().is_empty() {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
         }
-        if !pids.trim().is_empty() {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
+
+        use tauri_plugin_shell::ShellExt;
+
+        let resource_dir = app.path().resource_dir()?;
+        let web_dir = resource_dir.join("web");
+
+        let shell = app.shell();
+        let (mut rx, child) = shell
+            .sidecar("matrix-server")?
+            .args([
+                "--port",
+                &port_str,
+                "--local",
+                "true",
+                "--web",
+                &web_dir.to_string_lossy(),
+            ])
+            .spawn()?;
+
+        app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
+        app.manage(SidecarPortState(sidecar_port));
+
+        // Log sidecar output for debugging
+        tauri::async_runtime::spawn(async move {
+            use tauri_plugin_shell::process::CommandEvent;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(line) => {
+                        eprintln!("[matrix-server] {}", String::from_utf8_lossy(&line));
+                    }
+                    CommandEvent::Stderr(line) => {
+                        eprintln!("[matrix-server:err] {}", String::from_utf8_lossy(&line));
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        eprintln!(
+                            "[matrix-server] terminated code={:?} signal={:?}",
+                            payload.code, payload.signal
+                        );
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
     }
 
-    use tauri_plugin_shell::ShellExt;
-
-    let resource_dir = app.path().resource_dir()?;
-    let web_dir = resource_dir.join("web");
-
-    let shell = app.shell();
-    let (mut rx, child) = shell
-        .sidecar("matrix-server")?
-        .args([
-            "--port",
-            "19880",
-            "--local",
-            "true",
-            "--web",
-            &web_dir.to_string_lossy(),
-        ])
-        .spawn()?;
-
-    app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
-
-    // Log sidecar output for debugging
-    tauri::async_runtime::spawn(async move {
-        use tauri_plugin_shell::process::CommandEvent;
-        while let Some(event) = rx.recv().await {
-            match event {
-                CommandEvent::Stdout(line) => {
-                    eprintln!("[matrix-server] {}", String::from_utf8_lossy(&line));
-                }
-                CommandEvent::Stderr(line) => {
-                    eprintln!("[matrix-server:err] {}", String::from_utf8_lossy(&line));
-                }
-                CommandEvent::Terminated(payload) => {
-                    eprintln!(
-                        "[matrix-server] terminated code={:?} signal={:?}",
-                        payload.code, payload.signal
-                    );
-                    break;
-                }
-                _ => {}
-            }
-        }
-    });
-
     #[cfg(any(test, debug_assertions))]
-    initialize_automation_runtime(app);
+    initialize_automation_runtime(app, sidecar_port);
 
     let main_window = app.get_webview_window("main").unwrap();
+
+    // Dev mode: set window title and inject dev banner
+    #[cfg(any(test, debug_assertions))]
+    {
+        let worktree_name = get_worktree_name();
+        set_dev_window_title(&main_window, &worktree_name, sidecar_port);
+        inject_dev_banner(&main_window, &worktree_name, sidecar_port);
+    }
+
+    // In release mode, redirect webview to sidecar URL (which serves embedded frontend).
+    // In dev mode, webview stays on Vite dev server and connects to sidecar via invoke/fetch.
+    #[cfg(not(any(test, debug_assertions)))]
     std::thread::spawn(move || {
         use std::net::TcpStream;
         use std::time::Duration;
 
+        let addr = format!("127.0.0.1:{sidecar_port}");
         for _ in 0..60 {
             if TcpStream::connect_timeout(
-                &"127.0.0.1:19880".parse().unwrap(),
+                &addr.parse().unwrap(),
                 Duration::from_millis(200),
             )
             .is_ok()
             {
                 std::thread::sleep(Duration::from_millis(300));
-                let _ =
-                    main_window.eval("window.location.replace('http://127.0.0.1:19880')");
+                let _ = main_window.eval(&format!(
+                    "window.location.replace('http://127.0.0.1:{sidecar_port}')"
+                ));
                 return;
             }
             std::thread::sleep(Duration::from_millis(250));
@@ -197,6 +254,55 @@ fn initialize_desktop_runtime(
     });
 
     Ok(())
+}
+
+/// Get worktree name from git toplevel directory.
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn get_worktree_name() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                std::path::Path::new(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "dev".to_string())
+}
+
+/// Set window title to "Matrix [DEV - <worktree-name> :<port>]" in dev mode.
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn set_dev_window_title(window: &tauri::WebviewWindow, worktree_name: &str, port: u16) {
+    let title = format!("Matrix [DEV - {worktree_name} :{port}]");
+    let _ = window.set_title(&title);
+}
+
+/// Inject a dev banner into the webview.
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn inject_dev_banner(window: &tauri::WebviewWindow, worktree_name: &str, port: u16) {
+    let js = format!(
+        r#"(function() {{
+  if (document.getElementById('__matrix_dev_banner')) return;
+  var b = document.createElement('div');
+  b.id = '__matrix_dev_banner';
+  b.textContent = 'DEV — {worktree_name} :{port}';
+  b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#e67e22;color:#fff;text-align:center;font:bold 11px system-ui;padding:2px 0;pointer-events:none;opacity:0.9;';
+  document.body.prepend(b);
+  document.body.style.paddingTop = '20px';
+}})()"#
+    );
+    let w = window.clone();
+    std::thread::spawn(move || {
+        // Wait for webview content to load
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let _ = w.eval(&js);
+    });
 }
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
@@ -235,19 +341,23 @@ impl automation::runtime::desktop::DesktopWindowFacade for TauriWindowFacade {
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
 #[allow(dead_code)]
-struct TauriSidecarFacade(tauri::AppHandle);
+struct TauriSidecarFacade {
+    handle: tauri::AppHandle,
+    port: u16,
+}
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
 impl automation::runtime::desktop::DesktopSidecarFacade for TauriSidecarFacade {
     fn status(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
         use std::net::TcpStream;
         use std::time::Duration;
+        let addr = format!("127.0.0.1:{}", self.port);
         let running = TcpStream::connect_timeout(
-            &"127.0.0.1:19880".parse().unwrap(),
+            &addr.parse().unwrap(),
             Duration::from_millis(200),
         )
         .is_ok();
-        Ok(json!({"running": running, "port": 19880}))
+        Ok(json!({"running": running, "port": self.port}))
     }
 
     fn restart(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
@@ -255,12 +365,13 @@ impl automation::runtime::desktop::DesktopSidecarFacade for TauriSidecarFacade {
     }
 
     fn state(&self) -> serde_json::Value {
-        self.status().unwrap_or_else(|_| json!({"running": false, "port": 19880}))
+        self.status()
+            .unwrap_or_else(|_| json!({"running": false, "port": self.port}))
     }
 }
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
-fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
+fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>, sidecar_port: u16) {
     append_automation_startup_log("entered_automation_setup");
     let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
         .ok()
@@ -284,11 +395,11 @@ fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
             "visible": true
         }),
         webview: json!({
-            "url": "http://127.0.0.1:19880"
+            "url": format!("http://127.0.0.1:{sidecar_port}")
         }),
         sidecar: json!({
             "running": true,
-            "port": 19880
+            "port": sidecar_port
         }),
     }));
 
@@ -299,7 +410,10 @@ fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
     let app_handle_for_facades = app.handle().clone();
     let desktop_adapter = automation::runtime::desktop::DesktopAutomationAdapter::new(
         TauriWindowFacade(app_handle_for_facades.clone()),
-        TauriSidecarFacade(app_handle_for_facades),
+        TauriSidecarFacade {
+            handle: app_handle_for_facades,
+            port: sidecar_port,
+        },
     );
 
     let composite_backend = automation::runtime::composite::DesktopRuntimeBackend::new(

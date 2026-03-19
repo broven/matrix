@@ -32,7 +32,6 @@ test("tauri config points at the existing Vite frontend", () => {
   const configPath = path.join(clientDir, "src-tauri/tauri.conf.json");
   const config = JSON.parse(readFileSync(configPath, "utf8"));
 
-  assert.equal(config.build?.beforeDevCommand, "pnpm dev");
   assert.equal(config.build?.beforeBuildCommand, "pnpm build");
   assert.match(config.build?.devUrl, /^http:\/\/(localhost|127\.0\.0\.1):\d+$/);
   assert.equal(config.build?.frontendDist, "../dist");
@@ -43,7 +42,8 @@ test("client dev scripts load root worktree env before starting vite or tauri", 
   const packageJsonPath = path.join(clientDir, "package.json");
   const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
-  assert.match(pkg.scripts?.dev ?? "", /\.\.\/\.\.\/\.env\.local/);
+  // dev is now managed by wireit; env loading is in wireit config
+  assert.equal(pkg.scripts?.dev, "wireit");
   assert.match(pkg.scripts?.["tauri:dev"] ?? "", /\.\.\/\.\.\/\.env\.local/);
 });
 

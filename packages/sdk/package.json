@@ -12,8 +12,17 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
+    "dev": "wireit",
     "test": "vitest run"
+  },
+  "wireit": {
+    "dev": {
+      "command": "tsc --watch --preserveWatchOutput",
+      "service": true,
+      "dependencies": [
+        "../protocol:dev"
+      ]
+    }
   },
   "dependencies": {
     "@matrix/protocol": "workspace:*"
