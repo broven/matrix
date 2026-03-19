@@ -148,3 +148,7 @@ packages/client/src-tauri/gen/apple/
 packages/client/src-tauri/gen/schemas/iOS-schema.json
 packages/client/src-tauri/gen/schemas/mobile-schema.json
 *.ipa
+
+# Bundled binaries (downloaded at build time)
+packages/server/bin/*
+!packages/server/bin/.gitkeep

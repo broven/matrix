@@ -106,6 +106,31 @@ export async function getValue(selector: string): Promise<string> {
   return result as string;
 }
 
+/** Type a single character into a focused input using keyboard events + React-compatible value change. */
+export async function typeChar(selector: string, char: string): Promise<void> {
+  await bridge().eval(`
+    (() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) throw new Error('typeChar: element not found: ' + ${JSON.stringify(selector)});
+      el.focus();
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 'value'
+      )?.set || Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value'
+      )?.set;
+      const newValue = el.value + ${JSON.stringify(char)};
+      if (nativeSetter) {
+        nativeSetter.call(el, newValue);
+      } else {
+        el.value = newValue;
+      }
+      el.selectionStart = el.selectionEnd = newValue.length;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    })()
+  `);
+}
+
 /** Count elements matching the selector. */
 export async function count(selector: string): Promise<number> {
   const result = await bridge().eval(
