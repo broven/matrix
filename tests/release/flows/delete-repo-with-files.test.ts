@@ -1,53 +1,59 @@
-import { describe, it, beforeAll, expect } from "vitest";
+import { describe, it, beforeAll, afterAll, expect } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
-import { setBridge, click, waitFor, getText, isVisible } from "../lib/ui";
+import { setBridge, click, waitFor } from "../lib/ui";
 import { addLocalRepo } from "../lib/flows/repository";
+import { resetUI, closeSettings, removeAllRepos } from "../lib/flows/setup";
 
-describe("Delete Repository — With Files", () => {
+describe("删除仓库 — 连带删除文件", () => {
   let bridge: BridgeClient;
   let tempRepoPath: string;
-  const repoName = `delete-test-${Date.now()}`;
+  let repoName: string;
 
   beforeAll(async () => {
     bridge = await createBridgeClient();
     setBridge(bridge);
 
+    await resetUI(bridge);
+    await removeAllRepos(bridge).catch(() => {});
+
     // Create a temporary git repo to add and then delete
-    tempRepoPath = await mkdtemp(join(tmpdir(), "matrix-delete-test-"));
-    execSync("git init", { cwd: tempRepoPath });
-    execSync('git commit --allow-empty -m "init"', { cwd: tempRepoPath });
+    // Resolve symlinks (macOS /var -> /private/var) so path matches what server stores
+    const raw = await mkdtemp(join(tmpdir(), "matrix-delete-test-"));
+    tempRepoPath = await realpath(raw);
+    repoName = tempRepoPath.split("/").pop()!;
+    execSync("git init", { cwd: tempRepoPath, stdio: "pipe" });
+    execSync('git commit --allow-empty -m "init"', { cwd: tempRepoPath, stdio: "pipe" });
   });
 
-  it("should add the temporary repo", async () => {
+  afterAll(async () => {
+    await closeSettings().catch(() => {});
+    await removeAllRepos(bridge).catch(() => {});
+    if (tempRepoPath && existsSync(tempRepoPath)) {
+      await rm(tempRepoPath, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it("添加临时仓库", async () => {
     await addLocalRepo(bridge, tempRepoPath);
-    // Verify it appears
-    await waitFor(`[data-testid="repo-item-${repoName}"]`, { timeout: 5000 }).catch(() => {
-      // Name might be derived from the directory, not our variable
-    });
+    // Verify it appears (name derived from temp dir)
+    await waitFor('[data-testid^="repo-item-"]', { timeout: 5000 });
   });
 
-  it("should open settings and select the repo", async () => {
+  it("打开 Settings 选中仓库", async () => {
     await click('[data-testid="settings-btn"]');
     await waitFor('[data-testid="settings-overlay"]');
 
-    // Click the last repo tab (the one we just added)
-    const tabs = await bridge.eval(`
-      (function(){
-        var tabs = document.querySelectorAll('[data-testid^="settings-repo-tab-"]');
-        if(tabs.length > 0) { tabs[tabs.length-1].click(); return 'clicked'; }
-        return 'none';
-      })()
-    `);
-
+    // Click the specific repo tab matching our temp repo
+    await click(`[data-testid="settings-repo-tab-${repoName}"]`);
     await waitFor('[data-testid="settings-repo-detail"]');
   });
 
-  it("should check the delete source checkbox and confirm", async () => {
+  it("勾选删除文件并确认", async () => {
     await click('[data-testid="delete-repo-btn"]');
     await waitFor('[data-testid="delete-source-checkbox"]');
 
@@ -61,13 +67,12 @@ describe("Delete Repository — With Files", () => {
     await waitFor('[data-testid="settings-overlay"]', { timeout: 10_000 });
   });
 
-  it("should have deleted the source files from disk", async () => {
-    // Give the server a moment to complete the rm
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  it("物理文件已被删除", async () => {
+    // Poll until the server finishes deleting (async rm can take a few seconds)
+    for (let i = 0; i < 15; i++) {
+      if (!existsSync(tempRepoPath)) break;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
     expect(existsSync(tempRepoPath)).toBe(false);
-  });
-
-  it("should close settings", async () => {
-    await click('[aria-label="Close settings"]');
   });
 });

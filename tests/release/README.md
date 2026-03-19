@@ -4,7 +4,6 @@
 
 ## Test Case Inbox
 
-
 ## Test Cases
 
 | 文件 | 验证内容 |
@@ -13,6 +12,7 @@
 | add-repo-open-local | 通过 Open Project 对话框添加一个本地 git 仓库，验证出现在 sidebar |
 | add-repo-clone-url | 通过 Clone from URL 对话框克隆远程仓库，验证 clone 完成后出现在 sidebar |
 | create-session | 在已有 repo 上创建 worktree + session，验证聊天界面加载出来 |
+| session-delete-visible | 验证 worktree session 的删除按钮始终可见，无需 hover 或右键 |
 | archive-worktree | 验证能 archive worktree，git worktree 物理文件被删除，运行中的 acp-client 也被关闭 |
 | settings-repo-info | 验证 settings 页面全屏打开，仓库信息（名称、路径、remote URL、分支）正确展示 |
 | delete-repo-keep-files | 验证删除仓库时默认不勾选删除文件，执行后仓库从列表消失但物理文件保留 |

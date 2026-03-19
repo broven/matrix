@@ -1,27 +1,42 @@
-import { describe, it, beforeAll } from "vitest";
+import { describe, it, beforeAll, afterAll, expect } from "vitest";
+import { rm } from "node:fs/promises";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
 import { setBridge, click, waitFor, getText } from "../lib/ui";
 import { expectVisible } from "../lib/assertions";
+import { resetUI, ensureRepo, removeAllRepos, openSettings, closeSettings } from "../lib/flows/setup";
 
-describe("Settings — Repository Info", () => {
+describe("Settings — 仓库信息展示", () => {
   let bridge: BridgeClient;
+  let repoPath: string;
 
   beforeAll(async () => {
     bridge = await createBridgeClient();
     setBridge(bridge);
+
+    await resetUI(bridge);
+    await removeAllRepos(bridge).catch(() => {});
+
+    const repo = await ensureRepo(bridge);
+    repoPath = repo.path;
+
+    await openSettings();
   });
 
-  it("should open settings as a full-screen overlay", async () => {
-    await click('[data-testid="settings-btn"]');
-    await waitFor('[data-testid="settings-overlay"]');
+  afterAll(async () => {
+    await closeSettings().catch(() => {});
+    await removeAllRepos(bridge).catch(() => {});
+    await rm(repoPath, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it("Settings 全屏打开", async () => {
     await expectVisible('[data-testid="settings-overlay"]');
   });
 
-  it("should show a repository tab in the sidebar", async () => {
+  it("侧边栏显示仓库 tab", async () => {
     await expectVisible('[data-testid^="settings-repo-tab-"]');
   });
 
-  it("should display repository details when clicking a repo tab", async () => {
+  it("点击仓库 tab 展示仓库详情", async () => {
     await click('[data-testid^="settings-repo-tab-"]');
     await waitFor('[data-testid="settings-repo-detail"]');
 
@@ -30,12 +45,7 @@ describe("Settings — Repository Info", () => {
     expect(detail).toBeTruthy();
   });
 
-  it("should show the delete button in the danger zone", async () => {
+  it("危险区域显示删除按钮", async () => {
     await expectVisible('[data-testid="delete-repo-btn"]');
-  });
-
-  it("should close settings overlay", async () => {
-    await click('[aria-label="Close settings"]');
-    await waitFor('[data-testid="settings-overlay"]', { timeout: 2000 }).catch(() => {});
   });
 });

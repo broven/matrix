@@ -1,25 +1,34 @@
-import { describe, it, beforeAll } from "vitest";
+import { describe, it, beforeAll, afterAll } from "vitest";
+import { rm } from "node:fs/promises";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
-import { setBridge, click, type as typeText, waitFor, isVisible } from "../lib/ui";
-import { expectVisible } from "../lib/assertions";
+import { setBridge, click, type as typeText, waitFor } from "../lib/ui";
+import { resetUI, ensureRepo, removeAllRepos } from "../lib/flows/setup";
 
-describe("Create Session", () => {
+describe("创建 Worktree Session", () => {
   let bridge: BridgeClient;
+  let repoName: string;
+  let repoPath: string;
 
   beforeAll(async () => {
     bridge = await createBridgeClient();
     setBridge(bridge);
+
+    await resetUI(bridge);
+    await removeAllRepos(bridge).catch(() => {});
+
+    const repo = await ensureRepo(bridge);
+    repoName = repo.name;
+    repoPath = repo.path;
   });
 
-  it("should open a new session with chat input ready", async () => {
-    // Ensure at least one repo exists (from tests 02/03)
-    const hasRepo = await isVisible('[data-testid^="repo-item-"]');
-    if (!hasRepo) {
-      throw new Error("No repo in sidebar — tests 02/03 must run first");
-    }
+  afterAll(async () => {
+    await removeAllRepos(bridge).catch(() => {});
+    await rm(repoPath, { recursive: true, force: true }).catch(() => {});
+  });
 
-    // Click on a repo to expand it (so new-session-btn appears)
-    await click('[data-testid^="repo-item-"]');
+  it("创建 worktree + session，聊天界面加载出来", async () => {
+    // Click on the repo to expand it (so new-session-btn appears)
+    await click(`[data-testid="repo-item-${repoName}"]`);
     await waitFor('[data-testid="new-session-btn"]');
 
     // Click new worktree button

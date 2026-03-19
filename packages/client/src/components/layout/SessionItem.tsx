@@ -192,6 +192,7 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
             }
           }}
           aria-label="Delete session"
+          data-testid="delete-session-btn"
         >
           <X className="size-3.5" />
         </div>

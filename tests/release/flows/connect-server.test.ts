@@ -4,8 +4,8 @@ import { setBridge } from "../lib/ui";
 import { verifyConnected } from "../lib/flows/connect";
 import { expectVisible } from "../lib/assertions";
 
-describe("Connect to Server", () => {
-  it("should have a healthy automation bridge", async () => {
+describe("连接 Sidecar 服务", () => {
+  it("Automation Bridge 健康检查通过", async () => {
     const bridge = await createBridgeClient();
     setBridge(bridge);
 
@@ -15,13 +15,13 @@ describe("Connect to Server", () => {
     expect(health.webviewReady).toBe(true);
   });
 
-  it("should show the sidecar is running", async () => {
+  it("Sidecar 正在运行", async () => {
     const bridge = await createBridgeClient();
     const health = await bridge.health();
     expect(health.sidecarReady).toBe(true);
   });
 
-  it("should show connected status in the UI", async () => {
+  it("UI 显示已连接状态", async () => {
     const bridge = await createBridgeClient();
     setBridge(bridge);
 
