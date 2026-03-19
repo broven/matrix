@@ -5,6 +5,7 @@ import { authMiddleware } from "../auth/middleware.js";
 import { AgentManager } from "../agent-manager/index.js";
 import { Store } from "../store/index.js";
 import { SessionManager } from "../session-manager/index.js";
+import { WorktreeManager } from "../worktree-manager/index.js";
 import { unlinkSync } from "node:fs";
 
 const DB_PATH = "/tmp/matrix-integration-history.db";
@@ -31,7 +32,13 @@ describe("Integration: session history persistence", () => {
     app = new Hono();
     app.use("/sessions/*", authMiddleware(TOKEN));
     const sessionManager = new SessionManager();
-    app.route("/", createRestRoutes(agentManager, store, sessionManager));
+    app.route("/", createRestRoutes({
+      agentManager,
+      store,
+      sessionManager,
+      worktreeManager: new WorktreeManager(),
+      createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
+    }));
   });
 
   afterEach(() => {
@@ -153,7 +160,13 @@ describe("Integration: session history persistence", () => {
     const sessionManager = new SessionManager();
     app = new Hono();
     app.use("/sessions/*", authMiddleware(TOKEN));
-    app.route("/", createRestRoutes(new AgentManager(), store, sessionManager));
+    app.route("/", createRestRoutes({
+      agentManager: new AgentManager(),
+      store,
+      sessionManager,
+      worktreeManager: new WorktreeManager(),
+      createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
+    }));
 
     expect(store.getSession("sess_recoverable")?.status).toBe("suspended");
     expect(store.getSession("sess_unrecoverable")?.status).toBe("closed");

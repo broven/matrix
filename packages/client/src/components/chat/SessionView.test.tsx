@@ -33,6 +33,9 @@ const baseSessionInfo: SessionInfo = {
   lastActiveAt: "2026-03-14T10:00:00.000Z",
   suspendedAt: null,
   closeReason: null,
+  worktreeId: null,
+  repositoryId: null,
+  branch: null,
 };
 
 function createAttachedSession() {

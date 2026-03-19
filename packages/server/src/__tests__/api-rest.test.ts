@@ -4,6 +4,7 @@ import { createRestRoutes } from "../api/rest/index.js";
 import { AgentManager } from "../agent-manager/index.js";
 import { Store } from "../store/index.js";
 import { SessionManager } from "../session-manager/index.js";
+import { WorktreeManager } from "../worktree-manager/index.js";
 import { unlinkSync } from "node:fs";
 
 const DB_PATH = "/tmp/matrix-rest-test.db";
@@ -27,7 +28,13 @@ describe("REST API", () => {
     store = new Store(DB_PATH);
     sessionManager = new SessionManager();
     app = new Hono();
-    app.route("/", createRestRoutes(agentManager, store, sessionManager));
+    app.route("/", createRestRoutes({
+      agentManager,
+      store,
+      sessionManager,
+      worktreeManager: new WorktreeManager(),
+      createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
+    }));
   });
 
   afterEach(() => {
