@@ -215,7 +215,7 @@ export class SessionManager {
     const session = store.getSession(sessionId);
     if (
       !session
-      || session.status !== "suspended"
+      || !session.agentId
       || !session.recoverable
       || !session.agentSessionId
     ) {
@@ -223,20 +223,14 @@ export class SessionManager {
     }
 
     const promise = (async () => {
-      store.updateSessionState(sessionId, {
-        status: "restoring",
-        suspendedAt: null,
-        closeReason: null,
-      });
-
       try {
         const { bridge, agentSessionId } = await factory(
           sessionId,
-          session.agentId,
+          session.agentId!,
           session.cwd,
           session.agentSessionId,
         );
-        this.register(sessionId, bridge, session.agentId, session.cwd);
+        this.register(sessionId, bridge, session.agentId!, session.cwd);
         store.updateSessionState(sessionId, {
           status: "active",
           agentSessionId: agentSessionId ?? bridge.agentSessionId,
@@ -271,6 +265,10 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Reclaim resources for idle sessions by killing agent bridges.
+   * Sessions remain "active" — agents are lazily restored on next prompt.
+   */
   suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): void {
     const cutoffMs = nowMs - idleTimeoutMs;
 
@@ -293,6 +291,7 @@ export class SessionManager {
         continue;
       }
 
+      // Kill the bridge to reclaim resources, but keep session active
       entry.explicitlyClosed = true;
       if (entry.restartTimer) {
         clearTimeout(entry.restartTimer);
@@ -300,9 +299,7 @@ export class SessionManager {
       this.sessions.delete(session.sessionId);
       entry.bridge.destroy();
       store.updateSessionState(session.sessionId, {
-        status: "suspended",
         suspendedAt: new Date(nowMs).toISOString(),
-        closeReason: null,
       });
     }
   }

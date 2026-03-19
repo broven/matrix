@@ -94,7 +94,7 @@ export class MatrixClient {
     return res.json();
   }
 
-  async createSession(request: CreateSessionRequest): Promise<MatrixSession> {
+  async createSession(request: CreateSessionRequest): Promise<CreateSessionResponse> {
     const res = await this.fetch("/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -104,16 +104,7 @@ export class MatrixClient {
       const err = await res.json().catch(() => ({ error: "Failed to create session" }));
       throw new Error((err as any).error || `Failed to create session: ${res.status}`);
     }
-    const data: CreateSessionResponse = await res.json();
-
-    const session = new MatrixSession(
-      data.sessionId,
-      this.transport!,
-      (path, init) => this.fetch(path, init),
-    );
-    this.sessions.set(data.sessionId, session);
-
-    return session;
+    return res.json();
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -229,7 +220,7 @@ export class MatrixClient {
     return res.json();
   }
 
-  async createWorktree(repositoryId: string, request: CreateWorktreeRequest): Promise<CreateWorktreeResponse> {
+  async createWorktree(repositoryId: string, request: { branch: string; baseBranch: string }): Promise<CreateWorktreeResponse> {
     const res = await this.fetch(`/repositories/${repositoryId}/worktrees`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

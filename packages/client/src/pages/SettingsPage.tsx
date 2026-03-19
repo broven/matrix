@@ -9,7 +9,7 @@ import { hasLocalServer, isTauri, isMacOS, isMobilePlatform } from "@/lib/platfo
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { ShareServerModal } from "@/components/ShareServerModal";
 import { FileExplorerDialog } from "@/components/repository/FileExplorerDialog";
-import type { ServerConfig } from "@matrix/protocol";
+import type { AgentListItem, ServerConfig } from "@matrix/protocol";
 
 export function SettingsPage({ onBack }: { onBack: () => void }) {
   const { client, connect, connectionInfo, status } = useMatrixClient();
@@ -29,12 +29,19 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const [browsePath, setBrowsePath] = useState<{ field: "reposPath" | "worktreesPath" } | null>(null);
+  const [agents, setAgents] = useState<AgentListItem[]>([]);
 
   useEffect(() => {
     if (!client) return;
     setConfigLoading(true);
-    client.getServerConfig()
-      .then(setServerConfig)
+    Promise.all([
+      client.getServerConfig(),
+      client.getAgents(),
+    ])
+      .then(([config, agentList]) => {
+        setServerConfig(config);
+        setAgents(agentList);
+      })
       .catch(() => {})
       .finally(() => setConfigLoading(false));
   }, [client]);
@@ -231,6 +238,23 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
                         <FolderOpen className="size-4" />
                       </Button>
                     </div>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Default Agent
+                    </label>
+                    <select
+                      value={serverConfig.defaultAgent ?? ""}
+                      onChange={(e) => setServerConfig({ ...serverConfig, defaultAgent: e.target.value || undefined })}
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Auto (first available)</option>
+                      {agents.filter((a) => a.available).map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <Button
                     size="sm"

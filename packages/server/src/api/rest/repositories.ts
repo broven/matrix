@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { nanoid } from "nanoid";
 import type { Store } from "../../store/index.js";
 import type { SessionManager } from "../../session-manager/index.js";
 import type { WorktreeManager } from "../../worktree-manager/index.js";
@@ -11,15 +12,10 @@ interface RepositoryRouteDeps {
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
   cloneManager: CloneManager;
-  createSessionForWorktree: (
-    agentId: string,
-    cwd: string,
-    worktreeId: string,
-  ) => Promise<{ sessionId: string; modes: { currentModeId: string; availableModes: unknown[] } }>;
 }
 
 export function repositoryRoutes(deps: RepositoryRouteDeps) {
-  const { store, sessionManager, worktreeManager, cloneManager, createSessionForWorktree } = deps;
+  const { store, sessionManager, worktreeManager, cloneManager } = deps;
   const app = new Hono();
 
   // ── Repositories ────────────────────────────────────────────────
@@ -112,8 +108,8 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
 
     const body = await c.req.json<CreateWorktreeRequest>();
 
-    if (!body.branch || !body.baseBranch || !body.agentId) {
-      return c.json({ error: "branch, baseBranch, and agentId are required" }, 400);
+    if (!body.branch || !body.baseBranch) {
+      return c.json({ error: "branch and baseBranch are required" }, 400);
     }
 
     // Validate branch name (git check-ref-format rules)
@@ -124,7 +120,6 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
 
     let worktreePath: string | null = null;
     let worktreeId: string | null = null;
-    let sessionId: string | null = null;
     try {
       // Create the git worktree
       worktreePath = await worktreeManager.createWorktree(
@@ -139,24 +134,17 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
         body.branch,
         body.baseBranch,
         worktreePath,
-        body.taskDescription,
       );
       worktreeId = worktree.id;
 
-      // Create agent session in the new worktree
-      const session = await createSessionForWorktree(
-        body.agentId,
-        worktreePath,
-        worktree.id,
-      );
-      sessionId = session.sessionId;
+      // Create session record (no agent spawned yet — lazy init on first prompt)
+      const sessionId = `sess_${nanoid()}`;
+      store.createSession(sessionId, null, worktreePath, {
+        worktreeId: worktree.id,
+      });
 
-      return c.json({ worktree, session }, 201);
+      return c.json({ worktree, sessionId }, 201);
     } catch (error) {
-      // Rollback: tear down session if it was registered
-      if (sessionId) {
-        try { sessionManager.closeSession(sessionId, store); } catch { /* best-effort */ }
-      }
       // Rollback: clean up DB record if it was created
       if (worktreeId) {
         try { store.deleteWorktree(worktreeId); } catch { /* best-effort */ }

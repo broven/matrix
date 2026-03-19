@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AvailableCommand, HistoryEntry, SessionInfo, SessionUpdate } from "@matrix/protocol";
+import type { AgentListItem, AvailableCommand, HistoryEntry, SessionInfo, SessionUpdate, ServerConfig } from "@matrix/protocol";
 import type { MatrixSession, PromptCallbacks } from "@matrix/sdk";
 import { nanoid } from "nanoid";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
@@ -11,52 +11,60 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface SessionViewProps {
   sessionInfo: SessionInfo;
+  agents: AgentListItem[];
   onSessionInfoChange?: (sessionId: string, patch: Partial<SessionInfo>) => void;
 }
 
-type ViewStatus = SessionInfo["status"];
+type ViewStatus = "active" | "closed";
 
 function isTerminalSessionError(code: string) {
   return code === "session_closed" || code === "session_unavailable" || code === "session_not_found";
 }
 
-function getInputPlaceholder(status: ViewStatus) {
-  switch (status) {
-    case "active":
-      return "Ask to make changes, @mention files, run /commands";
-    case "suspended":
-      return "Send a message to resume this session...";
-    case "restoring":
-      return "Restoring session...";
-    case "closed":
-      return "This session is closed.";
-  }
+function getInputPlaceholder(status: ViewStatus, hasAgent: boolean) {
+  if (status === "closed") return "This session is closed.";
+  if (!hasAgent) return "Select an agent and send a message to start...";
+  return "Ask to make changes, @mention files, run /commands";
 }
 
 function getStatusMessage(status: ViewStatus, errorMessage: string | null) {
   if (errorMessage) return errorMessage;
-
-  switch (status) {
-    case "active":
-      return null;
-    case "suspended":
-      return "This session is suspended to save memory. Sending a message will restore it.";
-    case "restoring":
-      return "Restoring agent state before sending your message.";
-    case "closed":
-      return "This session is closed. History remains available, but new prompts are disabled.";
-  }
+  if (status === "closed") return "This session is closed. History remains available, but new prompts are disabled.";
+  return null;
 }
 
-export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewProps) {
+export function SessionView({ sessionInfo, agents, onSessionInfoChange }: SessionViewProps) {
   const { client } = useMatrixClient();
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [session, setSession] = useState<MatrixSession | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [viewStatus, setViewStatus] = useState<ViewStatus>(sessionInfo.status);
+  const [viewStatus, setViewStatus] = useState<ViewStatus>(
+    sessionInfo.status === "closed" ? "closed" : "active",
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(sessionInfo.agentId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load default agent from server config if no agent selected
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
+
+  useEffect(() => {
+    if (selectedAgentId || !client) return;
+    client.getServerConfig().then((config: ServerConfig) => {
+      if (config.defaultAgent) {
+        setSelectedAgentId(config.defaultAgent);
+      } else {
+        // Fall back to first available agent
+        const firstAvailable = agentsRef.current.find((a) => a.available);
+        if (firstAvailable) setSelectedAgentId(firstAvailable.id);
+      }
+    }).catch(() => {
+      const firstAvailable = agentsRef.current.find((a) => a.available);
+      if (firstAvailable) setSelectedAgentId(firstAvailable.id);
+    });
+  }, [client, selectedAgentId]);
 
   const addEvent = useCallback((type: string, data: SessionUpdate) => {
     setEvents((previous) => [
@@ -103,7 +111,7 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
   );
 
   useEffect(() => {
-    setViewStatus(sessionInfo.status);
+    setViewStatus(sessionInfo.status === "closed" ? "closed" : "active");
   }, [sessionInfo.sessionId, sessionInfo.status]);
 
   useEffect(() => {
@@ -127,20 +135,11 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
       onAvailableCommands: (commands) => setAvailableCommands(commands),
       onHistorySync: (history) => replaceEventsFromHistory(history),
       onSuspended: () => {
+        // Agent suspended — session stays active, agent will be lazily restored
         setIsProcessing(false);
-        setViewStatus("suspended");
-        onSessionInfoChange?.(sessionInfo.sessionId, {
-          status: "suspended",
-          suspendedAt: new Date().toISOString(),
-        });
       },
       onRestoring: () => {
-        setViewStatus("restoring");
         setErrorMessage(null);
-        onSessionInfoChange?.(sessionInfo.sessionId, {
-          status: "restoring",
-          closeReason: null,
-        });
       },
       onComplete: () => {
         setIsProcessing(false);
@@ -148,8 +147,6 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
         setErrorMessage(null);
         onSessionInfoChange?.(sessionInfo.sessionId, {
           status: "active",
-          suspendedAt: null,
-          closeReason: null,
           lastActiveAt: new Date().toISOString(),
         });
       },
@@ -184,7 +181,11 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
 
   const handleSend = useCallback(
     (text: string) => {
-      if (!session || viewStatus === "closed" || viewStatus === "restoring") return;
+      if (!session || viewStatus === "closed") return;
+      if (!selectedAgentId) {
+        setErrorMessage("Please select an agent before sending a message.");
+        return;
+      }
 
       setIsProcessing(true);
       setErrorMessage(null);
@@ -197,9 +198,13 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
         onComplete: () => setIsProcessing(false),
       };
 
-      session.prompt(text, callbacks);
+      // Include agentId in the prompt for lazy initialization
+      session.promptWithContent(
+        [{ type: "text", text, agentId: selectedAgentId }],
+        callbacks,
+      );
     },
-    [addEvent, session, viewStatus],
+    [addEvent, session, viewStatus, selectedAgentId],
   );
 
   const handleCancel = useCallback(() => {
@@ -224,19 +229,16 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
+  const hasAgent = Boolean(sessionInfo.agentId || selectedAgentId);
   const statusMessage = getStatusMessage(viewStatus, errorMessage);
   const statusBarStatus = errorMessage
     ? "error"
-    : viewStatus === "restoring"
-      ? "restoring"
-      : viewStatus === "suspended"
-        ? "suspended"
-        : viewStatus === "closed"
-          ? "closed"
-          : isProcessing
-            ? "working"
-            : "idle";
-  const inputDisabled = isProcessing || viewStatus === "restoring" || viewStatus === "closed";
+    : viewStatus === "closed"
+      ? "closed"
+      : isProcessing
+        ? "working"
+        : "idle";
+  const inputDisabled = isProcessing || viewStatus === "closed";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -254,9 +256,11 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
       <PromptInput
         onSend={handleSend}
         disabled={inputDisabled}
-        placeholder={getInputPlaceholder(viewStatus)}
+        placeholder={getInputPlaceholder(viewStatus, hasAgent)}
         isProcessing={isProcessing}
-        agentName={sessionInfo.agentId}
+        agents={agents}
+        selectedAgentId={selectedAgentId}
+        onAgentChange={setSelectedAgentId}
         availableCommands={availableCommands}
       />
     </div>

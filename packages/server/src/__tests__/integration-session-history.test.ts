@@ -168,7 +168,7 @@ describe("Integration: session history persistence", () => {
       createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
     }));
 
-    expect(store.getSession("sess_recoverable")?.status).toBe("suspended");
+    expect(store.getSession("sess_recoverable")?.status).toBe("active");
     expect(store.getSession("sess_unrecoverable")?.status).toBe("closed");
     expect(store.getSession("sess_unrecoverable")?.closeReason).toBe("server_restart_unrecoverable");
 

@@ -31,10 +31,6 @@ function getStatusColor(status: SessionInfo["status"]) {
   switch (status) {
     case "active":
       return "bg-success";
-    case "restoring":
-      return "bg-primary animate-pulse";
-    case "suspended":
-      return "bg-amber-400";
     case "closed":
       return "bg-muted-foreground/30";
   }
@@ -171,7 +167,7 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
       >
         <div className={cn("size-2 shrink-0 rounded-full", getStatusColor(session.status))} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{session.agentId}</p>
+          <p className="truncate text-sm font-medium">{session.branch ?? session.agentId ?? "New session"}</p>
           <p className="truncate text-xs text-muted-foreground">
             {formatRelativeTime(session.lastActiveAt || session.createdAt)}
           </p>

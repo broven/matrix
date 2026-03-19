@@ -20,6 +20,7 @@ interface CreateSessionOptions {
 
 interface SessionStatePatch {
   status?: SessionInfo["status"];
+  agentId?: string | null;
   recoverable?: boolean;
   agentSessionId?: string | null;
   lastActiveAt?: string;
@@ -41,7 +42,7 @@ export class Store {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         session_id TEXT PRIMARY KEY,
-        agent_id TEXT NOT NULL,
+        agent_id TEXT,
         cwd TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -280,7 +281,7 @@ export class Store {
 
   createSession(
     sessionId: string,
-    agentId: string,
+    agentId: string | null,
     cwd: string,
     options: CreateSessionOptions = {},
   ): SessionInfo {
@@ -382,6 +383,10 @@ export class Store {
       assignments.push("status = ?");
       values.push(patch.status);
     }
+    if (patch.agentId !== undefined) {
+      assignments.push("agent_id = ?");
+      values.push(patch.agentId);
+    }
     if (patch.recoverable !== undefined) {
       assignments.push("recoverable = ?");
       values.push(patch.recoverable ? 1 : 0);
@@ -419,20 +424,28 @@ export class Store {
 
   normalizeSessionsOnStartup(): void {
     const now = this.getCurrentTimestamp();
+    // Recoverable sessions stay active — agent will be lazily restored on next prompt
     this.db.prepare(
       `UPDATE sessions
-      SET status = 'suspended',
-          suspended_at = COALESCE(suspended_at, ?),
-          close_reason = NULL
-      WHERE status != 'closed' AND recoverable = 1`
+      SET suspended_at = COALESCE(suspended_at, ?)
+      WHERE status = 'active' AND recoverable = 1`
     ).run(now);
 
+    // Non-recoverable active sessions must be closed
     this.db.prepare(
       `UPDATE sessions
       SET status = 'closed',
           suspended_at = NULL,
           close_reason = 'server_restart_unrecoverable'
-      WHERE status != 'closed' AND recoverable = 0`
+      WHERE status = 'active' AND recoverable = 0 AND agent_id IS NOT NULL`
+    ).run();
+
+    // Close stale lazy sessions (never had an agent assigned)
+    this.db.prepare(
+      `UPDATE sessions
+      SET status = 'closed',
+          close_reason = 'server_restart_unused'
+      WHERE status = 'active' AND agent_id IS NULL`
     ).run();
   }
 
@@ -505,7 +518,7 @@ export class Store {
     const worktreeId = row.worktree_id == null ? null : String(row.worktree_id);
     return {
       sessionId: String(row.session_id),
-      agentId: String(row.agent_id),
+      agentId: row.agent_id == null ? null : String(row.agent_id),
       cwd: String(row.cwd),
       status: row.status as SessionInfo["status"],
       createdAt: String(row.created_at),

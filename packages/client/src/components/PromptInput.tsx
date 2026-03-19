@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from "react";
-import { ArrowUp, Plus } from "lucide-react";
-import type { AvailableCommand } from "@matrix/protocol";
+import type { AgentListItem, AvailableCommand } from "@matrix/protocol";
+import { ArrowUp, Plus, ChevronDown } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,9 @@ interface Props {
   disabled?: boolean;
   placeholder?: string;
   isProcessing?: boolean;
-  agentName?: string;
+  agents?: AgentListItem[];
+  selectedAgentId: string | null;
+  onAgentChange?: (agentId: string) => void;
   availableCommands?: AvailableCommand[];
 }
 
@@ -68,13 +70,17 @@ export function PromptInput({
   disabled,
   placeholder = "Ask to make changes, @mention files, run /commands",
   isProcessing,
-  agentName,
+  agents = [],
+  selectedAgentId,
+  onAgentChange,
   availableCommands = [],
 }: Props) {
   const [text, setText] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const { isOpen, filtered, selectedIndex, setSelectedIndex, slashIndex } =
     useSlashAutocomplete(text, availableCommands, cursorPos);
@@ -104,6 +110,18 @@ export function PromptInput({
     },
     [text, slashIndex, cursorPos],
   );
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!agentMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setAgentMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [agentMenuOpen]);
 
   const handleSend = () => {
     if (!text.trim()) return;
@@ -144,6 +162,9 @@ export function PromptInput({
       handleSend();
     }
   };
+
+  const availableAgents = agents.filter((a) => a.available);
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId);
 
   return (
     <div className="px-4 pb-4 pt-2 md:px-6">
@@ -203,12 +224,38 @@ export function PromptInput({
               data-testid="chat-input"
             />
             <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
-              <div className="flex items-center gap-2">
-                {agentName && (
-                  <span className="flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
-                    <span className="size-1.5 rounded-full bg-primary" />
-                    {agentName}
-                  </span>
+              <div className="relative flex items-center gap-2" ref={menuRef}>
+                <button
+                  type="button"
+                  onClick={() => setAgentMenuOpen(!agentMenuOpen)}
+                  className="flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                >
+                  <span className="size-1.5 rounded-full bg-primary" />
+                  {selectedAgent?.name ?? "Select agent"}
+                  <ChevronDown className="size-3 text-muted-foreground" />
+                </button>
+                {agentMenuOpen && availableAgents.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-1 min-w-[180px] rounded-lg border border-border bg-popover p-1 shadow-md">
+                    {availableAgents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => {
+                          onAgentChange?.(agent.id);
+                          setAgentMenuOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                          agent.id === selectedAgentId
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/50",
+                        )}
+                      >
+                        <span className="size-1.5 rounded-full bg-primary" />
+                        <span className="truncate">{agent.name}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-1.5">

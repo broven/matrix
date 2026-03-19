@@ -15,9 +15,7 @@ import { Settings } from "lucide-react";
 
 const SESSION_STATUS_ORDER: Record<SessionInfo["status"], number> = {
   active: 0,
-  restoring: 1,
-  suspended: 2,
-  closed: 3,
+  closed: 1,
 };
 
 function sortSessions(sessions: SessionInfo[]) {
@@ -193,10 +191,10 @@ export function AppLayout() {
   const handleCreateSession = async (agentId: string, cwd: string) => {
     if (!client) return null;
 
-    const session = await client.createSession({ agentId, cwd });
+    const { sessionId } = await client.createSession({ cwd });
     const optimisticSession: SessionInfo = {
-      sessionId: session.sessionId,
-      agentId,
+      sessionId,
+      agentId: null,
       cwd,
       createdAt: new Date().toISOString(),
       status: "active",
@@ -211,15 +209,15 @@ export function AppLayout() {
     };
 
     setSessions((previous) => {
-      const remaining = previous.filter((item) => item.sessionId !== session.sessionId);
+      const remaining = previous.filter((item) => item.sessionId !== sessionId);
       return [optimisticSession, ...remaining];
     });
-    setSelectedSessionId(session.sessionId);
+    setSelectedSessionId(sessionId);
     setMobileSidebarOpen(false);
 
     void handleRefreshSessions();
 
-    return session.sessionId;
+    return sessionId;
   };
 
   const handleAddRepository = async (path: string, name?: string) => {
@@ -293,16 +291,12 @@ export function AppLayout() {
     repoId: string,
     branch: string,
     baseBranch: string,
-    agentId: string,
-    taskDescription?: string,
   ) => {
     if (!client) return;
 
     const result = await client.createWorktree(repoId, {
       branch,
       baseBranch,
-      agentId,
-      taskDescription,
     });
 
     // Refresh worktrees and sessions
@@ -310,8 +304,8 @@ export function AppLayout() {
     void handleRefreshSessions();
 
     // Select the new session
-    if (result.session?.sessionId) {
-      setSelectedSessionId(result.session.sessionId);
+    if (result.sessionId) {
+      setSelectedSessionId(result.sessionId);
       setMobileSidebarOpen(false);
     }
   };
@@ -389,6 +383,7 @@ export function AppLayout() {
           <SessionView
             key={selectedSession.sessionId}
             sessionInfo={selectedSession}
+            agents={agents}
             onSessionInfoChange={handleSessionInfoChange}
           />
         ) : (
@@ -456,7 +451,6 @@ export function AppLayout() {
       {worktreeDialogRepo && (
         <NewWorktreeDialog
           repository={worktreeDialogRepo}
-          agents={agents}
           onCreateWorktree={handleCreateWorktree}
           onClose={() => setWorktreeDialogRepo(null)}
         />

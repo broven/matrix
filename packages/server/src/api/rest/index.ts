@@ -16,11 +16,6 @@ interface RestRouteDeps {
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
   cloneManager: CloneManager;
-  createSessionForWorktree: (
-    agentId: string,
-    cwd: string,
-    worktreeId: string,
-  ) => Promise<{ sessionId: string; modes: { currentModeId: string; availableModes: unknown[] } }>;
 }
 
 export function createRestRoutes(deps: RestRouteDeps) {
@@ -32,7 +27,6 @@ export function createRestRoutes(deps: RestRouteDeps) {
     sessionManager: deps.sessionManager,
     worktreeManager: deps.worktreeManager,
     cloneManager: deps.cloneManager,
-    createSessionForWorktree: deps.createSessionForWorktree,
   }));
   app.route("/", filesystemRoutes());
   app.route("/", serverConfigRoutes());

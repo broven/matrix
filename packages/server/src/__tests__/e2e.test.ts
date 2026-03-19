@@ -218,7 +218,7 @@ function createTestApp() {
     }
 
     let bridge = sessionManager.getBridge(sessionId);
-    if (!bridge && session.status === "suspended" && session.recoverable) {
+    if (!bridge && session.agentId && session.recoverable) {
       bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
     }
 
@@ -602,7 +602,7 @@ describe("E2E Integration Tests", () => {
       expect(ids).toContain(sid2);
     });
 
-    it("startup normalization suspends recoverable sessions and closes non-recoverable sessions", async () => {
+    it("startup normalization keeps recoverable sessions active and closes non-recoverable sessions", async () => {
       ctx.cleanup();
 
       const preRestartStore = new Store(DB_PATH);
@@ -625,7 +625,8 @@ describe("E2E Integration Tests", () => {
 
       const recoverable = sessions.find((s: any) => s.sessionId === "sess_recoverable");
       expect(recoverable).toBeDefined();
-      expect(recoverable.status).toBe("suspended");
+      // Recoverable sessions stay active — agent will be lazily restored
+      expect(recoverable.status).toBe("active");
       expect(recoverable.closeReason).toBeNull();
 
       const unrecoverable = sessions.find((s: any) => s.sessionId === "sess_unrecoverable");
@@ -749,13 +750,12 @@ describe("E2E Integration Tests", () => {
       expect(agentEntry).toBeDefined();
     });
 
-    it("POST /messages restores a suspended recoverable session before forwarding the prompt", async () => {
+    it("POST /messages restores an idle recoverable session before forwarding the prompt", async () => {
       ctx.store.createSession("sess_suspended", "test-agent", "/tmp/suspended", {
         recoverable: true,
         agentSessionId: "agent-suspended-1",
       });
       ctx.store.updateSessionState("sess_suspended", {
-        status: "suspended",
         suspendedAt: "2026-03-14T12:00:00.000Z",
       });
 
