@@ -106,6 +106,7 @@ export function Sidebar({
               connectionStatus === "connected" ? "bg-success" : "bg-muted-foreground/40",
             )}
             title={connectionStatus}
+            data-testid={connectionStatus === "connected" ? "connection-status-connected" : undefined}
           />
         </div>
 
@@ -139,7 +140,7 @@ export function Sidebar({
 
             return (
               <Collapsible key={repo.id} open={isExpanded} onOpenChange={() => toggleRepo(repo.id)}>
-                <div className="group flex items-center gap-1 rounded-lg px-1 py-1">
+                <div className="group flex items-center gap-1 rounded-lg px-1 py-1" data-testid={`repo-item-${repo.name}`}>
                   <CollapsibleTrigger className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium hover:bg-accent/50">
                     {isExpanded ? (
                       <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -158,6 +159,7 @@ export function Sidebar({
                       onCreateWorktree(repo.id);
                     }}
                     title="New worktree"
+                    data-testid="new-session-btn"
                   >
                     <Plus className="size-3.5" />
                   </Button>

@@ -93,6 +93,11 @@ impl<A: IosAppFacade, W: IosWebviewFacade> TestControlCapability for IosSimulato
             "webview": webview,
         }))
     }
+
+    fn mock_file_dialog(&self, _path: &str) -> Result<Value, AutomationErrorCode> {
+        // File dialogs are not applicable on iOS simulator
+        Err(AutomationErrorCode::UnsupportedAction)
+    }
 }
 
 impl<A: IosAppFacade, W: IosWebviewFacade> AutomationRouterBackend for IosSimulatorAdapter<A, W> {

@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::automation::core::capabilities::{NativeCapability, TestControlCapability};
 use crate::automation::core::errors::AutomationErrorCode;
@@ -58,12 +58,25 @@ where
 pub struct DesktopAutomationAdapter<W, S> {
     window: W,
     sidecar: S,
+    mock_file_dialog_path: Mutex<Option<String>>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
 impl<W, S> DesktopAutomationAdapter<W, S> {
     pub fn new(window: W, sidecar: S) -> Self {
-        Self { window, sidecar }
+        Self {
+            window,
+            sidecar,
+            mock_file_dialog_path: Mutex::new(None),
+        }
+    }
+
+    /// Take the mock file dialog path (consuming it so it's only used once).
+    pub fn take_mock_file_dialog_path(&self) -> Option<String> {
+        self.mock_file_dialog_path
+            .lock()
+            .expect("lock should succeed")
+            .take()
     }
 }
 
@@ -121,6 +134,14 @@ impl<W: DesktopWindowFacade, S: DesktopSidecarFacade> TestControlCapability for 
             "sidecarRestarted": sidecar_restarted,
             "scopes": scopes,
         }))
+    }
+
+    fn mock_file_dialog(&self, path: &str) -> Result<Value, AutomationErrorCode> {
+        *self
+            .mock_file_dialog_path
+            .lock()
+            .expect("lock should succeed") = Some(path.to_string());
+        Ok(json!({ "mocked": true, "path": path }))
     }
 }
 

@@ -22,6 +22,9 @@ pub trait WebviewCapability {
 
 pub trait TestControlCapability {
     fn reset(&self, scopes: &[ResetScope]) -> Result<Value, AutomationErrorCode>;
+
+    /// Mock the next file dialog to return the given path instead of opening the native picker.
+    fn mock_file_dialog(&self, path: &str) -> Result<Value, AutomationErrorCode>;
 }
 
 pub trait WaitCapability {
@@ -76,6 +79,16 @@ pub fn reset_test_control<C: TestControlCapability + ?Sized>(
     scopes: &[ResetScope],
 ) -> AutomationEnvelope<Value> {
     match capability.reset(scopes) {
+        Ok(result) => AutomationEnvelope::success(result),
+        Err(error) => AutomationEnvelope::failure(error),
+    }
+}
+
+pub fn mock_file_dialog<C: TestControlCapability + ?Sized>(
+    capability: &C,
+    path: &str,
+) -> AutomationEnvelope<Value> {
+    match capability.mock_file_dialog(path) {
         Ok(result) => AutomationEnvelope::success(result),
         Err(error) => AutomationEnvelope::failure(error),
     }
@@ -144,6 +157,10 @@ mod tests {
         fn reset(&self, scopes: &[ResetScope]) -> Result<Value, AutomationErrorCode> {
             self.reset_scopes.borrow_mut().push(scopes.to_vec());
             Ok(json!({ "resetScopes": scopes }))
+        }
+
+        fn mock_file_dialog(&self, path: &str) -> Result<Value, AutomationErrorCode> {
+            Ok(json!({ "mocked": true, "path": path }))
         }
     }
 

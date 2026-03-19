@@ -386,7 +386,7 @@ function StatusBadge({
   }
   if (connected) {
     return (
-      <Badge variant="default" className="gap-1">
+      <Badge variant="default" className="gap-1" data-testid="connection-status-connected">
         <Wifi className="size-3" />
         Online
       </Badge>

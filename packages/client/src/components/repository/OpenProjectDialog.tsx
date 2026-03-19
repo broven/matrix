@@ -71,6 +71,7 @@ export function OpenProjectDialog({ client, onAdd, onClose }: OpenProjectDialogP
                   placeholder="/path/to/your/project"
                   className="rounded-lg"
                   autoFocus
+                  data-testid="path-input"
                 />
                 <Button
                   variant="outline"
@@ -108,6 +109,7 @@ export function OpenProjectDialog({ client, onAdd, onClose }: OpenProjectDialogP
                 className={cn("rounded-lg")}
                 disabled={adding || !path.trim()}
                 onClick={handleOpen}
+                data-testid="confirm-btn"
               >
                 {adding ? (
                   <>

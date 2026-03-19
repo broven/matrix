@@ -130,6 +130,7 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
             type="button"
             className="rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
             onClick={confirmDelete}
+            data-testid="confirm-delete-btn"
           >
             Yes
           </button>
@@ -206,6 +207,7 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
             type="button"
             className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm text-destructive transition-colors hover:bg-destructive/10"
             onClick={triggerDelete}
+            data-testid="delete-repo-option"
           >
             <X className="size-3.5" />
             Delete

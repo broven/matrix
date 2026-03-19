@@ -23,17 +23,18 @@ export function AddRepositoryMenu({
         <Button
           className="w-full justify-center gap-2 rounded-xl text-sm"
           size="sm"
+          data-testid="add-repo-btn"
         >
           <FolderGit2 className="size-4" />
           Add Repository
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center" side="top">
-        <DropdownMenuItem onClick={onOpenProject}>
+        <DropdownMenuItem onClick={onOpenProject} data-testid="open-local-option">
           <FolderOpen className="size-4" />
           Open Project
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onCloneFromUrl}>
+        <DropdownMenuItem onClick={onCloneFromUrl} data-testid="clone-url-option">
           <Link className="size-4" />
           Clone from URL
         </DropdownMenuItem>
