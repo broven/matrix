@@ -1,6 +1,6 @@
 import { describe, it, beforeAll } from "vitest";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
-import { setBridge, click, type as typeText, waitFor } from "../lib/ui";
+import { setBridge, click, type as typeText, waitFor, isVisible } from "../lib/ui";
 import { expectVisible } from "../lib/assertions";
 
 describe("04 — Create Session", () => {
@@ -12,8 +12,17 @@ describe("04 — Create Session", () => {
   });
 
   it("should open a new session with chat input ready", async () => {
-    // Click the new session/worktree button (visible on repo header)
+    // Ensure at least one repo exists (from tests 02/03)
+    const hasRepo = await isVisible('[data-testid^="repo-item-"]');
+    if (!hasRepo) {
+      throw new Error("No repo in sidebar — tests 02/03 must run first");
+    }
+
+    // Click on a repo to expand it (so new-session-btn appears)
+    await click('[data-testid^="repo-item-"]');
     await waitFor('[data-testid="new-session-btn"]');
+
+    // Click new worktree button
     await click('[data-testid="new-session-btn"]');
 
     // Fill in the New Worktree dialog
@@ -23,8 +32,8 @@ describe("04 — Create Session", () => {
     // Click Create Worktree
     await click('[data-testid="create-worktree-btn"]');
 
-    // Wait for the chat interface to appear
-    await waitFor('[data-testid="chat-input"]', { timeout: 30_000 });
+    // Wait for the chat interface to appear (agent needs time to start)
+    await waitFor('[data-testid="chat-input"]', { timeout: 45_000 });
     await expectVisible('[data-testid="chat-input"]');
     await expectVisible('[data-testid="send-btn"]');
   });

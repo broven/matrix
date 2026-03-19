@@ -9,6 +9,12 @@ describe("07 — Delete Repository", () => {
   beforeAll(async () => {
     bridge = await createBridgeClient();
     setBridge(bridge);
+
+    // Wait for webview to be ready (test 06 may have just reloaded it)
+    await bridge.wait(
+      { kind: "webview.eval", script: "document.readyState === 'complete' && !!document.querySelector('[data-testid=\"add-repo-btn\"]')" },
+      { timeoutMs: 15_000, intervalMs: 500 },
+    );
   });
 
   it("should delete a worktree via the context menu", async () => {

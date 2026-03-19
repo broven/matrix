@@ -4,8 +4,8 @@ export default defineConfig({
   test: {
     root: import.meta.dirname,
     include: ["flows/**/*.test.ts"],
-    testTimeout: 30_000,
-    hookTimeout: 15_000,
+    testTimeout: 60_000,
+    hookTimeout: 30_000,
     setupFiles: ["./setup.ts"],
     sequence: {
       sequencer: class {
