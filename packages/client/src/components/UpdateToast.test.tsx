@@ -104,7 +104,7 @@ describe("UpdateToast", () => {
     const buttons = screen.getAllByRole("button");
     // The X close button is the last button (not Later or Update)
     const closeButton = buttons.find(
-      (btn) => !btn.textContent?.includes("Later") && !btn.textContent?.includes("Update")
+      (btn) => !btn.textContent?.includes("Later") && !btn.textContent?.includes("Update") && !btn.textContent?.includes("Release")
     );
     expect(closeButton).toBeTruthy();
     await userEvent.click(closeButton!);
@@ -120,8 +120,8 @@ describe("UpdateToast", () => {
     expect(screen.getByText("Download failed")).toBeInTheDocument();
   });
 
-  it("shows release notes when available", () => {
+  it("shows Release Notes button for available state", () => {
     renderToast({ state: "available", updateInfo: mockUpdateInfo });
-    expect(screen.getByText("Bug fixes and improvements")).toBeInTheDocument();
+    expect(screen.getByText("Release Notes")).toBeInTheDocument();
   });
 });

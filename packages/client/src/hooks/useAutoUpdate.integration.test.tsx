@@ -35,6 +35,10 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   },
 }));
 
+vi.mock("@tauri-apps/plugin-shell", () => ({
+  open: vi.fn(),
+}));
+
 // ── Imports (mocks are hoisted by vitest, so these see mocked modules) ───────
 
 import { UpdateProvider, useAutoUpdate } from "@/hooks/useAutoUpdate";
@@ -90,6 +94,15 @@ function renderApp() {
   );
 }
 
+/** Render the app and trigger a manual check to get to "available" state. */
+async function renderAndCheck(user: ReturnType<typeof userEvent.setup>) {
+  renderApp();
+  await user.click(screen.getByTestId("manual-check"));
+  await waitFor(() => {
+    expect(screen.getByText(/v0\.2\.0 available/)).toBeInTheDocument();
+  });
+}
+
 // ── Test suite ───────────────────────────────────────────────────────────────
 
 describe("useAutoUpdate integration", () => {
@@ -121,12 +134,7 @@ describe("useAutoUpdate integration", () => {
       return Promise.reject(new Error(`Unknown command: ${cmd}`));
     });
 
-    renderApp();
-
-    // Auto-check triggers on mount -> state becomes "available"
-    await waitFor(() => {
-      expect(screen.getByText(/v0\.2\.0 available/)).toBeInTheDocument();
-    });
+    await renderAndCheck(user);
 
     // Click "Update" to start download
     await user.click(screen.getByText("Update"));
@@ -174,12 +182,7 @@ describe("useAutoUpdate integration", () => {
       return Promise.reject(new Error(`Unknown command: ${cmd}`));
     });
 
-    renderApp();
-
-    // Wait for "available" toast
-    await waitFor(() => {
-      expect(screen.getByText(/v0\.2\.0 available/)).toBeInTheDocument();
-    });
+    await renderAndCheck(user);
 
     // Click "Later" to dismiss
     await user.click(screen.getByText("Later"));
@@ -219,12 +222,7 @@ describe("useAutoUpdate integration", () => {
       return Promise.reject(new Error(`Unknown command: ${cmd}`));
     });
 
-    renderApp();
-
-    // Wait for available state
-    await waitFor(() => {
-      expect(screen.getByText(/v0\.2\.0 available/)).toBeInTheDocument();
-    });
+    await renderAndCheck(user);
 
     // Click Update to start download
     await user.click(screen.getByText("Update"));
@@ -266,6 +264,8 @@ describe("useAutoUpdate integration", () => {
   // ─── 4. No update available — toast doesn't show ──────────────────────
 
   it("no update available shows no toast", async () => {
+    const user = userEvent.setup();
+
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "check_update") return Promise.resolve(NO_UPDATE_RESULT);
       return Promise.reject(new Error(`Unknown command: ${cmd}`));
@@ -273,7 +273,9 @@ describe("useAutoUpdate integration", () => {
 
     renderApp();
 
-    // Wait for async channel load + auto-check to complete
+    await user.click(screen.getByTestId("manual-check"));
+
+    // Wait for check to complete
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("check_update", { channel: "stable" });
     });
@@ -304,12 +306,7 @@ describe("useAutoUpdate integration", () => {
       return Promise.reject(new Error(`Unknown command: ${cmd}`));
     });
 
-    renderApp();
-
-    // Wait for available
-    await waitFor(() => {
-      expect(screen.getByText(/v0\.2\.0 available/)).toBeInTheDocument();
-    });
+    await renderAndCheck(user);
 
     // Start download
     await user.click(screen.getByText("Update"));
@@ -338,12 +335,16 @@ describe("useAutoUpdate integration", () => {
   // ─── 6. Network error during check ────────────────────────────────────
 
   it("network error during check sets error and shows no toast", async () => {
+    const user = userEvent.setup();
+
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "check_update") return Promise.reject(new Error("Network error"));
       return Promise.reject(new Error(`Unknown command: ${cmd}`));
     });
 
     renderApp();
+
+    await user.click(screen.getByTestId("manual-check"));
 
     // Wait for error state to be set
     await waitFor(() => {
