@@ -9,20 +9,35 @@ interface WorktreeListEntry {
 }
 
 export class WorktreeManager {
-  private wtAvailable: boolean | null = null;
+  private wtPath: string | false | null = null; // null=unchecked, false=not found
 
   /**
-   * Check if `wt` (Worktrunk) CLI is available.
+   * Resolve the `wt` binary path.
+   * Priority: bundled binary → PATH → not found (git fallback).
    */
-  async isWtAvailable(): Promise<boolean> {
-    if (this.wtAvailable !== null) return this.wtAvailable;
+  private async resolveWt(): Promise<string | null> {
+    if (this.wtPath !== null) return this.wtPath || null;
+
+    // 1. Bundled binary at packages/server/bin/wt
+    const bundled = path.join(import.meta.dir, "../../bin/wt");
+    try {
+      if (await Bun.file(bundled).exists()) {
+        this.wtPath = bundled;
+        return bundled;
+      }
+    } catch { /* fall through */ }
+
+    // 2. PATH
     try {
       const result = await $`which wt`.quiet();
-      this.wtAvailable = result.exitCode === 0;
-    } catch {
-      this.wtAvailable = false;
-    }
-    return this.wtAvailable;
+      if (result.exitCode === 0) {
+        this.wtPath = result.stdout.toString().trim();
+        return this.wtPath;
+      }
+    } catch { /* fall through */ }
+
+    this.wtPath = false;
+    return null;
   }
 
   /**
@@ -33,8 +48,9 @@ export class WorktreeManager {
     branch: string,
     baseBranch: string,
   ): Promise<string> {
-    if (await this.isWtAvailable()) {
-      return this.createWithWt(repoPath, branch, baseBranch);
+    const wt = await this.resolveWt();
+    if (wt) {
+      return this.createWithWt(wt, repoPath, branch, baseBranch);
     }
     return this.createWithGit(repoPath, branch, baseBranch);
   }
@@ -82,8 +98,9 @@ export class WorktreeManager {
    * Remove a worktree by branch name or path.
    */
   async removeWorktree(repoPath: string, branch: string): Promise<void> {
-    if (await this.isWtAvailable()) {
-      await this.removeWithWt(repoPath, branch);
+    const wt = await this.resolveWt();
+    if (wt) {
+      await this.removeWithWt(wt, repoPath, branch);
     } else {
       await this.removeWithGit(repoPath, branch);
     }
@@ -130,8 +147,8 @@ export class WorktreeManager {
 
   // ── wt-based implementations ──────────────────────────────────────
 
-  private async createWithWt(repoPath: string, branch: string, baseBranch: string): Promise<string> {
-    const result = await $`wt switch -c ${branch} --base ${baseBranch} --yes`.cwd(repoPath).quiet();
+  private async createWithWt(wt: string, repoPath: string, branch: string, baseBranch: string): Promise<string> {
+    const result = await $`${wt} switch -c ${branch} --base ${baseBranch} --yes`.cwd(repoPath).quiet();
     if (result.exitCode !== 0) {
       throw new Error(`wt switch failed: ${result.stderr.toString()}`);
     }
@@ -144,8 +161,8 @@ export class WorktreeManager {
     return worktreePath;
   }
 
-  private async removeWithWt(repoPath: string, branch: string): Promise<void> {
-    const result = await $`wt remove ${branch}`.cwd(repoPath).quiet();
+  private async removeWithWt(wt: string, repoPath: string, branch: string): Promise<void> {
+    const result = await $`${wt} remove ${branch}`.cwd(repoPath).quiet();
     if (result.exitCode !== 0) {
       throw new Error(`wt remove failed: ${result.stderr.toString()}`);
     }
