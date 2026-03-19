@@ -50,7 +50,14 @@ export async function resetUI(bridge: BridgeClient): Promise<void> {
     await click('[aria-label="Close settings"]').catch(() => {});
     await new Promise((r) => setTimeout(r, 500));
   }
-  // Dismiss any open dialog by pressing Escape
+  // Close NewWorktreeDialog if open (it doesn't respond to Escape, click backdrop)
+  await bridge.eval(`
+    (() => {
+      const backdrop = document.querySelector('.fixed.inset-0.z-50');
+      if (backdrop) backdrop.click();
+    })()
+  `).catch(() => {});
+  // Dismiss any other open dialog by pressing Escape
   await bridge.eval(`
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   `).catch(() => {});
@@ -87,10 +94,11 @@ export async function ensureWorktree(
 
   // Click on the repo to expand it
   await click(`[data-testid="repo-item-${name}"]`);
-  await waitFor('[data-testid="new-session-btn"]');
+  // Wait for new-session-btn scoped to THIS repo's item
+  await waitFor(`[data-testid="repo-item-${name}"] [data-testid="new-session-btn"]`);
 
-  // Click new worktree button
-  await click('[data-testid="new-session-btn"]');
+  // Click new worktree button scoped to THIS repo
+  await click(`[data-testid="repo-item-${name}"] [data-testid="new-session-btn"]`);
 
   // Fill in the dialog
   await waitFor('[data-testid="worktree-branch-input"]');

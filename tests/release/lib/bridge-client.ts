@@ -60,6 +60,9 @@ async function loadDiscovery(): Promise<AutomationDiscovery> {
   return JSON.parse(raw) as AutomationDiscovery;
 }
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 200;
+
 async function request(
   baseUrl: string,
   token: string,
@@ -71,23 +74,32 @@ async function request(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
   };
-  const init: RequestInit = { method, headers };
-
-  if (body !== undefined) {
+  const jsonBody = body !== undefined ? JSON.stringify(body) : undefined;
+  if (jsonBody !== undefined) {
     headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(body);
   }
 
-  const res = await fetch(url, init);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const init: RequestInit = { method, headers, body: jsonBody };
+    const res = await fetch(url, init);
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Bridge ${method} ${path} returned ${res.status}: ${text}`);
+    // 408 = server read timeout (transient) — retry
+    if (res.status === 408 && attempt < MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Bridge ${method} ${path} returned ${res.status}: ${text}`);
+    }
+
+    const text = await res.text();
+    if (!text) return undefined;
+    return JSON.parse(text);
   }
 
-  const text = await res.text();
-  if (!text) return undefined;
-  return JSON.parse(text);
+  throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
 }
 
 export async function createBridgeClient(): Promise<BridgeClient> {
