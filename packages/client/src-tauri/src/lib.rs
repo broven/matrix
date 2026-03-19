@@ -7,6 +7,9 @@ use std::sync::{Arc, RwLock};
 #[cfg(any(test, debug_assertions))]
 use serde_json::json;
 
+#[cfg(all(desktop, any(test, debug_assertions)))]
+use std::path::{Path, PathBuf};
+
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
@@ -14,6 +17,9 @@ mod updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(desktop, any(test, debug_assertions)))]
+    append_automation_startup_log("entered_run");
+
     let builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
 
     #[cfg(target_os = "macos")]
@@ -25,8 +31,14 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            #[cfg(all(desktop, any(test, debug_assertions)))]
+            append_automation_startup_log("entered_setup_closure");
+
             #[cfg(desktop)]
             {
+                #[cfg(any(test, debug_assertions))]
+                append_automation_startup_log("entered_desktop_setup");
+
                 use tauri_plugin_shell::ShellExt;
 
                 let resource_dir = app
@@ -54,10 +66,14 @@ pub fn run() {
 
                 #[cfg(any(test, debug_assertions))]
                 {
+                    append_automation_startup_log("entered_automation_setup");
                     let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
                         .ok()
                         .and_then(|raw| raw.parse::<u16>().ok())
                         .unwrap_or(18_765);
+                    append_automation_startup_log(&format!(
+                        "configured_port={configured_port}"
+                    ));
 
                     let mut automation_state =
                         automation::state::AutomationState::new(configured_port);
@@ -98,8 +114,16 @@ pub fn run() {
                     ) {
                         Ok(automation_server) => {
                             automation_state.port = automation_server.local_addr().port();
+                            append_automation_startup_log(&format!(
+                                "loopback_server_started port={}",
+                                automation_state.port
+                            ));
                             match automation_state.write_discovery_file(None) {
                                 Ok(path) => {
+                                    append_automation_startup_log(&format!(
+                                        "discovery_written path={}",
+                                        path.display()
+                                    ));
                                     println!(
                                         "  Automation bridge: {} (discovery: {})",
                                         automation_state.base_url(),
@@ -107,6 +131,9 @@ pub fn run() {
                                     );
                                 }
                                 Err(error) => {
+                                    append_automation_startup_log(&format!(
+                                        "discovery_write_failed error={error}"
+                                    ));
                                     eprintln!("  Automation discovery write failed: {error}");
                                 }
                             }
@@ -115,6 +142,9 @@ pub fn run() {
                             ))));
                         }
                         Err(error) => {
+                            append_automation_startup_log(&format!(
+                                "loopback_server_failed error={error}"
+                            ));
                             eprintln!("  Automation bridge failed to start: {error}");
                         }
                     }
@@ -153,3 +183,47 @@ struct SidecarState(std::sync::Mutex<Option<tauri_plugin_shell::process::Command
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
 struct AutomationServerState(std::sync::Mutex<Option<automation::server::AutomationServer>>);
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn append_automation_startup_log(message: &str) {
+    let _ = append_automation_startup_log_impl(message);
+}
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn append_automation_startup_log_impl(message: &str) -> std::io::Result<()> {
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+
+    let discovery_path = automation_debug_log_path()?;
+    if let Some(parent) = discovery_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let temp_path = std::env::temp_dir().join("matrix-automation-startup.log");
+    for path in [discovery_path, temp_path] {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(file, "{message}");
+            let _ = file.flush();
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn automation_debug_log_path() -> std::io::Result<PathBuf> {
+    if let Some(directory) = std::env::var_os("MATRIX_AUTOMATION_DISCOVERY_DIR") {
+        return Ok(PathBuf::from(directory).join("automation-startup.log"));
+    }
+
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is not set"))?;
+    Ok(Path::new(&home)
+        .join("Library")
+        .join("Application Support")
+        .join("Matrix")
+        .join("dev")
+        .join("automation-startup.log"))
+}
