@@ -2,13 +2,8 @@
 
 每次发版前必须跑通的核心流程测试。通过 Automation Bridge 驱动真实 Tauri 应用。
 
-## 运行
+## Test Case Inbox
 
-```bash
-pnpm dev:mac                    # 先启动 dev app
-pnpm test:release               # 跑全部（跳过 @real-agent）
-pnpm test:release:real-agent    # 包含真实 agent 测试
-```
 
 ## Test Cases
 
