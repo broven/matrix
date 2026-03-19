@@ -19,6 +19,7 @@ export interface WsHandlerDeps {
   onPrompt: (sessionId: string, prompt: Array<{ type: string; text: string }>) => void;
   onCancel: (sessionId: string) => void;
   onPermissionResponse: (sessionId: string, toolCallId: string, outcome: PermissionOutcome) => void;
+  onSubscribe?: (sessionId: string) => void;
 }
 
 export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
@@ -83,6 +84,7 @@ export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
                     }
                   }
                 }
+                deps.onSubscribe?.(clientMsg.sessionId);
                 break;
 
               case "session:permission_response":

@@ -116,9 +116,6 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
     const attachedSession = client.attachSession(sessionInfo.sessionId);
     attachedSession.subscribe();
     setSession(attachedSession);
-    if (attachedSession.availableCommands.length > 0) {
-      setAvailableCommands(attachedSession.availableCommands);
-    }
 
     const unsubscribe = attachedSession.subscribeToUpdates({
       onMessage: (chunk) =>
@@ -172,6 +169,11 @@ export function SessionView({ sessionInfo, onSessionInfoChange }: SessionViewPro
         });
       },
     });
+
+    // Check for commands that may have arrived before callback registration
+    if (attachedSession.availableCommands.length > 0) {
+      setAvailableCommands(attachedSession.availableCommands);
+    }
 
     void attachedSession.getHistory().then((history) => {
       replaceEventsFromHistory(history);

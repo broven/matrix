@@ -411,6 +411,12 @@ const { injectWebSocket } = setupWebSocket(app as any, {
   onPrompt: handlePrompt,
   onCancel: handleCancel,
   onPermissionResponse: handlePermissionResponse,
+  onSubscribe: (sessionId: string) => {
+    const sess = store.getSession(sessionId);
+    if (sess?.worktreeId) {
+      pushCachedCommands(sessionId, sess.worktreeId, sess.agentId);
+    }
+  },
 });
 
 // Serve static web UI files if configured
