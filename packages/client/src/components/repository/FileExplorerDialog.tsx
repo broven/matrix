@@ -20,8 +20,8 @@ export function FileExplorerDialog({
   onSelect,
   onClose,
 }: FileExplorerDialogProps) {
-  const [currentPath, setCurrentPath] = useState(initialPath ?? "/");
-  const [pathInput, setPathInput] = useState(initialPath ?? "/");
+  const [currentPath, setCurrentPath] = useState(initialPath ?? "~");
+  const [pathInput, setPathInput] = useState(initialPath ?? "~");
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
