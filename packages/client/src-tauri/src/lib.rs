@@ -147,6 +147,66 @@ fn initialize_desktop_runtime(
 }
 
 #[cfg(all(desktop, any(test, debug_assertions)))]
+struct TauriWindowFacade(tauri::AppHandle);
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
+impl automation::runtime::desktop::DesktopWindowFacade for TauriWindowFacade {
+    fn focus(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
+        if let Some(window) = self.0.get_webview_window("main") {
+            let _ = window.set_focus();
+            Ok(json!({"focused": true}))
+        } else {
+            Err(automation::core::errors::AutomationErrorCode::NativeUnavailable)
+        }
+    }
+
+    fn reload(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
+        if let Some(window) = self.0.get_webview_window("main") {
+            let _ = window.eval("window.location.reload()");
+            Ok(json!({"reloaded": true}))
+        } else {
+            Err(automation::core::errors::AutomationErrorCode::NativeUnavailable)
+        }
+    }
+
+    fn state(&self) -> serde_json::Value {
+        if let Some(window) = self.0.get_webview_window("main") {
+            let focused = window.is_focused().unwrap_or(false);
+            let visible = window.is_visible().unwrap_or(false);
+            json!({"label": "main", "focused": focused, "visible": visible})
+        } else {
+            json!({"label": "main", "focused": false, "visible": false})
+        }
+    }
+}
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
+#[allow(dead_code)]
+struct TauriSidecarFacade(tauri::AppHandle);
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
+impl automation::runtime::desktop::DesktopSidecarFacade for TauriSidecarFacade {
+    fn status(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
+        use std::net::TcpStream;
+        use std::time::Duration;
+        let running = TcpStream::connect_timeout(
+            &"127.0.0.1:19880".parse().unwrap(),
+            Duration::from_millis(200),
+        )
+        .is_ok();
+        Ok(json!({"running": running, "port": 19880}))
+    }
+
+    fn restart(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
+        Err(automation::core::errors::AutomationErrorCode::UnsupportedAction)
+    }
+
+    fn state(&self) -> serde_json::Value {
+        self.status().unwrap_or_else(|_| json!({"running": false, "port": 19880}))
+    }
+}
+
+#[cfg(all(desktop, any(test, debug_assertions)))]
 fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
     append_automation_startup_log("entered_automation_setup");
     let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
@@ -179,13 +239,27 @@ fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>) {
         }),
     }));
 
+    let webview_bridge = automation::runtime::webview::DesktopWebviewBridge::new(
+        automation::runtime::webview::TauriEventBridgeTransport::new(app.handle().clone()),
+    );
+
+    let app_handle_for_facades = app.handle().clone();
+    let desktop_adapter = automation::runtime::desktop::DesktopAutomationAdapter::new(
+        TauriWindowFacade(app_handle_for_facades.clone()),
+        TauriSidecarFacade(app_handle_for_facades),
+    );
+
+    let composite_backend = automation::runtime::composite::DesktopRuntimeBackend::new(
+        webview_bridge,
+        desktop_adapter,
+        route_state.clone(),
+    );
+
     match automation::server::start_loopback_server(
         automation_state.port,
         automation_state.token.clone(),
         route_state,
-        Arc::new(automation::runtime::webview::DesktopWebviewBridge::new(
-            automation::runtime::webview::TauriEventBridgeTransport::new(app.handle().clone()),
-        )),
+        Arc::new(composite_backend),
     ) {
         Ok(automation_server) => {
             automation_state.port = automation_server.local_addr().port();
