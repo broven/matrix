@@ -130,7 +130,7 @@ describe("SettingsPage", () => {
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
-      expect(mockDeleteRepository).toHaveBeenCalledWith("repo-2");
+      expect(mockDeleteRepository).toHaveBeenCalledWith("repo-2", false);
     });
     expect(screen.getByText("Current Connection")).toBeInTheDocument();
   });

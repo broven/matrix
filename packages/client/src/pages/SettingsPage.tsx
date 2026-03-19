@@ -14,7 +14,7 @@ import { SettingsSidebar, type SettingsTab } from "@/pages/settings/SettingsSide
 interface SettingsPageProps {
   onBack: () => void;
   repositories: RepositoryInfo[];
-  onDeleteRepository: (repositoryId: string) => Promise<void> | void;
+  onDeleteRepository: (repositoryId: string, deleteSource: boolean) => Promise<void> | void;
 }
 
 export function SettingsPage({ onBack, repositories, onDeleteRepository }: SettingsPageProps) {
@@ -112,8 +112,8 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
     );
   };
 
-  const handleDeleteSelectedRepository = async (repositoryId: string) => {
-    await onDeleteRepository(repositoryId);
+  const handleDeleteSelectedRepository = async (repositoryId: string, deleteSource: boolean) => {
+    await onDeleteRepository(repositoryId, deleteSource);
     setSelectedTab({ kind: "general" });
   };
 

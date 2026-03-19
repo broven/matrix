@@ -98,6 +98,20 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     }
 
     store.deleteRepository(id);
+
+    // Optionally delete source files on disk
+    const deleteSource = c.req.query("deleteSource") === "true";
+    if (deleteSource) {
+      const { rm } = await import("node:fs/promises");
+      try {
+        await rm(repo.path, { recursive: true, force: true });
+        console.log(`[repo] Deleted source files: ${repo.path}`);
+      } catch (error) {
+        console.error(`[repo] Failed to delete source files ${repo.path}:`, error);
+        // DB records already removed — don't fail the request
+      }
+    }
+
     return c.json({ ok: true });
   });
 

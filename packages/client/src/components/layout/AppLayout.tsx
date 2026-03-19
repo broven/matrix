@@ -190,7 +190,7 @@ export function AppLayout() {
     }
   };
 
-  const handleDeleteRepository = async (repositoryId: string) => {
+  const handleDeleteRepository = async (repositoryId: string, deleteSource: boolean) => {
     if (!client) return;
 
     const worktreeIds = new Set((worktrees.get(repositoryId) ?? []).map((worktree) => worktree.id));
@@ -217,7 +217,7 @@ export function AppLayout() {
     }
 
     try {
-      await client.deleteRepository(repositoryId);
+      await client.deleteRepository(repositoryId, deleteSource);
       void handleRefreshSessions();
     } catch (error) {
       console.error("Failed to delete repository:", error);

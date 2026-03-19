@@ -5,17 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface SettingsRepositoryTabProps {
   repository: RepositoryInfo;
-  onDeleteRepository: (repositoryId: string) => Promise<void> | void;
+  onDeleteRepository: (repositoryId: string, deleteSource: boolean) => Promise<void> | void;
 }
 
 export function SettingsRepositoryTab({ repository, onDeleteRepository }: SettingsRepositoryTabProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteSource, setDeleteSource] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await onDeleteRepository(repository.id);
+      await onDeleteRepository(repository.id, deleteSource);
       setConfirmingDelete(false);
     } finally {
       setDeleting(false);
@@ -68,6 +69,15 @@ export function SettingsRepositoryTab({ repository, onDeleteRepository }: Settin
             <p className="mt-2 text-sm text-muted-foreground">
               Are you sure you want to delete {repository.name}?
             </p>
+            <label className="mt-4 flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={deleteSource}
+                onChange={(e) => setDeleteSource(e.target.checked)}
+                className="size-4 rounded border-border"
+              />
+              <span className="text-muted-foreground">Also delete source files on disk</span>
+            </label>
             <div className="mt-6 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setConfirmingDelete(false)} disabled={deleting}>
                 Cancel
