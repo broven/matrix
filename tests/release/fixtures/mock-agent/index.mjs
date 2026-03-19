@@ -42,14 +42,32 @@ function handleRequest(msg) {
         },
       });
 
-    case "session/create":
-      return send({
+    case "session/create": {
+      const sid = `mock-session-${Date.now()}`;
+      send({
         jsonrpc: "2.0",
         id,
         result: {
-          sessionId: `mock-session-${Date.now()}`,
+          sessionId: sid,
         },
       });
+      // Send available_commands_update after session creation
+      return send({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: sid,
+          update: {
+            sessionUpdate: "available_commands_update",
+            availableCommands: [
+              { name: "compact", description: "Compact conversation history" },
+              { name: "review", description: "Review current changes" },
+              { name: "plan", description: "Create an implementation plan" },
+            ],
+          },
+        },
+      });
+    }
 
     case "session/load":
       return send({

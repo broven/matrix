@@ -152,12 +152,14 @@ export function PromptInput({
           {isOpen && (
             <div
               ref={dropdownRef}
+              data-testid="slash-command-dropdown"
               className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg"
             >
               {filtered.map((cmd, index) => (
                 <button
                   key={cmd.name}
                   type="button"
+                  data-testid={`slash-command-item-${cmd.name}`}
                   className={cn(
                     "flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors",
                     index === selectedIndex
