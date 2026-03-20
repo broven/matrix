@@ -3,6 +3,99 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 mod updater;
 
+#[cfg(target_os = "macos")]
+mod screenshot_impl {
+    use base64::Engine;
+    use core_foundation::array::CFArray;
+    use core_foundation::base::TCFType;
+    use core_foundation::dictionary::CFDictionaryRef;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_graphics::display::CGWindowListCopyWindowInfo;
+    use core_graphics::window::{
+        kCGWindowListOptionOnScreenOnly, kCGWindowNumber, kCGWindowOwnerPID,
+    };
+    use std::process;
+
+    fn find_window_id(our_pid: i64) -> Option<u32> {
+        let window_list = unsafe {
+            CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, 0)
+        };
+        if window_list.is_null() {
+            return None;
+        }
+        let windows: CFArray = unsafe { CFArray::wrap_under_create_rule(window_list as _) };
+
+        let pid_key: CFString =
+            unsafe { TCFType::wrap_under_get_rule(kCGWindowOwnerPID as *const _) };
+        let wid_key: CFString =
+            unsafe { TCFType::wrap_under_get_rule(kCGWindowNumber as *const _) };
+
+        for i in 0..windows.len() {
+            let Some(item) = windows.get(i) else {
+                continue;
+            };
+            let dict_ref: CFDictionaryRef = unsafe { std::mem::transmute(item) };
+            let dict: core_foundation::dictionary::CFDictionary =
+                unsafe { TCFType::wrap_under_get_rule(dict_ref) };
+
+            if let Some(pid_val) = dict.find(pid_key.as_CFTypeRef()) {
+                let pid_num: CFNumber = unsafe { TCFType::wrap_under_get_rule(*pid_val as _) };
+                if let Some(pid) = pid_num.to_i64() {
+                    if pid == our_pid {
+                        if let Some(wid_val) = dict.find(wid_key.as_CFTypeRef()) {
+                            let wid_num: CFNumber =
+                                unsafe { TCFType::wrap_under_get_rule(*wid_val as _) };
+                            if let Some(wid) = wid_num.to_i32() {
+                                return Some(wid as u32);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn capture_via_screencapture(window_id: Option<u32>) -> Result<String, String> {
+        let tmp_path = format!("/tmp/matrix-screenshot-{}.png", process::id());
+
+        let status = if let Some(wid) = window_id {
+            process::Command::new("screencapture")
+                .args(["-l", &wid.to_string(), "-o", "-x", &tmp_path])
+                .status()
+        } else {
+            process::Command::new("screencapture")
+                .args(["-x", &tmp_path])
+                .status()
+        };
+
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => return Err(format!("screencapture exited with code {:?}", s.code())),
+            Err(e) => return Err(format!("screencapture failed: {e}")),
+        }
+
+        let png_bytes =
+            std::fs::read(&tmp_path).map_err(|e| format!("failed to read screenshot file: {e}"))?;
+        let _ = std::fs::remove_file(&tmp_path);
+
+        Ok(base64::engine::general_purpose::STANDARD.encode(&png_bytes))
+    }
+
+    pub fn capture() -> Result<String, String> {
+        let our_pid = process::id() as i64;
+        let window_id = find_window_id(our_pid);
+        capture_via_screencapture(window_id)
+    }
+}
+
+#[tauri::command]
+#[cfg(target_os = "macos")]
+fn screenshot() -> Result<String, String> {
+    screenshot_impl::capture()
+}
+
 /// Resolve sidecar port: in dev mode read SIDECAR_PORT env var, fallback to 19880.
 /// In release mode always returns 19880.
 #[cfg(desktop)]
@@ -63,6 +156,7 @@ pub fn run() {
         get_sidecar_port,
         mock_file_dialog,
         consume_mock_file_dialog,
+        screenshot,
     ]);
 
     #[cfg(all(desktop, not(target_os = "macos")))]
