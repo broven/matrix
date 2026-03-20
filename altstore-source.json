@@ -14,7 +14,9 @@
       "tintColor": "#7C3AED",
       "appPermissions": {
         "entitlements": [],
-        "privacy": {}
+        "privacy": {
+          "NSCameraUsageDescription": "Matrix needs camera access to scan QR codes"
+        }
       },
       "versions": [
         {

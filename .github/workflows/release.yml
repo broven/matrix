@@ -219,6 +219,11 @@ jobs:
       - name: Initialize iOS project
         run: cd packages/client && pnpm tauri ios init
 
+      - name: Add iOS permissions
+        run: |
+          PLIST="packages/client/src-tauri/gen/apple/matrix-client_iOS/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Matrix needs camera access to scan QR codes'" "$PLIST"
+
       - name: Disable code signing
         run: |
           PBXPROJ="packages/client/src-tauri/gen/apple/matrix-client.xcodeproj/project.pbxproj"
