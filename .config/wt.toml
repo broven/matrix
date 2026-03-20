@@ -13,6 +13,8 @@ ROOT="${WT_ROOT:-${CONDUCTOR_ROOT_PATH:-${SUPERSET_ROOT_PATH}}}"
 cp "$ROOT/.env" .env 2>/dev/null || echo 'No .env found in root, skipping'
 """
 
+ios-init = "cd packages/client && pnpm tauri ios init 2>&1 | tail -3"
+
 env-local = """
 # env fallback: Worktrunk -> Conductor -> Superset
 BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
