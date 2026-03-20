@@ -8,6 +8,7 @@
     "dev": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; exec pnpm -r --parallel dev'",
     "dev:mac": "wireit",
     "dev:ios": "wireit",
+    "dev:ios-autoconnect": "wireit",
     "dev:all": "wireit",
     "open": "sh -c 'set -a; . ./.env.local; set +a; open \"http://localhost:${CLIENT_PORT:-5173}/?serverUrl=http://localhost:${MATRIX_PORT:-8080}&token=${MATRIX_TOKEN}&autoConnect=1\"'",
     "smoke:mac-automation": "bash scripts/smoke-mac-automation.sh",
@@ -25,6 +26,16 @@
       ]
     },
     "dev:ios": {
+      "dependencies": [
+        "./packages/protocol:dev",
+        "./packages/sdk:dev",
+        "./packages/server:dev:mac",
+        "./packages/client:dev:ios"
+      ]
+    },
+    "dev:ios-autoconnect": {
+      "command": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; exec node scripts/ios-autoconnect.mjs'",
+      "service": true,
       "dependencies": [
         "./packages/protocol:dev",
         "./packages/sdk:dev",
