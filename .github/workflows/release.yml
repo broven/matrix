@@ -299,6 +299,7 @@ jobs:
             --arg date "$DATE" \
             '{
               "version": $v,
+              "buildVersion": "1",
               "date": $date,
               "downloadURL": $url,
               "size": ($size | tonumber),
@@ -317,6 +318,7 @@ jobs:
               --arg date "$DATE" \
               '{
                 "version": $v,
+                "buildVersion": "1",
                 "date": $date,
                 "downloadURL": $url,
                 "size": ($size | tonumber),
