@@ -23,7 +23,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.10.1/Matrix_v0.10.1.ipa",
           "size": 3116536,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.10.1"
         },
         {
           "version": "0.10.0",
@@ -31,7 +31,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.10.0/Matrix_v0.10.0.ipa",
           "size": 0,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.10.0"
         },
         {
           "version": "0.9.1",
@@ -39,7 +39,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.9.1/Matrix_v0.9.1.ipa",
           "size": 3107316,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.9.1"
         },
         {
           "version": "0.9.0",
@@ -47,7 +47,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.9.0/Matrix_v0.9.0.ipa",
           "size": 3107750,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.9.0"
         },
         {
           "version": "0.8.0",
@@ -55,7 +55,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.8.0/Matrix_v0.8.0.ipa",
           "size": 3089960,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.8.0"
         },
         {
           "version": "0.7.0",
@@ -63,7 +63,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.7.0/Matrix_v0.7.0.ipa",
           "size": 3085109,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.7.0"
         },
         {
           "version": "0.6.0",
@@ -71,7 +71,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.6.0/Matrix_v0.6.0.ipa",
           "size": 3085112,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.6.0"
         },
         {
           "version": "0.5.0",
@@ -79,7 +79,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.5.0/Matrix_v0.5.0.ipa",
           "size": 3084590,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.5.0"
         },
         {
           "version": "0.4.0",
@@ -87,7 +87,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.4.0/Matrix_v0.4.0.ipa",
           "size": 3085618,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.4.0"
         },
         {
           "version": "0.3.0",
@@ -95,7 +95,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.3.0/Matrix_v0.3.0.ipa",
           "size": 3085600,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.3.0"
         },
         {
           "version": "0.2.0",
@@ -103,7 +103,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.2.0/Matrix_v0.2.0.ipa",
           "size": 3085606,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.2.0"
         },
         {
           "version": "0.1.11",
@@ -111,7 +111,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.11/Matrix_v0.1.11.ipa",
           "size": 2935841,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.11"
         },
         {
           "version": "0.1.10",
@@ -119,7 +119,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.10/Matrix_v0.1.10.ipa",
           "size": 2935957,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.10"
         },
         {
           "version": "0.1.9",
@@ -127,7 +127,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.9/Matrix_v0.1.9.ipa",
           "size": 0,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.9"
         },
         {
           "version": "0.1.8",
@@ -135,7 +135,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.8/Matrix_v0.1.8.ipa",
           "size": 0,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.8"
         },
         {
           "version": "0.1.7",
@@ -143,7 +143,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.7/Matrix_v0.1.7.ipa",
           "size": 0,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.7"
         },
         {
           "version": "0.1.6",
@@ -151,7 +151,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.6/Matrix_v0.1.6.ipa",
           "size": 0,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.6"
         },
         {
           "version": "0.1.4",
@@ -159,7 +159,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.4/Matrix_v0.1.4.ipa",
           "size": 3693765,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.4"
         },
         {
           "version": "0.1.3",
@@ -167,7 +167,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.3/Matrix_v0.1.3.ipa",
           "size": 5964968,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.3"
         },
         {
           "version": "0.1.1",
@@ -175,7 +175,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.1/Matrix_v0.1.1.ipa",
           "size": 5772444,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.1"
         },
         {
           "version": "0.1.0",
@@ -183,7 +183,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.0-rc.6/Matrix_v0.1.0-rc.6.ipa",
           "size": 5772464,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.0"
         },
         {
           "version": "0.1.0-rc.5",
@@ -191,7 +191,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.0-rc.5/Matrix_v0.1.0-rc.5.ipa",
           "size": 5772550,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.0"
         },
         {
           "version": "0.1.0-rc.4",
@@ -199,7 +199,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.0-rc.4/Matrix_v0.1.0-rc.4.ipa",
           "size": 0,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.0"
         },
         {
           "version": "0.1.0-rc.3",
@@ -207,7 +207,7 @@
           "downloadURL": "https://github.com/broven/matrix/releases/download/v0.1.0-rc.3/Matrix_v0.1.0-rc.3.ipa",
           "size": 0,
           "minOSVersion": "16.0",
-          "buildVersion": "1"
+          "buildVersion": "0.1.0"
         }
       ]
     }

@@ -294,12 +294,13 @@ jobs:
           # Always update beta source (use full version including pre-release suffix)
           BETA_ENTRY=$(jq -n \
             --arg v "$VERSION" \
+            --arg bv "$IOS_VERSION" \
             --arg url "$DOWNLOAD_URL" \
             --arg size "$IPA_SIZE" \
             --arg date "$DATE" \
             '{
               "version": $v,
-              "buildVersion": "1",
+              "buildVersion": $bv,
               "date": $date,
               "downloadURL": $url,
               "size": ($size | tonumber),
@@ -313,12 +314,13 @@ jobs:
           if [ "$PRERELEASE" = "false" ]; then
             STABLE_ENTRY=$(jq -n \
               --arg v "$IOS_VERSION" \
+              --arg bv "$IOS_VERSION" \
               --arg url "$DOWNLOAD_URL" \
               --arg size "$IPA_SIZE" \
               --arg date "$DATE" \
               '{
                 "version": $v,
-                "buildVersion": "1",
+                "buildVersion": $bv,
                 "date": $date,
                 "downloadURL": $url,
                 "size": ($size | tonumber),
