@@ -9,7 +9,7 @@ interface MobileHeaderProps {
 
 export function MobileHeader({ selectedSession, onOpenSidebar }: MobileHeaderProps) {
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-2.5 md:hidden">
+    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/50 px-4 py-2.5 md:hidden" style={{ paddingTop: `calc(env(safe-area-inset-top, 0px) + 0.625rem)` }}>
       <div className="flex min-w-0 items-center gap-3">
         <Button size="icon-sm" variant="ghost" onClick={onOpenSidebar} className="rounded-lg">
           <Menu className="size-5" />

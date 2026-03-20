@@ -393,7 +393,7 @@ export function AppLayout() {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden bg-background">
       <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
         {sidebarContent}
         <div className="border-t border-sidebar-border p-2">
@@ -411,27 +411,29 @@ export function AppLayout() {
       </aside>
 
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-        <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar p-0 flex flex-col">
-          {sidebarContent}
-          <div className="border-t border-sidebar-border p-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2 rounded-lg text-xs"
-              onClick={() => {
-                setShowSettings(true);
-                setMobileSidebarOpen(false);
-              }}
-              data-testid="mobile-settings-btn"
-            >
-              <Settings className="size-3.5" />
-              Settings
-            </Button>
+        <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar !gap-0 !p-0" showCloseButton={false}>
+          <div className="flex h-full flex-col" style={{ paddingTop: `env(safe-area-inset-top, 0px)`, paddingBottom: `env(safe-area-inset-bottom, 0px)` }}>
+            {sidebarContent}
+            <div className="border-t border-sidebar-border p-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 rounded-lg text-xs"
+                onClick={() => {
+                  setShowSettings(true);
+                  setMobileSidebarOpen(false);
+                }}
+                data-testid="mobile-settings-btn"
+              >
+                <Settings className="size-3.5" />
+                Settings
+              </Button>
+            </div>
           </div>
         </SheetContent>
       </Sheet>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {showSettings ? (
           <SettingsPage
             onBack={() => setShowSettings(false)}

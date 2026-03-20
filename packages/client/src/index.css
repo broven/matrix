@@ -115,7 +115,8 @@
   html,
   body,
   #root {
-    @apply min-h-screen bg-background text-foreground;
+    @apply h-screen bg-background text-foreground;
+    overflow: hidden;
   }
 
   html {
