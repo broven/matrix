@@ -254,13 +254,41 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
         base64Data = (await readFile(tmpFile)).toString("base64");
         await unlink(tmpFile).catch(() => {});
       } else {
-        // macOS: relay through WebSocket to Tauri command
-        const requestId = clientRegistry.generateRequestId();
-        const result = await clientRegistry.sendRequest(body.clientId, {
-          type: "screenshot",
-          requestId,
-        });
-        base64Data = result as string;
+        // macOS: try Tauri command via WebSocket, fallback to screencapture CLI
+        try {
+          const requestId = clientRegistry.generateRequestId();
+          const result = await clientRegistry.sendRequest(body.clientId, {
+            type: "screenshot",
+            requestId,
+          });
+          base64Data = result as string;
+        } catch {
+          // Tauri invoke unavailable (e.g. dev mode via browser) — use screencapture CLI
+          const { exec } = await import("node:child_process");
+          const { readFile, unlink } = await import("node:fs/promises");
+          const { randomUUID } = await import("node:crypto");
+          const { promisify } = await import("node:util");
+          const execAsync = promisify(exec);
+          const tmpFile = `/tmp/matrix-screenshot-${randomUUID()}.png`;
+          // Try to find the Matrix window ID for targeted capture
+          try {
+            const { stdout: wid } = await execAsync(
+              `osascript -e 'tell application "System Events" to tell (first process whose unix id is ${process.pid} or name contains "matrix-client") to get id of first window'`,
+              { timeout: 3_000 },
+            );
+            const windowId = wid.trim();
+            if (windowId) {
+              await execAsync(`screencapture -l ${windowId} -o -x "${tmpFile}"`, { timeout: 10_000 });
+            } else {
+              await execAsync(`screencapture -x "${tmpFile}"`, { timeout: 10_000 });
+            }
+          } catch {
+            // osascript failed — fallback to full-screen capture
+            await execAsync(`screencapture -x "${tmpFile}"`, { timeout: 10_000 });
+          }
+          base64Data = (await readFile(tmpFile)).toString("base64");
+          await unlink(tmpFile).catch(() => {});
+        }
       }
 
       // Return raw PNG binary
