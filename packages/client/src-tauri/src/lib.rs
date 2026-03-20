@@ -57,18 +57,12 @@ mod screenshot_impl {
         None
     }
 
-    fn capture_via_screencapture(window_id: Option<u32>) -> Result<String, String> {
+    fn capture_via_screencapture(window_id: u32) -> Result<String, String> {
         let tmp_path = format!("/tmp/matrix-screenshot-{}.png", process::id());
 
-        let status = if let Some(wid) = window_id {
-            process::Command::new("screencapture")
-                .args(["-l", &wid.to_string(), "-o", "-x", &tmp_path])
-                .status()
-        } else {
-            process::Command::new("screencapture")
-                .args(["-x", &tmp_path])
-                .status()
-        };
+        let status = process::Command::new("screencapture")
+            .args(["-l", &window_id.to_string(), "-o", "-x", &tmp_path])
+            .status();
 
         match status {
             Ok(s) if s.success() => {}
@@ -85,8 +79,9 @@ mod screenshot_impl {
 
     pub fn capture() -> Result<String, String> {
         let our_pid = process::id() as i64;
-        let window_id = find_window_id(our_pid);
-        capture_via_screencapture(window_id)
+        let window_id = find_window_id(our_pid)
+            .ok_or_else(|| "could not find Matrix window; refusing full-screen capture".to_string())?;
+        capture_via_screencapture(Some(window_id))
     }
 }
 
