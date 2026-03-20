@@ -449,7 +449,7 @@ function ScanQRView({
 
       onResult(serverUrl, token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Scan failed");
+      setError(err instanceof Error ? err.message : String(err || "Scan failed"));
       setScanning(false);
     }
   };

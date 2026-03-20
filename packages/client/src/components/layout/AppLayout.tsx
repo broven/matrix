@@ -411,8 +411,23 @@ export function AppLayout() {
       </aside>
 
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-        <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar p-0">
+        <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar p-0 flex flex-col">
           {sidebarContent}
+          <div className="border-t border-sidebar-border p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 rounded-lg text-xs"
+              onClick={() => {
+                setShowSettings(true);
+                setMobileSidebarOpen(false);
+              }}
+              data-testid="mobile-settings-btn"
+            >
+              <Settings className="size-3.5" />
+              Settings
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
 
