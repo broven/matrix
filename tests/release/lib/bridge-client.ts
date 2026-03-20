@@ -1,15 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
-interface AutomationDiscovery {
-  enabled: boolean;
-  platform: string;
-  baseUrl: string;
-  token: string;
-  pid: number;
-}
-
 export interface BridgeClient {
   baseUrl: string;
   token: string;
@@ -44,20 +32,6 @@ export interface BridgeClient {
   }, opts?: { timeoutMs?: number; intervalMs?: number }): Promise<unknown>;
 
   mockFileDialog(path: string): Promise<void>;
-}
-
-const DISCOVERY_PATH = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Matrix",
-  "dev",
-  "automation.json",
-);
-
-async function loadDiscovery(): Promise<AutomationDiscovery> {
-  const raw = await readFile(DISCOVERY_PATH, "utf-8");
-  return JSON.parse(raw) as AutomationDiscovery;
 }
 
 const MAX_RETRIES = 3;
@@ -102,14 +76,10 @@ async function request(
   throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
 }
 
-export async function createBridgeClient(): Promise<BridgeClient> {
-  const discovery = await loadDiscovery();
-
-  if (!discovery.enabled) {
-    throw new Error("Automation bridge is not enabled");
-  }
-
-  const { baseUrl, token } = discovery;
+export function createBridgeClient(): BridgeClient {
+  const port = process.env.MATRIX_AUTOMATION_PORT ?? "18765";
+  const token = process.env.MATRIX_AUTOMATION_TOKEN ?? "dev";
+  const baseUrl = `http://127.0.0.1:${port}`;
 
   const client: BridgeClient = {
     baseUrl,

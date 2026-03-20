@@ -1,23 +1,17 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { rm } from "node:fs/promises";
 
-const DISCOVERY_PATH = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Matrix",
-  "dev",
-  "automation.json",
-);
+function getBridgeConfig() {
+  const port = process.env.MATRIX_AUTOMATION_PORT ?? "18765";
+  const token = process.env.MATRIX_AUTOMATION_TOKEN ?? "dev";
+  const baseUrl = `http://127.0.0.1:${port}`;
+  return { baseUrl, token };
+}
 
 async function getBridgeAndSidecar() {
-  const raw = await readFile(DISCOVERY_PATH, "utf-8");
-  const discovery = JSON.parse(raw) as { baseUrl: string; token: string };
+  const { baseUrl, token } = getBridgeConfig();
 
-  const stateRes = await fetch(`${discovery.baseUrl}/state`, {
-    headers: { Authorization: `Bearer ${discovery.token}` },
+  const stateRes = await fetch(`${baseUrl}/state`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
   const state = (await stateRes.json()) as { sidecar: { port: number } };
   const sidecarUrl = `http://127.0.0.1:${state.sidecar.port}`;
@@ -30,11 +24,11 @@ async function getBridgeAndSidecar() {
   });
   const config = (await configRes.json()) as { reposPath: string };
 
-  return { discovery, sidecarUrl, sidecarToken, reposPath: config.reposPath };
+  return { baseUrl, token, sidecarUrl, sidecarToken, reposPath: config.reposPath };
 }
 
 async function cleanAll() {
-  const { discovery, sidecarUrl, sidecarToken, reposPath } = await getBridgeAndSidecar();
+  const { baseUrl, token, sidecarUrl, sidecarToken, reposPath } = await getBridgeAndSidecar();
 
   // Delete all repos (and their worktrees) from sidecar DB
   const reposRes = await fetch(`${sidecarUrl}/repositories`, {
@@ -69,10 +63,10 @@ async function cleanAll() {
   }
 
   // Reload webview to reflect clean state
-  await fetch(`${discovery.baseUrl}/native/invoke`, {
+  await fetch(`${baseUrl}/native/invoke`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${discovery.token}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ action: "window.reload" }),
@@ -84,15 +78,14 @@ export async function setup() {
   try {
     await cleanAll();
     // Wait for reload to settle, then poll until webview is ready
-    const raw = await readFile(DISCOVERY_PATH, "utf-8");
-    const discovery = JSON.parse(raw) as { baseUrl: string; token: string };
+    const { baseUrl, token } = getBridgeConfig();
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       try {
-        const res = await fetch(`${discovery.baseUrl}/webview/eval`, {
+        const res = await fetch(`${baseUrl}/webview/eval`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${discovery.token}`,
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ script: "!!document.querySelector('[data-testid=\"add-repo-btn\"]')" }),

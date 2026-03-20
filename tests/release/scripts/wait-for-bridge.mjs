@@ -2,23 +2,15 @@
 
 /**
  * CI helper: poll until the Automation Bridge is ready.
- * Checks for the discovery file and then hits the /health endpoint.
+ * Connects to the known port and hits the /health endpoint.
  *
  * Usage: node tests/release/scripts/wait-for-bridge.mjs [--timeout 60]
  */
 
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { createConnection } from "node:net";
 
-const DISCOVERY_PATH = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Matrix",
-  "dev",
-  "automation.json",
-);
+const port = Number(process.env.MATRIX_AUTOMATION_PORT ?? "18765");
+const token = process.env.MATRIX_AUTOMATION_TOKEN ?? "dev";
 
 const args = process.argv.slice(2);
 const timeoutIndex = args.indexOf("--timeout");
@@ -26,13 +18,21 @@ const timeoutSec = timeoutIndex !== -1 ? Number(args[timeoutIndex + 1]) : 60;
 const deadline = Date.now() + timeoutSec * 1000;
 const POLL_MS = 1000;
 
-async function tryDiscovery() {
-  try {
-    const raw = await readFile(DISCOVERY_PATH, "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+function tcpReachable(host, port) {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host, port, timeout: 500 }, () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
 }
 
 async function tryHealth(baseUrl, token) {
@@ -48,14 +48,15 @@ async function tryHealth(baseUrl, token) {
 }
 
 async function main() {
-  console.log(`Waiting for Automation Bridge (timeout: ${timeoutSec}s)...`);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  console.log(`Waiting for Automation Bridge on port ${port} (timeout: ${timeoutSec}s)...`);
 
   while (Date.now() < deadline) {
-    const discovery = await tryDiscovery();
-    if (discovery?.enabled && discovery.baseUrl && discovery.token) {
-      const health = await tryHealth(discovery.baseUrl, discovery.token);
+    const reachable = await tcpReachable("127.0.0.1", port);
+    if (reachable) {
+      const health = await tryHealth(baseUrl, token);
       if (health?.ok && health?.webviewReady) {
-        console.log(`Bridge ready at ${discovery.baseUrl}`);
+        console.log(`Bridge ready at ${baseUrl}`);
         process.exit(0);
       }
       if (health) {

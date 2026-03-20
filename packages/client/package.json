@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "tauri:dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec tauri dev --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"}}\"'",
     "tauri:build": "tauri build",
-    "dev:mac": "wireit"
+    "dev:mac": "wireit",
+    "dev:ios": "wireit"
   },
   "wireit": {
     "dev": {
@@ -24,6 +25,14 @@
     },
     "dev:mac": {
       "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; SKIP_SIDECAR=true SIDECAR_PORT=$MATRIX_PORT exec tauri dev --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"},\\\"bundle\\\":{\\\"externalBin\\\":[]}}\"'",
+      "service": true,
+      "dependencies": [
+        "dev",
+        "../server:dev:mac"
+      ]
+    },
+    "dev:ios": {
+      "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; SKIP_SIDECAR=true exec tauri ios dev --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"},\\\"bundle\\\":{\\\"externalBin\\\":[]}}\"'",
       "service": true,
       "dependencies": [
         "dev",

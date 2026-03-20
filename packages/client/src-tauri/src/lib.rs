@@ -68,6 +68,12 @@ pub fn run() {
         Ok(())
     });
 
+    #[cfg(all(mobile, any(test, debug_assertions)))]
+    let builder = builder.setup(|app| {
+        initialize_mobile_automation(app)?;
+        Ok(())
+    });
+
     builder
         .build(tauri::generate_context!())
         .expect("error while building Matrix client")
@@ -78,7 +84,7 @@ pub fn run() {
 #[allow(dead_code)]
 struct SidecarState(std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
-#[cfg(all(desktop, any(test, debug_assertions)))]
+#[cfg(any(test, debug_assertions))]
 #[allow(dead_code)]
 struct AutomationServerState(std::sync::Mutex<Option<automation::server::AutomationServer>>);
 
@@ -373,13 +379,14 @@ impl automation::runtime::desktop::DesktopSidecarFacade for TauriSidecarFacade {
 #[cfg(all(desktop, any(test, debug_assertions)))]
 fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>, sidecar_port: u16) {
     append_automation_startup_log("entered_automation_setup");
-    let configured_port = std::env::var("MATRIX_AUTOMATION_PORT")
-        .ok()
-        .and_then(|raw| raw.parse::<u16>().ok())
-        .unwrap_or(18_765);
-    append_automation_startup_log(&format!("configured_port={configured_port}"));
 
-    let mut automation_state = automation::state::AutomationState::new(configured_port);
+    let mut automation_state =
+        automation::state::AutomationState::from_env("MATRIX_AUTOMATION_PORT", 18_765);
+    append_automation_startup_log(&format!(
+        "configured_port={} token={}",
+        automation_state.port, automation_state.token
+    ));
+
     automation_state.app_ready = true;
     automation_state.sidecar_ready = true;
     automation_state.webview_ready = true;
@@ -434,23 +441,10 @@ fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>, sidecar_port:
                 "loopback_server_started port={}",
                 automation_state.port
             ));
-            match automation_state.write_discovery_file(None) {
-                Ok(path) => {
-                    append_automation_startup_log(&format!(
-                        "discovery_written path={}",
-                        path.display()
-                    ));
-                    println!(
-                        "  Automation bridge: {} (discovery: {})",
-                        automation_state.base_url(),
-                        path.display()
-                    );
-                }
-                Err(error) => {
-                    append_automation_startup_log(&format!("discovery_write_failed error={error}"));
-                    eprintln!("  Automation discovery write failed: {error}");
-                }
-            }
+            println!(
+                "  Automation bridge: {}",
+                automation_state.base_url(),
+            );
             app.manage(AutomationServerState(std::sync::Mutex::new(Some(
                 automation_server,
             ))));
@@ -460,4 +454,156 @@ fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>, sidecar_port:
             eprintln!("  Automation bridge failed to start: {error}");
         }
     }
+}
+
+/// iOS Simulator automation bridge setup.
+/// Reads MATRIX_AUTOMATION_PORT_IOS (fallback to MATRIX_AUTOMATION_PORT) and
+/// MATRIX_AUTOMATION_TOKEN from env, then starts the bridge using the ios_sim adapter.
+#[cfg(all(mobile, any(test, debug_assertions)))]
+fn initialize_mobile_automation(
+    app: &mut tauri::App<tauri::Wry>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Prefer iOS-specific port, fall back to shared port
+    let port = std::env::var("MATRIX_AUTOMATION_PORT_IOS")
+        .ok()
+        .and_then(|raw| raw.parse::<u16>().ok())
+        .or_else(|| {
+            std::env::var("MATRIX_AUTOMATION_PORT")
+                .ok()
+                .and_then(|raw| raw.parse::<u16>().ok())
+        })
+        .unwrap_or(18_766);
+    let token = std::env::var("MATRIX_AUTOMATION_TOKEN").unwrap_or_else(|_| "dev".to_string());
+
+    let mut automation_state = automation::state::AutomationState::new(port, token);
+    automation_state.app_ready = true;
+    automation_state.webview_ready = true;
+
+    let dev_server_url = std::env::var("MATRIX_DEV_SERVER_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+
+    let route_state = Arc::new(RwLock::new(automation::runtime::router::RouteStateSnapshot {
+        platform: automation_state.platform.to_string(),
+        app_ready: automation_state.app_ready,
+        webview_ready: automation_state.webview_ready,
+        sidecar_ready: false,
+        window: json!({
+            "label": "ios-main",
+            "focused": true,
+            "visible": true
+        }),
+        webview: json!({
+            "url": dev_server_url
+        }),
+        sidecar: serde_json::Value::Null,
+    }));
+
+    let webview_bridge = automation::runtime::webview::DesktopWebviewBridge::new(
+        automation::runtime::webview::TauriEventBridgeTransport::new(app.handle().clone()),
+    );
+
+    // Use ios_sim adapter — no window.focus or sidecar support
+    struct MobileAppFacade(tauri::AppHandle);
+    impl automation::runtime::ios_sim::IosAppFacade for MobileAppFacade {
+        fn reload(
+            &self,
+        ) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
+            if let Some(window) = self.0.get_webview_window("main") {
+                let _ = window.eval("window.location.reload()");
+                Ok(json!({"reloaded": true}))
+            } else {
+                Err(automation::core::errors::AutomationErrorCode::NativeUnavailable)
+            }
+        }
+
+        fn state(&self) -> serde_json::Value {
+            if let Some(window) = self.0.get_webview_window("main") {
+                let focused = window.is_focused().unwrap_or(false);
+                let visible = window.is_visible().unwrap_or(false);
+                json!({"label": "ios-main", "focused": focused, "visible": visible})
+            } else {
+                json!({"label": "ios-main", "focused": false, "visible": false})
+            }
+        }
+    }
+
+    struct MobileWebviewFacade;
+    impl automation::runtime::ios_sim::IosWebviewFacade for MobileWebviewFacade {
+        fn reset(
+            &self,
+            scopes: &[automation::core::models::ResetScope],
+        ) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
+            Ok(json!({ "resetScopes": scopes }))
+        }
+
+        fn state(&self) -> serde_json::Value {
+            json!({ "platform": "ios-sim" })
+        }
+    }
+
+    let ios_adapter = automation::runtime::ios_sim::IosSimulatorAdapter::new(
+        MobileAppFacade(app.handle().clone()),
+        MobileWebviewFacade,
+    );
+
+    // The ios_sim adapter implements AutomationRouterBackend, so use it directly
+    // wrapped with webview eval support via a composite-like approach.
+    // For simplicity, use ios_adapter directly — it handles native + test_control.
+    // Webview eval goes through the webview_bridge.
+    struct IosRuntimeBackend<W> {
+        webview: W,
+        native: automation::runtime::ios_sim::IosSimulatorAdapter<MobileAppFacade, MobileWebviewFacade>,
+    }
+
+    impl<W: automation::core::capabilities::WebviewCapability + Send + Sync>
+        automation::runtime::router::AutomationRouterBackend for IosRuntimeBackend<W>
+    {
+        fn webview_capability(
+            &self,
+        ) -> Option<&dyn automation::core::capabilities::WebviewCapability> {
+            Some(&self.webview)
+        }
+
+        fn native_capability(
+            &self,
+        ) -> Option<&dyn automation::core::capabilities::NativeCapability> {
+            use automation::runtime::router::AutomationRouterBackend;
+            self.native.native_capability()
+        }
+
+        fn test_control_capability(
+            &self,
+        ) -> Option<&dyn automation::core::capabilities::TestControlCapability> {
+            use automation::runtime::router::AutomationRouterBackend;
+            self.native.test_control_capability()
+        }
+    }
+
+    let ios_backend = IosRuntimeBackend {
+        webview: webview_bridge,
+        native: ios_adapter,
+    };
+
+    match automation::server::start_loopback_server(
+        automation_state.port,
+        automation_state.token.clone(),
+        route_state,
+        Arc::new(ios_backend),
+    ) {
+        Ok(automation_server) => {
+            automation_state.port = automation_server.local_addr().port();
+            eprintln!(
+                "[matrix-client] iOS automation bridge: {}",
+                automation_state.base_url(),
+            );
+            app.manage(AutomationServerState(std::sync::Mutex::new(Some(
+                automation_server,
+            ))));
+        }
+        Err(error) => {
+            eprintln!("[matrix-client] iOS automation bridge failed to start: {error}");
+        }
+    }
+
+    Ok(())
 }

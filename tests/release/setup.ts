@@ -5,7 +5,7 @@ import { setBridge } from "./lib/ui";
 let bridge: BridgeClient;
 
 beforeAll(async () => {
-  bridge = await createBridgeClient();
+  bridge = createBridgeClient();
   setBridge(bridge);
 
   // Health check with retries (bridge may be recovering from a previous reload)
