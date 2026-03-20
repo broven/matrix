@@ -35,6 +35,18 @@ export interface AgentInfo {
   version?: string;
 }
 
+/** Result of testing an ACP agent's protocol compliance */
+export interface AgentTestResult {
+  steps: AgentTestStep[];
+}
+
+export interface AgentTestStep {
+  name: "spawn" | "initialize" | "session/new" | "prompt";
+  status: "pass" | "fail" | "skipped";
+  error?: string;
+  durationMs: number;
+}
+
 /** Agent capabilities returned after ACP initialize */
 export interface AgentCapabilities {
   loadSession?: boolean;

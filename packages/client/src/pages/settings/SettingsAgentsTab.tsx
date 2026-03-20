@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Copy,
   Eye,
   EyeOff,
+  Loader2,
+  Minus,
   Pencil,
+  Play,
   Plus,
   Trash2,
   X,
 } from "lucide-react";
-import type { AgentListItem, AgentEnvProfileSummary, CustomAgent, AgentEnvProfile } from "@matrix/protocol";
+import type { AgentListItem, AgentEnvProfileSummary, AgentTestResult, AgentTestStep, CustomAgent, AgentEnvProfile } from "@matrix/protocol";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -117,25 +121,54 @@ function EnvEditor({ env, onChange }: EnvEditorProps) {
   );
 }
 
+// ── Test Step Results ────────────────────────────────────────────
+
+function TestStepResults({ steps }: { steps: AgentTestStep[] }) {
+  return (
+    <div className="space-y-1 rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs">
+      {steps.map((step) => (
+        <div key={step.name} className="flex items-center gap-2">
+          {step.status === "pass" && <Check className="size-3.5 shrink-0 text-green-500" />}
+          {step.status === "fail" && <X className="size-3.5 shrink-0 text-destructive" />}
+          {step.status === "skipped" && <Minus className="size-3.5 shrink-0 text-muted-foreground" />}
+          <span className={step.status === "skipped" ? "text-muted-foreground" : ""}>
+            {step.name}
+          </span>
+          {step.status !== "skipped" && (
+            <span className="text-muted-foreground">({step.durationMs}ms)</span>
+          )}
+          {step.error && (
+            <span className="text-destructive"> — {step.error}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Agent Dialog ────────────────────────────────────────────────
 
 interface AgentDialogProps {
   title: string;
   initial?: { name: string; command: string; args: string[]; env?: Record<string, string>; description?: string };
   onSave: (data: { name: string; command: string; args: string[]; env?: Record<string, string>; description?: string }) => Promise<void>;
+  onTest?: (config: { command: string; args: string[]; env?: Record<string, string> }) => Promise<AgentTestResult>;
   onClose: () => void;
 }
 
-function AgentDialog({ title, initial, onSave, onClose }: AgentDialogProps) {
+function AgentDialog({ title, initial, onSave, onTest, onClose }: AgentDialogProps) {
   const [name, setName] = useState(initial?.name ?? "");
   const [command, setCommand] = useState(initial?.command ?? "");
   const [argsStr, setArgsStr] = useState(initial?.args?.join(" ") ?? "");
   const [env, setEnv] = useState<Record<string, string>>(initial?.env ?? {});
   const [description, setDescription] = useState(initial?.description ?? "");
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const canSave = name.trim() && command.trim();
+  const canTest = command.trim() && onTest;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -150,6 +183,23 @@ function AgentDialog({ title, initial, onSave, onClose }: AgentDialogProps) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!canTest) return;
+    setTesting(true);
+    setTestResult(null);
+    setError(null);
+    try {
+      const args = argsStr.trim() ? argsStr.trim().split(/\s+/) : [];
+      const envToSend = Object.keys(env).length > 0 ? env : undefined;
+      const result = await onTest({ command: command.trim(), args, env: envToSend });
+      setTestResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to test agent");
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -183,9 +233,26 @@ function AgentDialog({ title, initial, onSave, onClose }: AgentDialogProps) {
             <label className="mb-1.5 block text-sm font-medium">Environment variables</label>
             <EnvEditor env={env} onChange={setEnv} />
           </div>
+          {testResult && <TestStepResults steps={testResult.steps} />}
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" size="sm" className="rounded-lg" onClick={onClose}>Cancel</Button>
+            {onTest && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-lg"
+                disabled={testing || !canTest}
+                onClick={handleTest}
+                data-testid="test-agent-dialog-btn"
+              >
+                {testing ? (
+                  <><Loader2 className="mr-1 size-3.5 animate-spin" />Testing...</>
+                ) : (
+                  <><Play className="mr-1 size-3.5" />Test</>
+                )}
+              </Button>
+            )}
             <Button size="sm" className="rounded-lg" disabled={saving || !canSave} onClick={handleSave}>
               {saving ? "Saving..." : "Save"}
             </Button>
@@ -382,6 +449,47 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
     onRefreshAgents();
   };
 
+  // Agent test state for inline testing from agent list rows
+  const [testingAgentId, setTestingAgentId] = useState<string | null>(null);
+  const [agentTestResults, setAgentTestResults] = useState<Record<string, AgentTestResult>>({});
+
+  const handleTestAgent = async (config: { command: string; args: string[]; env?: Record<string, string> }) => {
+    if (!client) throw new Error("Not connected");
+    return client.testCustomAgent(config);
+  };
+
+  const handleTestAgentInline = async (agent: AgentListItem) => {
+    if (!client) return;
+    setTestingAgentId(agent.id);
+    setAgentTestResults((prev) => {
+      const next = { ...prev };
+      delete next[agent.id];
+      return next;
+    });
+    try {
+      const full = await fetchFullAgent(agent.id);
+      const result = await client.testCustomAgent({
+        command: agent.command,
+        args: full?.args ?? [],
+        env: full?.env,
+      });
+      setAgentTestResults((prev) => ({ ...prev, [agent.id]: result }));
+      // Auto-expand the agent to show results
+      setExpandedAgents((prev) => new Set(prev).add(agent.id));
+    } catch (err) {
+      // Show a synthetic failed result so the user sees the error
+      setAgentTestResults((prev) => ({
+        ...prev,
+        [agent.id]: {
+          steps: [{ name: "spawn", status: "fail", durationMs: 0, error: err instanceof Error ? err.message : "Test request failed" }],
+        },
+      }));
+      setExpandedAgents((prev) => new Set(prev).add(agent.id));
+    } finally {
+      setTestingAgentId(null);
+    }
+  };
+
   const fetchFullAgent = useCallback(async (agentId: string): Promise<CustomAgent | null> => {
     if (fullAgentCache[agentId]) return fullAgentCache[agentId];
     if (!client) return null;
@@ -479,6 +587,20 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
                   variant="ghost"
                   size="icon"
                   className="size-7"
+                  onClick={() => handleTestAgentInline(agent)}
+                  disabled={testingAgentId === agent.id}
+                  data-testid={`test-agent-btn-${agent.id}`}
+                >
+                  {testingAgentId === agent.id ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Play className="size-3.5" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
                   onClick={() => startEditAgent(agent)}
                   data-testid={`edit-agent-btn-${agent.id}`}
                 >
@@ -526,6 +648,13 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
                 </Button>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Test results */}
+        {agentTestResults[agent.id] && (
+          <div className="border-t border-border p-3">
+            <TestStepResults steps={agentTestResults[agent.id].steps} />
           </div>
         )}
       </div>
@@ -579,7 +708,7 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
 
       {/* Dialogs */}
       {dialog?.kind === "create-agent" && (
-        <AgentDialog title="New Custom Agent" onSave={handleCreateAgent} onClose={() => setDialog(null)} />
+        <AgentDialog title="New Custom Agent" onSave={handleCreateAgent} onTest={handleTestAgent} onClose={() => setDialog(null)} />
       )}
 
       {dialog?.kind === "edit-agent" && (
@@ -593,6 +722,7 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
             description: dialog.agent.description,
           }}
           onSave={(data) => handleEditAgent(dialog.agent.id, data)}
+          onTest={handleTestAgent}
           onClose={() => setDialog(null)}
         />
       )}
@@ -608,6 +738,7 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
             description: dialog.agent.description,
           }}
           onSave={handleForkAgent}
+          onTest={handleTestAgent}
           onClose={() => setDialog(null)}
         />
       )}
