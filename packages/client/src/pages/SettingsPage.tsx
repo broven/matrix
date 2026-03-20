@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, X } from "lucide-react";
-import type { RepositoryInfo, ServerConfig } from "@matrix/protocol";
+import type { AgentListItem, RepositoryInfo, ServerConfig } from "@matrix/protocol";
 import { ShareServerModal } from "@/components/ShareServerModal";
 import { FileExplorerDialog } from "@/components/repository/FileExplorerDialog";
 import { Button } from "@/components/ui/button";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { useServerStore } from "@/hooks/useServerStore";
+import { SettingsAgentsTab } from "@/pages/settings/SettingsAgentsTab";
 import { SettingsGeneralTab } from "@/pages/settings/SettingsGeneralTab";
 import { SettingsRepositoryTab } from "@/pages/settings/SettingsRepositoryTab";
 import { SettingsSidebar, type SettingsTab } from "@/pages/settings/SettingsSidebar";
@@ -18,7 +19,7 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ onBack, repositories, onDeleteRepository }: SettingsPageProps) {
-  const { client, connect, connectionInfo, status } = useMatrixClient();
+  const { client, connect, connectionInfo, status, error: connectionError } = useMatrixClient();
   const { servers, addServer, removeServer } = useServerStore();
   const {
     state: updateState,
@@ -42,14 +43,20 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
   const [configLoading, setConfigLoading] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const [browsePath, setBrowsePath] = useState<{ field: "reposPath" | "worktreesPath" } | null>(null);
+  const [agents, setAgents] = useState<AgentListItem[]>([]);
 
   useEffect(() => {
     if (!client) return;
 
     setConfigLoading(true);
-    client
-      .getServerConfig()
-      .then(setServerConfig)
+    Promise.all([
+      client.getServerConfig(),
+      client.getAgents(),
+    ])
+      .then(([config, agentList]) => {
+        setServerConfig(config);
+        setAgents(agentList);
+      })
       .catch(() => {})
       .finally(() => setConfigLoading(false));
   }, [client]);
@@ -146,10 +153,19 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
                 repository={selectedRepository}
                 onDeleteRepository={handleDeleteSelectedRepository}
               />
+            ) : selectedTab.kind === "agents" ? (
+              <SettingsAgentsTab
+                agents={agents}
+                onRefreshAgents={() => {
+                  if (!client) return;
+                  client.getAgents().then(setAgents).catch(() => {});
+                }}
+              />
             ) : (
               <SettingsGeneralTab
                 connectionInfo={connectionInfo}
                 status={status}
+                connectionError={connectionError}
                 updateState={updateState}
                 updateInfo={updateInfo ? { version: updateInfo.version } : null}
                 checkForUpdate={checkForUpdate}

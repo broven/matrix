@@ -1,9 +1,8 @@
 import type { SessionModes, SessionId } from "./session.js";
 import type { RepositoryId, WorktreeId } from "./repository.js";
 
-/** POST /sessions request */
+/** POST /sessions request (lazy — no agent spawned) */
 export interface CreateSessionRequest {
-  agentId: string;
   /** @deprecated Use worktreeId instead for new sessions */
   cwd?: string;
   worktreeId?: WorktreeId;
@@ -12,16 +11,16 @@ export interface CreateSessionRequest {
 /** POST /sessions response */
 export interface CreateSessionResponse {
   sessionId: SessionId;
-  modes: SessionModes;
 }
 
 /** GET /sessions response item */
 export interface SessionInfo {
   sessionId: SessionId;
-  agentId: string;
+  agentId: string | null;
+  profileId: string | null;
   cwd: string;
   createdAt: string;
-  status: "active" | "suspended" | "restoring" | "closed";
+  status: "active" | "closed";
   recoverable: boolean;
   agentSessionId: string | null;
   lastActiveAt: string;
@@ -40,6 +39,14 @@ export interface AgentListItem {
   available: boolean;
   icon?: string;
   description?: string;
+  source: "builtin" | "custom";
+  profiles: AgentEnvProfileSummary[];
+}
+
+/** Profile summary included in agent list */
+export interface AgentEnvProfileSummary {
+  id: string;
+  name: string;
 }
 
 /** History entry type discriminator */

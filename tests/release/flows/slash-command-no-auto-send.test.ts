@@ -1,8 +1,8 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { rm } from "node:fs/promises";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
-import { setBridge, waitFor, waitForGone, isVisible, getValue, typeChar } from "../lib/ui";
-import { resetUI, ensureWorktree, removeAllRepos } from "../lib/flows/setup";
+import { setBridge, waitFor, waitForGone, getValue, type as typeText } from "../lib/ui";
+import { resetUI, ensureWorktree, removeAllRepos, spawnAgentViaMessage } from "../lib/flows/setup";
 
 describe("Slash command 选择后不自动发送", () => {
   let bridge: BridgeClient;
@@ -17,7 +17,10 @@ describe("Slash command 选择后不自动发送", () => {
 
     const wt = await ensureWorktree(bridge);
     repoPath = wt.repoPath;
-  });
+
+    // Spawn agent by sending a message (lazy init)
+    await spawnAgentViaMessage(bridge);
+  }, 120_000);
 
   afterAll(async () => {
     await removeAllRepos(bridge).catch(() => {});
@@ -27,12 +30,33 @@ describe("Slash command 选择后不自动发送", () => {
   it("选择一个 slash command 后仅填入输入框，不自动发送", async () => {
     await waitFor('[data-testid="chat-input"]');
 
-    // Wait for availableCommands to arrive from the session
-    await new Promise((r) => setTimeout(r, 2_000));
+    // Wait for available_commands to propagate, then type "/" to open dropdown.
+    // Retry loop: focus → clear → type "/" → check for dropdown.
+    const deadline = Date.now() + 15_000;
+    let dropdownVisible = false;
 
-    // Type "/" to open dropdown
-    await typeChar('[data-testid="chat-input"]', "/");
-    await waitFor('[data-testid="slash-command-dropdown"]', { timeout: 5_000 });
+    while (Date.now() < deadline) {
+      await bridge.eval(`document.querySelector('[data-testid="chat-input"]')?.focus()`);
+      await new Promise((r) => setTimeout(r, 200));
+
+      await typeText('[data-testid="chat-input"]', "/");
+      await new Promise((r) => setTimeout(r, 500));
+
+      const visible = await bridge.eval(
+        `!!document.querySelector('[data-testid="slash-command-dropdown"]')`,
+      );
+      if (visible) {
+        dropdownVisible = true;
+        break;
+      }
+
+      await typeText('[data-testid="chat-input"]', "");
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+
+    if (!dropdownVisible) {
+      throw new Error("Slash command dropdown did not appear after retries (available_commands may not have arrived)");
+    }
 
     // mousedown on the first command item (dropdown uses onMouseDown, not onClick)
     await bridge.eval(`
@@ -52,10 +76,10 @@ describe("Slash command 选择后不自动发送", () => {
       throw new Error(`Expected input to start with "/" but got: "${inputValue}"`);
     }
 
-    // Verify message was NOT sent — no agent message should appear
-    const hasAgentMessage = await isVisible('[data-testid="agent-message"]');
-    if (hasAgentMessage) {
-      throw new Error("Message was auto-sent after selecting command — should only insert");
+    // Verify message was NOT sent — no new agent message should appear beyond the initial one
+    const msgCount = await bridge.eval(`document.querySelectorAll('[data-testid="assistant-message"]').length`);
+    if ((msgCount as number) > 1) {
+      throw new Error("New message was auto-sent after selecting command — should only insert");
     }
   });
 });

@@ -34,13 +34,12 @@ export async function type(selector: string, text: string): Promise<void> {
     (() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('type: element not found: ' + ${JSON.stringify(selector)});
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value'
-      )?.set || Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, 'value'
-      )?.set;
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(el, ${JSON.stringify(text)});
+      const proto = el instanceof HTMLTextAreaElement
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (nativeSetter) {
+        nativeSetter.call(el, ${JSON.stringify(text)});
       } else {
         el.value = ${JSON.stringify(text)};
       }
@@ -56,10 +55,15 @@ export async function waitFor(
   opts?: { timeout?: number },
 ): Promise<void> {
   const timeout = opts?.timeout ?? DEFAULT_TIMEOUT;
-  await bridge().wait(
-    { kind: "webview.eval", script: `!!document.querySelector(${JSON.stringify(selector)})` },
-    { timeoutMs: timeout, intervalMs: POLL_INTERVAL },
-  );
+  try {
+    await bridge().wait(
+      { kind: "webview.eval", script: `!!document.querySelector(${JSON.stringify(selector)})` },
+      { timeoutMs: timeout, intervalMs: POLL_INTERVAL },
+    );
+  } catch {
+    const snapshot = await diagnose().catch(() => "diagnose unavailable");
+    throw new Error(`waitFor("${selector}") timed out after ${timeout}ms\n[DOM Snapshot]\n${snapshot}`);
+  }
 }
 
 /** Wait until an element matching the selector is removed from the DOM. */
@@ -137,4 +141,25 @@ export async function count(selector: string): Promise<number> {
     `document.querySelectorAll(${JSON.stringify(selector)}).length`,
   );
   return result as number;
+}
+
+/** Capture DOM diagnostic snapshot for debugging test failures. */
+export async function diagnose(): Promise<string> {
+  try {
+    const result = await bridge().eval(`
+      (() => {
+        const testids = Array.from(document.querySelectorAll('[data-testid]'))
+          .map(el => el.getAttribute('data-testid'));
+        const dialogs = Array.from(document.querySelectorAll('.fixed'))
+          .map(el => el.className);
+        const focused = document.activeElement?.tagName + '#' + document.activeElement?.getAttribute('data-testid');
+        const url = window.location.href;
+        const bodyText = document.body.innerText.substring(0, 500);
+        return JSON.stringify({ url, testids, dialogs, focused, bodyText }, null, 2);
+      })()
+    `);
+    return typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  } catch (err) {
+    return `diagnose() failed: ${err}`;
+  }
 }

@@ -17,7 +17,7 @@ export function MobileHeader({ selectedSession, onOpenSidebar }: MobileHeaderPro
         </Button>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">
-            {selectedSession?.agentId ?? "Sessions"}
+            {selectedSession?.branch ?? selectedSession?.agentId ?? "Sessions"}
           </p>
         </div>
       </div>

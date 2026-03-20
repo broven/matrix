@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from "react";
-import { ArrowUp, Plus } from "lucide-react";
-import type { AvailableCommand } from "@matrix/protocol";
+import type { AgentListItem, AvailableCommand } from "@matrix/protocol";
+import { ArrowUp, Plus, ChevronDown } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -9,8 +9,14 @@ interface Props {
   disabled?: boolean;
   placeholder?: string;
   isProcessing?: boolean;
-  agentName?: string;
+  agents?: AgentListItem[];
+  selectedAgentId: string | null;
+  selectedProfileId: string | null;
+  onAgentChange?: (agentId: string) => void;
+  onProfileChange?: (profileId: string | null) => void;
   availableCommands?: AvailableCommand[];
+  /** When true, agent/profile selectors are locked (session already bound to an agent) */
+  agentLocked?: boolean;
 }
 
 function useSlashAutocomplete(
@@ -68,13 +74,21 @@ export function PromptInput({
   disabled,
   placeholder = "Ask to make changes, @mention files, run /commands",
   isProcessing,
-  agentName,
+  agents = [],
+  selectedAgentId,
+  selectedProfileId,
+  onAgentChange,
+  onProfileChange,
   availableCommands = [],
+  agentLocked = false,
 }: Props) {
   const [text, setText] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const agentBtnRef = useRef<HTMLButtonElement>(null);
 
   const { isOpen, filtered, selectedIndex, setSelectedIndex, slashIndex } =
     useSlashAutocomplete(text, availableCommands, cursorPos);
@@ -104,6 +118,22 @@ export function PromptInput({
     },
     [text, slashIndex, cursorPos],
   );
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!agentMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        menuRef.current && !menuRef.current.contains(target) &&
+        agentBtnRef.current && !agentBtnRef.current.contains(target)
+      ) {
+        setAgentMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [agentMenuOpen]);
 
   const handleSend = () => {
     if (!text.trim()) return;
@@ -145,10 +175,15 @@ export function PromptInput({
     }
   };
 
+  const availableAgents = agents.filter((a) => a.available);
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId);
+  const selectedProfile = (selectedAgent?.profiles ?? []).find((p) => p.id === selectedProfileId);
+
   return (
     <div className="px-4 pb-4 pt-2 md:px-6">
       <div className="mx-auto max-w-3xl">
         <div className="relative">
+          {/* Popover menus rendered outside overflow-hidden card container */}
           {isOpen && (
             <div
               ref={dropdownRef}
@@ -182,6 +217,57 @@ export function PromptInput({
               ))}
             </div>
           )}
+          {agentMenuOpen && !agentLocked && availableAgents.length > 0 && (
+            <div ref={menuRef} className="absolute bottom-full left-0 z-50 mb-1 min-w-[200px] max-h-[320px] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-md">
+              {availableAgents.map((agent) => {
+                const profiles = agent.profiles ?? [];
+                const isSelected = agent.id === selectedAgentId;
+                return (
+                  <div key={agent.id}>
+                    {/* Agent row — selects agent with default (no profile) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onAgentChange?.(agent.id);
+                        onProfileChange?.(null);
+                        setAgentMenuOpen(false);
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                        isSelected && !selectedProfileId
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/50",
+                      )}
+                    >
+                      <span className="size-1.5 shrink-0 rounded-full bg-primary" />
+                      <span className="truncate">{agent.name}</span>
+                    </button>
+                    {/* Profile sub-items */}
+                    {profiles.length > 0 && profiles.map((profile) => (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        onClick={() => {
+                          onAgentChange?.(agent.id);
+                          onProfileChange?.(profile.id);
+                          setAgentMenuOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md py-1.5 pl-6 pr-2.5 text-left text-sm transition-colors",
+                          isSelected && selectedProfileId === profile.id
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/50 text-muted-foreground",
+                        )}
+                        data-testid={`profile-option-${profile.id}`}
+                      >
+                        <span className="truncate">{profile.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div
             className={cn(
               "overflow-hidden rounded-[1.25rem] border border-border/60 bg-card shadow-sm transition-shadow",
@@ -204,12 +290,23 @@ export function PromptInput({
             />
             <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
               <div className="flex items-center gap-2">
-                {agentName && (
-                  <span className="flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
-                    <span className="size-1.5 rounded-full bg-primary" />
-                    {agentName}
-                  </span>
-                )}
+                <button
+                  ref={agentBtnRef}
+                  type="button"
+                  onClick={() => !agentLocked && setAgentMenuOpen(!agentMenuOpen)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground transition-colors",
+                    agentLocked ? "opacity-60 cursor-default" : "hover:bg-secondary/80",
+                  )}
+                  disabled={agentLocked}
+                >
+                  <span className="size-1.5 rounded-full bg-primary" />
+                  {selectedAgent?.name ?? "Select agent"}
+                  {selectedProfile && (
+                    <span className="text-muted-foreground">/ {selectedProfile.name}</span>
+                  )}
+                  {!agentLocked && <ChevronDown className="size-3 text-muted-foreground" />}
+                </button>
               </div>
               <div className="flex items-center gap-1.5">
                 <button

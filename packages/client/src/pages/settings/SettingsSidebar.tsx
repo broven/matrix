@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 
 export type SettingsTab =
   | { kind: "general" }
+  | { kind: "agents" }
   | { kind: "repository"; repositoryId: string };
 
 interface SettingsSidebarProps {
@@ -26,6 +27,20 @@ export function SettingsSidebar({ repositories, selectedTab, onSelectTab }: Sett
           onClick={() => onSelectTab({ kind: "general" })}
         >
           General
+        </button>
+
+        <button
+          type="button"
+          className={cn(
+            "flex w-full items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            selectedTab.kind === "agents"
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+          )}
+          onClick={() => onSelectTab({ kind: "agents" })}
+          data-testid="settings-agents-tab"
+        >
+          Agents
         </button>
 
         <div className="mt-6 px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

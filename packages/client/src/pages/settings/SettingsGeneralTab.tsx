@@ -15,6 +15,7 @@ interface SavedServer {
 interface SettingsGeneralTabProps {
   connectionInfo: { serverUrl: string; token: string } | null;
   status: string;
+  connectionError: string | null;
   updateState: "idle" | "checking" | "available" | "downloading" | "ready" | "installing" | "error";
   updateInfo: { version: string } | null;
   checkForUpdate: () => void;
@@ -46,6 +47,7 @@ interface SettingsGeneralTabProps {
 export function SettingsGeneralTab({
   connectionInfo,
   status,
+  connectionError,
   updateState,
   updateInfo,
   checkForUpdate,
@@ -85,6 +87,11 @@ export function SettingsGeneralTab({
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <div>Server: {connectionInfo?.serverUrl ?? "-"}</div>
           <div>Status: {status}</div>
+          {connectionError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {connectionError}
+            </div>
+          )}
           {hasLocalServer() && connectionInfo?.serverUrl && /localhost:19880|127\.0\.0\.1:19880/.test(connectionInfo.serverUrl) && (
             <div className="text-xs text-primary">Local server (sidecar)</div>
           )}

@@ -1,3 +1,15 @@
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+interface AutomationDiscovery {
+  enabled: boolean;
+  platform: string;
+  baseUrl: string;
+  token: string;
+  pid: number;
+}
+
 export interface BridgeClient {
   baseUrl: string;
   token: string;
@@ -32,6 +44,23 @@ export interface BridgeClient {
   }, opts?: { timeoutMs?: number; intervalMs?: number }): Promise<unknown>;
 
   mockFileDialog(path: string): Promise<void>;
+
+  /** Capture a screenshot of the app window. Returns raw PNG bytes. */
+  screenshot(): Promise<Buffer>;
+}
+
+const DISCOVERY_PATH = join(
+  homedir(),
+  "Library",
+  "Application Support",
+  "Matrix",
+  "dev",
+  "automation.json",
+);
+
+async function loadDiscovery(): Promise<AutomationDiscovery> {
+  const raw = await readFile(DISCOVERY_PATH, "utf-8");
+  return JSON.parse(raw) as AutomationDiscovery;
 }
 
 const MAX_RETRIES = 3;
@@ -76,10 +105,45 @@ async function request(
   throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
 }
 
-export function createBridgeClient(): BridgeClient {
-  const port = process.env.MATRIX_AUTOMATION_PORT ?? "18765";
-  const token = process.env.MATRIX_AUTOMATION_TOKEN ?? "dev";
-  const baseUrl = `http://127.0.0.1:${port}`;
+async function requestBinary(
+  baseUrl: string,
+  token: string,
+  method: string,
+  path: string,
+): Promise<Buffer> {
+  const url = `${baseUrl}${path}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, { method, headers });
+
+    if (res.status === 408 && attempt < MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Bridge ${method} ${path} returned ${res.status}: ${text}`);
+    }
+
+    const arrayBuf = await res.arrayBuffer();
+    return Buffer.from(arrayBuf);
+  }
+
+  throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
+}
+
+export async function createBridgeClient(): Promise<BridgeClient> {
+  const discovery = await loadDiscovery();
+
+  if (!discovery.enabled) {
+    throw new Error("Automation bridge is not enabled");
+  }
+
+  const { baseUrl, token } = discovery;
 
   const client: BridgeClient = {
     baseUrl,
@@ -153,6 +217,10 @@ export function createBridgeClient(): BridgeClient {
       await request(baseUrl, token, "POST", "/test/mock-file-dialog", {
         path,
       });
+    },
+
+    async screenshot(): Promise<Buffer> {
+      return requestBinary(baseUrl, token, "POST", "/native/screenshot");
     },
   };
 
