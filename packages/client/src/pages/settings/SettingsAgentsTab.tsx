@@ -323,8 +323,9 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
 
   const handleCreateAgent = async (data: { name: string; command: string; args: string[]; env?: Record<string, string>; description?: string }) => {
     if (!client) return;
-    await client.createCustomAgent(data);
+    const created = await client.createCustomAgent(data);
     onRefreshAgents();
+    setExpandedAgents((prev) => new Set(prev).add(created.id));
   };
 
   const handleEditAgent = async (agentId: string, data: { name: string; command: string; args: string[]; env?: Record<string, string>; description?: string }) => {
@@ -335,8 +336,10 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
 
   const handleForkAgent = async (data: { name: string; command: string; args: string[]; env?: Record<string, string>; description?: string }) => {
     if (!client) return;
-    await client.createCustomAgent(data);
+    const created = await client.createCustomAgent(data);
     onRefreshAgents();
+    // Auto-expand the newly forked agent
+    setExpandedAgents((prev) => new Set(prev).add(created.id));
   };
 
   const handleDeleteAgent = async (agentId: string) => {
@@ -349,6 +352,8 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
     if (!client) return;
     await client.createAgentProfile({ parentAgentId, name: data.name, env: data.env });
     onRefreshAgents();
+    // Auto-expand the parent agent to show the new profile
+    setExpandedAgents((prev) => new Set(prev).add(parentAgentId));
   };
 
   const handleEditProfile = async (profileId: string, data: { name: string; env: Record<string, string> }) => {
