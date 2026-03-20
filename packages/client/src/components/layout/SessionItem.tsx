@@ -151,6 +151,7 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
             ? "bg-accent"
             : "hover:bg-accent/50",
         )}
+        data-testid={`session-item-${session.sessionId}`}
         role="button"
         tabIndex={0}
         onClick={onSelect}
