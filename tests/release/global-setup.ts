@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { rm } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+let mockAgentId: string | null = null;
 
 const DISCOVERY_PATH = join(
   homedir(),
@@ -108,9 +113,59 @@ export async function setup() {
   } catch {
     // App might not be running yet, that's OK — setup.ts will catch it
   }
+
+  // Register mock agent as default (skip when using real agents)
+  if (!process.env.REAL_AGENT) {
+    try {
+      const { sidecarUrl, sidecarToken } = await getBridgeAndSidecar();
+      const mockAgentPath = resolve(__dirname, "fixtures/mock-agent/index.mjs");
+
+      const res = await fetch(`${sidecarUrl}/custom-agents`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${sidecarToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: "Mock Agent",
+          command: "node",
+          args: [mockAgentPath],
+        }),
+      });
+      if (res.ok) {
+        const agent = (await res.json()) as { id: string };
+        mockAgentId = agent.id;
+
+        // Set as default agent
+        await fetch(`${sidecarUrl}/server/config`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${sidecarToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ defaultAgent: agent.id }),
+        });
+      }
+    } catch {
+      // Mock agent registration failed — tests will use whatever agent is available
+    }
+  }
 }
 
 export async function teardown() {
+  // Remove mock agent if registered
+  if (mockAgentId) {
+    try {
+      const { sidecarUrl, sidecarToken } = await getBridgeAndSidecar();
+      await fetch(`${sidecarUrl}/custom-agents/${mockAgentId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${sidecarToken}` },
+      }).catch(() => {});
+    } catch {
+      // Best effort
+    }
+  }
+
   // Post-test cleanup
   try {
     await cleanAll();
