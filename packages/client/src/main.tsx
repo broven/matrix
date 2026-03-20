@@ -22,9 +22,12 @@ if (shouldInstallBridge()) {
       if (hasLocalServer()) {
         serverUrl = await getLocalServerUrl();
       } else {
-        // iOS / web: derive from current page URL or URL params
+        // iOS / web: derive from URL params, Vite env vars, or current origin
         const params = new URLSearchParams(window.location.search);
-        const paramUrl = params.get("serverUrl");
+        const devServerUrl = import.meta.env.VITE_MATRIX_PORT
+          ? `http://127.0.0.1:${import.meta.env.VITE_MATRIX_PORT}`
+          : undefined;
+        const paramUrl = params.get("serverUrl") || devServerUrl;
         if (paramUrl) {
           serverUrl = paramUrl;
         } else {
