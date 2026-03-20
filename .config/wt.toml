@@ -20,10 +20,10 @@ WORKSPACE_RAW="${WT_NAME:-${CONDUCTOR_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_NAME}
 WORKSPACE="$(echo "$WORKSPACE_RAW" | tr ' ' '-')"
 
 # Derive 4 unique ports from base port:
-#   CLIENT_PORT  = base      (Vite dev server)
-#   HMR_PORT     = base + 1  (Tauri HMR WebSocket)
-#   MATRIX_PORT  = base + 2  (Matrix server)
-#   SIDECAR_PORT = base + 3  (Tauri sidecar server, dev only)
+#   CLIENT_PORT              = base      (Vite dev server)
+#   HMR_PORT                 = base + 1  (Tauri HMR WebSocket)
+#   MATRIX_PORT              = base + 2  (Matrix server)
+#   SIDECAR_PORT             = base + 3  (Tauri sidecar server, dev only)
 CLIENT_PORT=$((BASE_PORT))
 HMR_PORT=$((BASE_PORT + 1))
 MATRIX_PORT=$((BASE_PORT + 2))

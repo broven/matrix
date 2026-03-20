@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Prerequisites:
-# - Run the macOS app in dev mode so it writes automation.json.
+# - Run the macOS app in dev mode so the bridge server is running.
 # - jq and curl must be available.
+# - MATRIX_PORT and MATRIX_TOKEN must be set (or sourced from .env.local).
 
 require_bin() {
   local name="$1"
@@ -13,64 +14,54 @@ require_bin() {
   fi
 }
 
-resolve_discovery_dir() {
-  if [[ -n "${MATRIX_AUTOMATION_DISCOVERY_DIR:-}" ]]; then
-    printf '%s\n' "$MATRIX_AUTOMATION_DISCOVERY_DIR"
-    return 0
-  fi
-
-  if [[ -n "${HOME:-}" ]]; then
-    printf '%s\n' "$HOME/Library/Application Support/Matrix/dev"
-    return 0
-  fi
-
-  echo "error: HOME is not set and MATRIX_AUTOMATION_DISCOVERY_DIR is empty" >&2
-  exit 1
-}
-
-wait_for_file() {
-  local path="$1"
-  local timeout_seconds="$2"
-  local waited=0
-  while [[ ! -f "$path" ]]; do
-    if (( waited >= timeout_seconds )); then
-      echo "error: automation discovery not found after ${timeout_seconds}s: $path" >&2
-      echo "hint: start mac dev app first, e.g. pnpm --filter @matrix/client tauri:dev" >&2
-      exit 1
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-}
-
 require_bin jq
 require_bin curl
 
-DISCOVERY_DIR="$(resolve_discovery_dir)"
-DISCOVERY_FILE="${DISCOVERY_DIR}/automation.json"
-WAIT_SECONDS="${MATRIX_AUTOMATION_WAIT_SECONDS:-30}"
+# Source .env.local if vars not already set
+if [[ -z "${MATRIX_PORT:-}" || -z "${MATRIX_TOKEN:-}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+  if [[ -f "$SCRIPT_DIR/.env.local" ]]; then
+    set -a
+    source "$SCRIPT_DIR/.env.local"
+    set +a
+  fi
+fi
 
-wait_for_file "$DISCOVERY_FILE" "$WAIT_SECONDS"
-
-BASE_URL="$(jq -r '.baseUrl // empty' "$DISCOVERY_FILE")"
-TOKEN="$(jq -r '.token // empty' "$DISCOVERY_FILE")"
-
-if [[ -z "$BASE_URL" || -z "$TOKEN" ]]; then
-  echo "error: invalid discovery metadata in $DISCOVERY_FILE (missing baseUrl/token)" >&2
+if [[ -z "${MATRIX_PORT:-}" ]]; then
+  echo "error: MATRIX_PORT is not set" >&2
   exit 1
 fi
 
-AUTH_HEADER="Authorization: Bearer ${TOKEN}"
-HEALTH_URL="${BASE_URL}/health"
-STATE_URL="${BASE_URL}/state"
+if [[ -z "${MATRIX_TOKEN:-}" ]]; then
+  echo "error: MATRIX_TOKEN is not set" >&2
+  exit 1
+fi
+
+BASE_URL="http://127.0.0.1:${MATRIX_PORT}"
+AUTH_HEADER="Authorization: Bearer ${MATRIX_TOKEN}"
+HEALTH_URL="${BASE_URL}/bridge/health"
+CLIENTS_URL="${BASE_URL}/bridge/clients"
 CURL_LOOPBACK_ARGS=(--noproxy "*")
+WAIT_SECONDS="${MATRIX_BRIDGE_WAIT_SECONDS:-30}"
 
-echo "smoke: checking ${HEALTH_URL}"
-HEALTH_BODY="$(curl "${CURL_LOOPBACK_ARGS[@]}" --silent --show-error --fail -H "$AUTH_HEADER" "$HEALTH_URL")"
-echo "$HEALTH_BODY" | jq -e '.ok == true' >/dev/null
+echo "smoke: waiting for bridge at ${HEALTH_URL}"
+waited=0
+while true; do
+  HEALTH_BODY="$(curl "${CURL_LOOPBACK_ARGS[@]}" --silent --show-error -H "$AUTH_HEADER" "$HEALTH_URL" 2>/dev/null || echo '{}')"
+  if echo "$HEALTH_BODY" | jq -e '.ok == true and .clientCount > 0' >/dev/null 2>&1; then
+    break
+  fi
+  if (( waited >= WAIT_SECONDS )); then
+    echo "error: bridge health check failed after ${WAIT_SECONDS}s" >&2
+    echo "hint: start mac dev app first, e.g. pnpm dev:mac" >&2
+    exit 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
 
-echo "smoke: checking ${STATE_URL}"
-STATE_BODY="$(curl "${CURL_LOOPBACK_ARGS[@]}" --silent --show-error --fail -H "$AUTH_HEADER" "$STATE_URL")"
-echo "$STATE_BODY" | jq -e 'has("window") and has("webview") and has("sidecar")' >/dev/null
+echo "smoke: checking ${CLIENTS_URL}"
+CLIENTS_BODY="$(curl "${CURL_LOOPBACK_ARGS[@]}" --silent --show-error --fail -H "$AUTH_HEADER" "$CLIENTS_URL")"
+echo "$CLIENTS_BODY" | jq -e 'length > 0' >/dev/null
 
-echo "smoke: mac automation bridge is reachable"
+echo "smoke: bridge is reachable with $(echo "$CLIENTS_BODY" | jq 'length') client(s)"

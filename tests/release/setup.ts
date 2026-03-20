@@ -5,20 +5,20 @@ import { diagnose, setBridge } from "./lib/ui";
 let bridge: BridgeClient;
 
 beforeAll(async () => {
-  bridge = await createBridgeClient();
+  bridge = createBridgeClient();
   setBridge(bridge);
 
-  // Health check with retries (bridge may be recovering from a previous test's reload)
+  // Health check with retries — wait for at least one webview client to connect to bridge
   for (let i = 0; i < 10; i++) {
     try {
       const health = await bridge.health();
-      if (health.ok && health.webviewReady && health.sidecarReady) return;
+      if (health.ok && health.clientCount > 0) return;
     } catch {
       // Retry
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
-  throw new Error("Automation bridge health check failed after retries — is the app running?");
+  throw new Error("Bridge health check failed after retries — no clients connected. Is the app running?");
 });
 
 afterEach(async (context) => {

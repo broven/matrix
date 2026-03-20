@@ -12,8 +12,9 @@ import { discoverAgents } from "./agent-manager/discovery.js";
 import { Store } from "./store/index.js";
 import { AcpBridge } from "./acp-bridge/index.js";
 import { createRestRoutes } from "./api/rest/index.js";
-import { setupWebSocket } from "./api/ws/index.js";
+import { createWebSocketInstance, setupWebSocket } from "./api/ws/index.js";
 import { ConnectionManager } from "./api/ws/connection-manager.js";
+import { setupBridge, ClientRegistry } from "./bridge/index.js";
 import { createTransportRoutes } from "./api/transport/index.js";
 import { SessionManager } from "./session-manager/index.js";
 import { WorktreeManager } from "./worktree-manager/index.js";
@@ -35,6 +36,7 @@ const sessionManager = new SessionManager();
 const worktreeManager = new WorktreeManager();
 const cloneManager = new CloneManager();
 const commandCache = new CommandCache();
+const clientRegistry = new ClientRegistry();
 const IDLE_SUSPEND_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_SUSPEND_SWEEP_INTERVAL_MS = 60 * 1000;
 
@@ -364,6 +366,7 @@ app.use("/custom-agents", authMiddleware(serverToken));
 app.use("/custom-agents/*", authMiddleware(serverToken));
 app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
+// Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
 function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
@@ -436,8 +439,11 @@ app.post("/sessions", async (c) => {
   return c.json({ sessionId });
 });
 
-// WebSocket setup
-const { injectWebSocket } = setupWebSocket(app as any, {
+// Shared WebSocket instance — both /ws and /bridge use the same upgrade handler
+const { injectWebSocket, upgradeWebSocket } = createWebSocketInstance(app as any);
+
+// WebSocket setup for session communication (/ws)
+setupWebSocket(app as any, {
   connectionManager,
   serverToken,
   snapshotProvider: buildSnapshots,
@@ -453,7 +459,10 @@ const { injectWebSocket } = setupWebSocket(app as any, {
       pushCachedCommands(sessionId, sess.worktreeId, agentId);
     }
   },
-});
+}, upgradeWebSocket);
+
+// Automation bridge setup (/bridge WebSocket + /bridge/* HTTP routes)
+setupBridge(app as any, { serverToken, clientRegistry, upgradeWebSocket });
 
 // Serve static web UI files if configured
 if (config.webDir) {
@@ -463,7 +472,7 @@ if (config.webDir) {
   app.get("/*", async (c, next) => {
     const p = c.req.path;
     // Skip API routes and WebSocket endpoint
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages") || p.startsWith("/custom-agents") || p.startsWith("/agent-profiles")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages") || p.startsWith("/custom-agents") || p.startsWith("/agent-profiles") || p.startsWith("/bridge")) {
       return next();
     }
     const res = await serveStatic({ root: resolvedWebDir })(c, next);
@@ -473,7 +482,7 @@ if (config.webDir) {
   // SPA fallback: serve index.html for non-API GET requests
   app.get("/*", async (c, next) => {
     const p = c.req.path;
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages") || p.startsWith("/custom-agents") || p.startsWith("/agent-profiles")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages") || p.startsWith("/custom-agents") || p.startsWith("/agent-profiles") || p.startsWith("/bridge")) {
       return next();
     }
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);

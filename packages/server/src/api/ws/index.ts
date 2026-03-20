@@ -22,8 +22,16 @@ export interface WsHandlerDeps {
   onSubscribe?: (sessionId: string) => void;
 }
 
-export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app: app as any });
+/** Create a shared WebSocket instance for the app. Call once, pass upgradeWebSocket to consumers. */
+export function createWebSocketInstance(app: Hono) {
+  return createNodeWebSocket({ app: app as any });
+}
+
+export function setupWebSocket(
+  app: Hono,
+  deps: WsHandlerDeps,
+  upgradeWebSocket: ReturnType<typeof createNodeWebSocket>["upgradeWebSocket"],
+) {
 
   app.get(
     "/ws",
@@ -107,5 +115,4 @@ export function setupWebSocket(app: Hono, deps: WsHandlerDeps) {
     }),
   );
 
-  return { injectWebSocket };
 }

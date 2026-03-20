@@ -11,13 +11,11 @@ interface SidecarInfo {
   token: string;
 }
 
-/** Get sidecar URL and auth token from the bridge. */
+/** Get server URL and auth token. */
 async function getSidecarInfo(bridge: BridgeClient): Promise<SidecarInfo> {
-  const state = await bridge.state();
-  const port = (state.sidecar as { port: number }).port;
-  const url = `http://127.0.0.1:${port}`;
-  const authRes = await fetch(`${url}/api/auth-info`);
-  const { token } = (await authRes.json()) as { token: string };
+  // Server URL and token come from the bridge client directly
+  const url = bridge.baseUrl;
+  const token = bridge.token;
   return { url, token };
 }
 
@@ -156,7 +154,7 @@ export async function removeAllRepos(bridge: BridgeClient): Promise<void> {
   }
   // Reload webview so UI reflects the clean state
   if (deleted) {
-    await bridge.invoke("window.reload");
+    await bridge.eval("window.location.reload()");
     // Brief pause so the old page tears down before we start polling
     await new Promise((r) => setTimeout(r, 1_500));
     await waitForWebview(bridge);
