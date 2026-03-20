@@ -11,3 +11,8 @@ export function validateToken(provided: string, expected: string): boolean {
   const b = Buffer.from(expected);
   return timingSafeEqual(a, b);
 }
+
+export function maskToken(token: string): string {
+  if (token.length <= 8) return token;
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+}
