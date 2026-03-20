@@ -19,15 +19,19 @@ BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
 WORKSPACE_RAW="${WT_NAME:-${CONDUCTOR_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_NAME}}}"
 WORKSPACE="$(echo "$WORKSPACE_RAW" | tr ' ' '-')"
 
-# Derive 4 unique ports from base port:
-#   CLIENT_PORT  = base      (Vite dev server)
-#   HMR_PORT     = base + 1  (Tauri HMR WebSocket)
-#   MATRIX_PORT  = base + 2  (Matrix server)
-#   SIDECAR_PORT = base + 3  (Tauri sidecar server, dev only)
+# Derive 6 unique ports from base port:
+#   CLIENT_PORT              = base      (Vite dev server)
+#   HMR_PORT                 = base + 1  (Tauri HMR WebSocket)
+#   MATRIX_PORT              = base + 2  (Matrix server)
+#   SIDECAR_PORT             = base + 3  (Tauri sidecar server, dev only)
+#   MATRIX_AUTOMATION_PORT   = base + 4  (Automation bridge: macOS)
+#   MATRIX_AUTOMATION_PORT_IOS = base + 5 (Automation bridge: iOS sim)
 CLIENT_PORT=$((BASE_PORT))
 HMR_PORT=$((BASE_PORT + 1))
 MATRIX_PORT=$((BASE_PORT + 2))
 SIDECAR_PORT=$((BASE_PORT + 3))
+MATRIX_AUTOMATION_PORT=$((BASE_PORT + 4))
+MATRIX_AUTOMATION_PORT_IOS=$((BASE_PORT + 5))
 
 MATRIX_TOKEN=$(head -c 36 /dev/urandom | base64 | tr -d '/+=' | head -c 48)
 
@@ -38,16 +42,19 @@ HMR_PORT=$HMR_PORT
 MATRIX_PORT=$MATRIX_PORT
 VITE_MATRIX_PORT=$MATRIX_PORT
 SIDECAR_PORT=$SIDECAR_PORT
+MATRIX_AUTOMATION_PORT=$MATRIX_AUTOMATION_PORT
+MATRIX_AUTOMATION_PORT_IOS=$MATRIX_AUTOMATION_PORT_IOS
+MATRIX_AUTOMATION_TOKEN=dev
 MATRIX_TOKEN=$MATRIX_TOKEN
 EOF
 
-echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT sidecar=$SIDECAR_PORT"
+echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT sidecar=$SIDECAR_PORT automation=$MATRIX_AUTOMATION_PORT automation-ios=$MATRIX_AUTOMATION_PORT_IOS"
 """
 
 [pre-remove]
 kill-ports = """
 BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
-for offset in 0 1 2 3; do
+for offset in 0 1 2 3 4 5; do
   PORT=$((BASE_PORT + offset))
   lsof -ti :$PORT -sTCP:LISTEN | xargs kill 2>/dev/null || true
 done
