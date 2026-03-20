@@ -110,6 +110,16 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Allow selection in content areas where it makes sense */
+  input, textarea, [contenteditable="true"],
+  .markdown-content, pre, code {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   html,
