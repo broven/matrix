@@ -220,15 +220,17 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
 
       if (client.info.platform === "ios") {
         // iOS Simulator: capture via xcrun simctl on host
-        const { execSync } = await import("node:child_process");
-        const { readFileSync, unlinkSync } = await import("node:fs");
+        const { exec } = await import("node:child_process");
+        const { readFile, unlink } = await import("node:fs/promises");
         const { randomUUID } = await import("node:crypto");
+        const { promisify } = await import("node:util");
+        const execAsync = promisify(exec);
         const tmpFile = `/tmp/matrix-screenshot-${randomUUID()}.png`;
-        execSync(`xcrun simctl io booted screenshot "${tmpFile}"`, {
+        await execAsync(`xcrun simctl io booted screenshot "${tmpFile}"`, {
           timeout: 10_000,
         });
-        base64Data = readFileSync(tmpFile).toString("base64");
-        unlinkSync(tmpFile);
+        base64Data = (await readFile(tmpFile)).toString("base64");
+        await unlink(tmpFile).catch(() => {});
       } else {
         // macOS: relay through WebSocket to Tauri command
         const requestId = clientRegistry.generateRequestId();
