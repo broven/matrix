@@ -46,10 +46,22 @@ export interface BridgeResetMessage {
   scopes?: string[];
 }
 
+export interface BridgeScreenshotMessage {
+  type: "screenshot";
+  requestId: string;
+}
+
+export interface BridgeSnapshotMessage {
+  type: "snapshot";
+  requestId: string;
+}
+
 export type BridgeServerMessage =
   | BridgeEvalMessage
   | BridgeEventMessage
-  | BridgeResetMessage;
+  | BridgeResetMessage
+  | BridgeScreenshotMessage
+  | BridgeSnapshotMessage;
 
 // --- Client info ---
 
