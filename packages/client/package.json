@@ -32,7 +32,7 @@
       ]
     },
     "dev:ios": {
-      "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; SKIP_SIDECAR=true exec tauri ios dev --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"},\\\"bundle\\\":{\\\"externalBin\\\":[]}}\"'",
+      "command": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; SKIP_SIDECAR=true exec tauri ios dev \"${IOS_SIMULATOR:-iPhone 17 Pro}\" --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"},\\\"bundle\\\":{\\\"externalBin\\\":[]}}\"'",
       "service": true,
       "dependencies": [
         "dev",
