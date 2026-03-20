@@ -346,6 +346,7 @@ jobs:
           else
             git commit -m "chore: update AltStore source for ${{ github.ref_name }}" || true
           fi
+          git pull --rebase origin main
           git push origin HEAD:main
 
       - name: Create GitHub Release
