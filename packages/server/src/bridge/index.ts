@@ -241,7 +241,7 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
         }
         if (booted.length > 1) {
           return c.json(
-            { ok: false, error: `Multiple booted simulators (${booted.map((d) => d.name).join(", ")}); pass clientId to select one, or boot only one simulator` },
+            { ok: false, error: `Multiple booted simulators (${booted.map((d) => d.name).join(", ")}); boot only one simulator for iOS screenshot capture` },
             502,
           );
         }
