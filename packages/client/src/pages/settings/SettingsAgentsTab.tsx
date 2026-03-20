@@ -291,7 +291,10 @@ interface SettingsAgentsTabProps {
 
 export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTabProps) {
   const { client } = useMatrixClient();
-  const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
+  // All agents with profiles are expanded by default
+  const [expandedAgents, setExpandedAgents] = useState<Set<string>>(() =>
+    new Set(agents.filter((a) => a.profiles.length > 0).map((a) => a.id)),
+  );
   const [dialog, setDialog] = useState<
     | null
     | { kind: "create-agent" }
@@ -317,6 +320,17 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
 
   // Cache of full custom agent data (with args/env) keyed by agent id
   const [fullAgentCache, setFullAgentCache] = useState<Record<string, CustomAgent>>({});
+
+  // Keep agents with profiles expanded when list updates
+  useEffect(() => {
+    setExpandedAgents((prev) => {
+      const next = new Set(prev);
+      for (const a of agents) {
+        if (a.profiles.length > 0) next.add(a.id);
+      }
+      return next;
+    });
+  }, [agents]);
 
   const builtinAgents = agents.filter((a) => a.source === "builtin");
   const customAgents = agents.filter((a) => a.source === "custom");
