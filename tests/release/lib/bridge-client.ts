@@ -1,38 +1,16 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
-interface AutomationDiscovery {
-  enabled: boolean;
-  platform: string;
-  baseUrl: string;
-  token: string;
-  pid: number;
-}
-
 export interface BridgeClient {
   baseUrl: string;
   token: string;
 
   health(): Promise<{
     ok: boolean;
-    platform: string;
-    appReady: boolean;
-    webviewReady: boolean;
-    sidecarReady: boolean;
-  }>;
-
-  state(): Promise<{
-    window: Record<string, unknown>;
-    webview: Record<string, unknown>;
-    sidecar: Record<string, unknown>;
+    clientCount: number;
+    clients: Array<{ clientId: string; platform: string; label: string }>;
   }>;
 
   eval(script: string): Promise<unknown>;
 
   event(name: string, payload?: unknown): Promise<void>;
-
-  invoke(action: string, args?: Record<string, unknown>): Promise<unknown>;
 
   reset(scopes?: string[]): Promise<void>;
 
@@ -44,23 +22,6 @@ export interface BridgeClient {
   }, opts?: { timeoutMs?: number; intervalMs?: number }): Promise<unknown>;
 
   mockFileDialog(path: string): Promise<void>;
-
-  /** Capture a screenshot of the app window. Returns raw PNG bytes. */
-  screenshot(): Promise<Buffer>;
-}
-
-const DISCOVERY_PATH = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Matrix",
-  "dev",
-  "automation.json",
-);
-
-async function loadDiscovery(): Promise<AutomationDiscovery> {
-  const raw = await readFile(DISCOVERY_PATH, "utf-8");
-  return JSON.parse(raw) as AutomationDiscovery;
 }
 
 const MAX_RETRIES = 3;
@@ -105,103 +66,58 @@ async function request(
   throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
 }
 
-async function requestBinary(
-  baseUrl: string,
-  token: string,
-  method: string,
-  path: string,
-): Promise<Buffer> {
-  const url = `${baseUrl}${path}`;
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
+/**
+ * Create a bridge client that talks to the matrix server's /bridge/* endpoints.
+ * Reads MATRIX_PORT and MATRIX_TOKEN from environment variables.
+ */
+export function createBridgeClient(): BridgeClient {
+  const port = process.env.MATRIX_PORT;
+  if (!port) throw new Error("MATRIX_PORT env var is required");
+  const token = process.env.MATRIX_TOKEN;
+  if (!token) throw new Error("MATRIX_TOKEN env var is required");
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(url, { method, headers });
-
-    if (res.status === 408 && attempt < MAX_RETRIES) {
-      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-      continue;
-    }
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Bridge ${method} ${path} returned ${res.status}: ${text}`);
-    }
-
-    const arrayBuf = await res.arrayBuffer();
-    return Buffer.from(arrayBuf);
-  }
-
-  throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
-}
-
-export async function createBridgeClient(): Promise<BridgeClient> {
-  const discovery = await loadDiscovery();
-
-  if (!discovery.enabled) {
-    throw new Error("Automation bridge is not enabled");
-  }
-
-  const { baseUrl, token } = discovery;
+  const baseUrl = `http://127.0.0.1:${port}`;
 
   const client: BridgeClient = {
     baseUrl,
     token,
 
     async health() {
-      return (await request(baseUrl, token, "GET", "/health")) as Awaited<
+      return (await request(baseUrl, token, "GET", "/bridge/health")) as Awaited<
         ReturnType<BridgeClient["health"]>
       >;
     },
 
-    async state() {
-      return (await request(baseUrl, token, "GET", "/state")) as Awaited<
-        ReturnType<BridgeClient["state"]>
-      >;
-    },
-
     async eval(script: string) {
-      const res = (await request(baseUrl, token, "POST", "/webview/eval", {
+      const res = (await request(baseUrl, token, "POST", "/bridge/eval", {
         script,
       })) as { ok: boolean; result: unknown; error: unknown };
       if (!res.ok) {
         throw new Error(
-          `webview/eval failed: ${typeof res.error === "string" ? res.error : JSON.stringify(res.error)}`,
+          `bridge/eval failed: ${typeof res.error === "string" ? res.error : JSON.stringify(res.error)}`,
         );
       }
       return res.result;
     },
 
     async event(name: string, payload?: unknown) {
-      await request(baseUrl, token, "POST", "/webview/event", {
+      await request(baseUrl, token, "POST", "/bridge/event", {
         name,
         payload,
       });
     },
 
-    async invoke(action: string, args?: Record<string, unknown>) {
-      const res = (await request(baseUrl, token, "POST", "/native/invoke", {
-        action,
-        args,
-      })) as { ok: boolean; result: unknown; error: unknown };
-      if (!res.ok) {
-        throw new Error(
-          `native/invoke ${action} failed: ${typeof res.error === "string" ? res.error : JSON.stringify(res.error)}`,
-        );
-      }
-      return res.result;
-    },
-
     async reset(scopes?: string[]) {
-      await request(baseUrl, token, "POST", "/test/reset", {
+      await request(baseUrl, token, "POST", "/bridge/reset", {
         scopes: scopes ?? [],
       });
     },
 
     async wait(condition, opts) {
-      const res = (await request(baseUrl, token, "POST", "/wait", {
-        condition,
+      // Map the old-style condition format to the new /bridge/wait endpoint
+      const script = condition.script ?? `false`;
+      const res = (await request(baseUrl, token, "POST", "/bridge/wait", {
+        condition: script,
         timeoutMs: opts?.timeoutMs ?? 10_000,
         intervalMs: opts?.intervalMs ?? 200,
       })) as { ok: boolean; result: unknown; error: unknown };
@@ -214,13 +130,11 @@ export async function createBridgeClient(): Promise<BridgeClient> {
     },
 
     async mockFileDialog(path: string) {
-      await request(baseUrl, token, "POST", "/test/mock-file-dialog", {
-        path,
-      });
-    },
-
-    async screenshot(): Promise<Buffer> {
-      return requestBinary(baseUrl, token, "POST", "/native/screenshot");
+      // mock_file_dialog is now a Tauri command — call it via bridge eval which
+      // invokes the Tauri command from the webview
+      await client.eval(
+        `window.__TAURI_INTERNALS__.invoke('mock_file_dialog', { path: ${JSON.stringify(path)} })`,
+      );
     },
   };
 

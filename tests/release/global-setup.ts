@@ -1,6 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -8,96 +6,89 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 let mockAgentId: string | null = null;
 
-const DISCOVERY_PATH = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Matrix",
-  "dev",
-  "automation.json",
-);
+function getServerInfo() {
+  const port = process.env.MATRIX_PORT;
+  if (!port) throw new Error("MATRIX_PORT env var is required");
+  const token = process.env.MATRIX_TOKEN;
+  if (!token) throw new Error("MATRIX_TOKEN env var is required");
+  return { baseUrl: `http://127.0.0.1:${port}`, token };
+}
 
-async function getBridgeAndSidecar() {
-  const raw = await readFile(DISCOVERY_PATH, "utf-8");
-  const discovery = JSON.parse(raw) as { baseUrl: string; token: string };
-
-  const stateRes = await fetch(`${discovery.baseUrl}/state`, {
-    headers: { Authorization: `Bearer ${discovery.token}` },
+async function serverRequest(method: string, path: string, body?: unknown): Promise<unknown> {
+  const { baseUrl, token } = getServerInfo();
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  const res = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  const state = (await stateRes.json()) as { sidecar: { port: number } };
-  const sidecarUrl = `http://127.0.0.1:${state.sidecar.port}`;
-
-  const authRes = await fetch(`${sidecarUrl}/api/auth-info`);
-  const { token: sidecarToken } = (await authRes.json()) as { token: string };
-
-  const configRes = await fetch(`${sidecarUrl}/server/config`, {
-    headers: { Authorization: `Bearer ${sidecarToken}` },
-  });
-  const config = (await configRes.json()) as { reposPath: string };
-
-  return { discovery, sidecarUrl, sidecarToken, reposPath: config.reposPath };
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${method} ${path} returned ${res.status}: ${text}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : undefined;
 }
 
 async function cleanAll() {
-  const { discovery, sidecarUrl, sidecarToken, reposPath } = await getBridgeAndSidecar();
+  const { baseUrl, token } = getServerInfo();
 
-  // Delete all repos (and their worktrees) from sidecar DB
-  const reposRes = await fetch(`${sidecarUrl}/repositories`, {
-    headers: { Authorization: `Bearer ${sidecarToken}` },
-  });
-  if (reposRes.ok) {
-    const repos = (await reposRes.json()) as { id: string }[];
-    for (const repo of repos) {
-      // Delete worktrees first (repo delete fails if worktrees exist)
-      const wtRes = await fetch(`${sidecarUrl}/repositories/${repo.id}/worktrees`, {
-        headers: { Authorization: `Bearer ${sidecarToken}` },
-      });
-      if (wtRes.ok) {
-        const worktrees = (await wtRes.json()) as { id: string }[];
-        for (const wt of worktrees) {
-          await fetch(`${sidecarUrl}/worktrees/${wt.id}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${sidecarToken}` },
-          }).catch(() => {});
-        }
+  // Get repos path from server config
+  const config = (await serverRequest("GET", "/server/config")) as { reposPath: string };
+
+  // Delete all repos (and their worktrees)
+  const repos = (await serverRequest("GET", "/repositories")) as { id: string }[];
+  for (const repo of repos) {
+    // Delete worktrees first (repo delete fails if worktrees exist)
+    try {
+      const worktrees = (await serverRequest("GET", `/repositories/${repo.id}/worktrees`)) as { id: string }[];
+      for (const wt of worktrees) {
+        await serverRequest("DELETE", `/worktrees/${wt.id}`).catch(() => {});
       }
-      await fetch(`${sidecarUrl}/repositories/${repo.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${sidecarToken}` },
-      }).catch(() => {});
+    } catch {
+      // Continue
     }
+    await serverRequest("DELETE", `/repositories/${repo.id}`).catch(() => {});
   }
 
   // Remove clone target directories
   for (const name of ["matrix-test-clone", "matrix-test-local"]) {
-    await rm(`${reposPath}/${name}`, { recursive: true, force: true }).catch(() => {});
+    await rm(`${config.reposPath}/${name}`, { recursive: true, force: true }).catch(() => {});
   }
 
-  // Reload webview to reflect clean state
-  await fetch(`${discovery.baseUrl}/native/invoke`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${discovery.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ action: "window.reload" }),
-  });
+  // Reload webview via bridge eval
+  try {
+    await fetch(`${baseUrl}/bridge/eval`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ script: "window.location.reload()" }),
+    });
+  } catch {
+    // Client might disconnect during reload — that's expected
+  }
 }
 
 export async function setup() {
   // Pre-test cleanup
   try {
     await cleanAll();
-    // Wait for reload to settle, then poll until webview is ready
-    const raw = await readFile(DISCOVERY_PATH, "utf-8");
-    const discovery = JSON.parse(raw) as { baseUrl: string; token: string };
+    // Wait for reload to settle, then poll until webview is ready via bridge
+    const { baseUrl, token } = getServerInfo();
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       try {
-        const res = await fetch(`${discovery.baseUrl}/webview/eval`, {
+        const res = await fetch(`${baseUrl}/bridge/eval`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${discovery.token}`,
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ script: "!!document.querySelector('[data-testid=\"add-repo-btn\"]')" }),
@@ -117,35 +108,17 @@ export async function setup() {
   // Register mock agent as default (skip when using real agents)
   if (!process.env.REAL_AGENT) {
     try {
-      const { sidecarUrl, sidecarToken } = await getBridgeAndSidecar();
       const mockAgentPath = resolve(__dirname, "fixtures/mock-agent/index.mjs");
 
-      const res = await fetch(`${sidecarUrl}/custom-agents`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${sidecarToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: "Mock Agent",
-          command: "node",
-          args: [mockAgentPath],
-        }),
-      });
-      if (res.ok) {
-        const agent = (await res.json()) as { id: string };
-        mockAgentId = agent.id;
+      const res = (await serverRequest("POST", "/custom-agents", {
+        name: "Mock Agent",
+        command: "node",
+        args: [mockAgentPath],
+      })) as { id: string };
+      mockAgentId = res.id;
 
-        // Set as default agent
-        await fetch(`${sidecarUrl}/server/config`, {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${sidecarToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ defaultAgent: agent.id }),
-        });
-      }
+      // Set as default agent
+      await serverRequest("PUT", "/server/config", { defaultAgent: res.id });
     } catch {
       // Mock agent registration failed — tests will use whatever agent is available
     }
@@ -156,11 +129,7 @@ export async function teardown() {
   // Remove mock agent if registered
   if (mockAgentId) {
     try {
-      const { sidecarUrl, sidecarToken } = await getBridgeAndSidecar();
-      await fetch(`${sidecarUrl}/custom-agents/${mockAgentId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${sidecarToken}` },
-      }).catch(() => {});
+      await serverRequest("DELETE", `/custom-agents/${mockAgentId}`).catch(() => {});
     } catch {
       // Best effort
     }

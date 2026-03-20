@@ -38,40 +38,7 @@ export interface AutomationBridge {
   runScript: (script: string) => AutomationScriptResponse;
 }
 
-type RuntimeBridgeRequest =
-  | {
-      id: number;
-      responseEvent: string;
-      request: { kind: "eval"; script: string };
-    }
-  | {
-      id: number;
-      responseEvent: string;
-      request: { kind: "dispatchEvent"; name: string; payload?: unknown };
-    }
-  | {
-      id: number;
-      responseEvent: string;
-      request: { kind: "snapshot" };
-    };
-
-type RuntimeBridgeResponse =
-  | {
-      id: number;
-      ok: true;
-      result: JsonSafeValue;
-      error: null;
-    }
-  | {
-      id: number;
-      ok: false;
-      result: null;
-      error: "webview_unavailable" | "internal_error";
-    };
-
 const BRIDGE_KEY = "__MATRIX_AUTOMATION__";
-const RUNTIME_REQUEST_EVENT = "matrix:automation:runtime-request";
-let runtimeBridgeListenerPromise: Promise<void> | null = null;
 
 type JsonSafeValue =
   | null
@@ -81,7 +48,7 @@ type JsonSafeValue =
   | JsonSafeValue[]
   | { [key: string]: JsonSafeValue };
 
-function shouldInstallBridge(options?: InstallOptions): boolean {
+export function shouldInstallBridge(options?: InstallOptions): boolean {
   const mode = options?.mode ?? (import.meta.env.MODE as RuntimeMode);
   const dev = options?.dev ?? import.meta.env.DEV;
   // Always install when running inside Tauri (even release builds).
@@ -186,75 +153,6 @@ function getAutomationBridge(): AutomationBridge | null {
   return ((window as any)[BRIDGE_KEY] as AutomationBridge | undefined) ?? null;
 }
 
-function toRuntimeResponse(
-  id: number,
-  response: AutomationScriptResponse,
-): RuntimeBridgeResponse {
-  if (response.ok) {
-    return {
-      id,
-      ok: true,
-      result: response.result,
-      error: null,
-    };
-  }
-
-  return {
-    id,
-    ok: false,
-    result: null,
-    error: "internal_error",
-  };
-}
-
-function handleRuntimeRequest(request: RuntimeBridgeRequest): RuntimeBridgeResponse {
-  const bridge = getAutomationBridge();
-  if (!bridge) {
-    return {
-      id: request.id,
-      ok: false,
-      result: null,
-      error: "webview_unavailable",
-    };
-  }
-
-  try {
-    switch (request.request.kind) {
-      case "eval":
-        return toRuntimeResponse(request.id, bridge.runScript(request.request.script));
-      case "dispatchEvent":
-        bridge.dispatchEvent(request.request.name, request.request.payload);
-        return {
-          id: request.id,
-          ok: true,
-          result: null,
-          error: null,
-        };
-      case "snapshot":
-        return {
-          id: request.id,
-          ok: true,
-          result: toJsonSafe(bridge.getSnapshot()),
-          error: null,
-        };
-      default:
-        return {
-          id: request.id,
-          ok: false,
-          result: null,
-          error: "internal_error",
-        };
-    }
-  } catch {
-    return {
-      id: request.id,
-      ok: false,
-      result: null,
-      error: "internal_error",
-    };
-  }
-}
-
 export function installAutomationBridge(options?: InstallOptions): AutomationBridge | null {
   if (!shouldInstallBridge(options)) {
     return null;
@@ -286,25 +184,141 @@ export function installAutomationBridge(options?: InstallOptions): AutomationBri
   return bridge;
 }
 
-export async function installAutomationRuntimeBridgeListener(
-  options?: InstallOptions,
-): Promise<void> {
-  if (!shouldInstallBridge(options)) {
-    return;
+// --- WebSocket Bridge Client ---
+
+interface BridgeServerMessage {
+  type: "eval" | "event" | "reset";
+  requestId: string;
+  script?: string;
+  name?: string;
+  payload?: unknown;
+  scopes?: string[];
+}
+
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000];
+
+/**
+ * Connect to the bridge server via WebSocket.
+ * Handles incoming eval/event/reset commands and auto-reconnects.
+ */
+export function connectBridgeWebSocket(
+  serverUrl: string,
+  token: string,
+  platform: string,
+  label: string,
+): { close: () => void } {
+  let ws: WebSocket | null = null;
+  let reconnectAttempt = 0;
+  let closed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function connect() {
+    if (closed) return;
+
+    const wsUrl = serverUrl.replace(/^http/, "ws") + `/bridge?token=${encodeURIComponent(token)}`;
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      reconnectAttempt = 0;
+      // Send register message with auth token
+      ws!.send(JSON.stringify({
+        type: "register",
+        token,
+        platform,
+        label,
+        userAgent: navigator.userAgent,
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data) as BridgeServerMessage | { type: string; clientId?: string };
+
+        if (msg.type === "registered" || msg.type === "authenticated" || msg.type === "pong") {
+          return;
+        }
+
+        if (msg.type === "error") {
+          console.warn("[bridge-ws] Server error:", msg);
+          return;
+        }
+
+        handleServerMessage(msg as BridgeServerMessage);
+      } catch {
+        // Ignore parse errors
+      }
+    };
+
+    ws.onclose = () => {
+      ws = null;
+      if (!closed) {
+        const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+        reconnectAttempt++;
+        console.log(`[bridge-ws] Disconnected, reconnecting in ${delay}ms...`);
+        reconnectTimer = setTimeout(connect, delay);
+      }
+    };
+
+    ws.onerror = () => {
+      // onclose will fire after onerror, triggering reconnect
+    };
   }
 
-  if (runtimeBridgeListenerPromise) {
-    return runtimeBridgeListenerPromise;
+  function handleServerMessage(msg: BridgeServerMessage) {
+    const bridge = getAutomationBridge();
+    if (!bridge || !ws) return;
+
+    const { requestId } = msg;
+
+    switch (msg.type) {
+      case "eval": {
+        const response = bridge.runScript(msg.script!);
+        ws.send(JSON.stringify({
+          type: "response",
+          requestId,
+          result: response.ok ? response.result : null,
+          error: response.ok ? undefined : response.error.message,
+        }));
+        break;
+      }
+
+      case "event": {
+        try {
+          bridge.dispatchEvent(msg.name!, msg.payload);
+          ws.send(JSON.stringify({ type: "response", requestId, result: null }));
+        } catch (err) {
+          ws.send(JSON.stringify({
+            type: "response",
+            requestId,
+            error: err instanceof Error ? err.message : "event dispatch failed",
+          }));
+        }
+        break;
+      }
+
+      case "reset": {
+        try {
+          bridge.resetTestState(msg.scopes);
+          ws.send(JSON.stringify({ type: "response", requestId, result: null }));
+        } catch (err) {
+          ws.send(JSON.stringify({
+            type: "response",
+            requestId,
+            error: err instanceof Error ? err.message : "reset failed",
+          }));
+        }
+        break;
+      }
+    }
   }
 
-  runtimeBridgeListenerPromise = (async () => {
-    const { listen, emit } = await import("@tauri-apps/api/event");
+  connect();
 
-    await listen<RuntimeBridgeRequest>(RUNTIME_REQUEST_EVENT, async (event) => {
-      const response = handleRuntimeRequest(event.payload);
-      await emit(event.payload.responseEvent, response);
-    });
-  })();
-
-  return runtimeBridgeListenerPromise;
+  return {
+    close() {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
+    },
+  };
 }

@@ -1,15 +1,3 @@
-#[cfg(any(test, debug_assertions))]
-mod automation;
-
-#[cfg(any(test, debug_assertions))]
-use std::sync::{Arc, RwLock};
-
-#[cfg(any(test, debug_assertions))]
-use serde_json::json;
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-use std::path::{Path, PathBuf};
-
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
@@ -39,14 +27,30 @@ fn get_sidecar_port(state: tauri::State<SidecarPortState>) -> u16 {
     state.0
 }
 
+/// Mock file dialog state — tests use this to simulate file picker responses.
+struct MockFileDialogState(std::sync::Mutex<Option<String>>);
+
+#[tauri::command]
+fn mock_file_dialog(
+    state: tauri::State<MockFileDialogState>,
+    path: String,
+) {
+    *state.0.lock().unwrap() = Some(path);
+}
+
+#[tauri::command]
+fn consume_mock_file_dialog(
+    state: tauri::State<MockFileDialogState>,
+) -> Option<String> {
+    state.0.lock().unwrap().take()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(all(desktop, any(test, debug_assertions)))]
-    append_automation_startup_log("entered_run");
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_store::Builder::default().build());
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .manage(MockFileDialogState(std::sync::Mutex::new(None)));
 
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
@@ -57,20 +61,26 @@ pub fn run() {
         updater::download_update,
         updater::install_update,
         get_sidecar_port,
+        mock_file_dialog,
+        consume_mock_file_dialog,
     ]);
 
     #[cfg(all(desktop, not(target_os = "macos")))]
-    let builder = builder.invoke_handler(tauri::generate_handler![get_sidecar_port,]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        get_sidecar_port,
+        mock_file_dialog,
+        consume_mock_file_dialog,
+    ]);
+
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        mock_file_dialog,
+        consume_mock_file_dialog,
+    ]);
 
     #[cfg(desktop)]
     let builder = builder.setup(|app| {
         initialize_desktop_runtime(app)?;
-        Ok(())
-    });
-
-    #[cfg(all(mobile, any(test, debug_assertions)))]
-    let builder = builder.setup(|app| {
-        initialize_mobile_automation(app)?;
         Ok(())
     });
 
@@ -84,62 +94,11 @@ pub fn run() {
 #[allow(dead_code)]
 struct SidecarState(std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
-#[cfg(any(test, debug_assertions))]
-#[allow(dead_code)]
-struct AutomationServerState(std::sync::Mutex<Option<automation::server::AutomationServer>>);
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-fn append_automation_startup_log(message: &str) {
-    let _ = append_automation_startup_log_impl(message);
-}
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-fn append_automation_startup_log_impl(message: &str) -> std::io::Result<()> {
-    use std::fs::{self, OpenOptions};
-    use std::io::Write;
-
-    let discovery_path = automation_debug_log_path()?;
-    if let Some(parent) = discovery_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let temp_path = std::env::temp_dir().join("matrix-automation-startup.log");
-    for path in [discovery_path, temp_path] {
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
-        }
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-            let _ = writeln!(file, "{message}");
-            let _ = file.flush();
-        }
-    }
-    Ok(())
-}
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-fn automation_debug_log_path() -> std::io::Result<PathBuf> {
-    if let Some(directory) = std::env::var_os("MATRIX_AUTOMATION_DISCOVERY_DIR") {
-        return Ok(PathBuf::from(directory).join("automation-startup.log"));
-    }
-
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is not set"))?;
-    Ok(Path::new(&home)
-        .join("Library")
-        .join("Application Support")
-        .join("Matrix")
-        .join("dev")
-        .join("automation-startup.log"))
-}
-
 #[cfg(desktop)]
 fn initialize_desktop_runtime(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sidecar_port = resolve_sidecar_port();
-
-    #[cfg(any(test, debug_assertions))]
-    append_automation_startup_log(&format!("entered_desktop_setup sidecar_port={sidecar_port}"));
 
     let skip_sidecar = std::env::var("SKIP_SIDECAR")
         .map(|v| v == "true" || v == "1")
@@ -220,9 +179,6 @@ fn initialize_desktop_runtime(
             }
         });
     }
-
-    #[cfg(any(test, debug_assertions))]
-    initialize_automation_runtime(app, sidecar_port);
 
     let main_window = app.get_webview_window("main").unwrap();
 
@@ -309,349 +265,4 @@ fn inject_dev_banner(window: &tauri::WebviewWindow, worktree_name: &str, port: u
         std::thread::sleep(std::time::Duration::from_secs(3));
         let _ = w.eval(&js);
     });
-}
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-struct TauriWindowFacade(tauri::AppHandle);
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-impl automation::runtime::desktop::DesktopWindowFacade for TauriWindowFacade {
-    fn focus(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
-        if let Some(window) = self.0.get_webview_window("main") {
-            let _ = window.set_focus();
-            Ok(json!({"focused": true}))
-        } else {
-            Err(automation::core::errors::AutomationErrorCode::NativeUnavailable)
-        }
-    }
-
-    fn reload(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
-        if let Some(window) = self.0.get_webview_window("main") {
-            let _ = window.eval("window.location.reload()");
-            Ok(json!({"reloaded": true}))
-        } else {
-            Err(automation::core::errors::AutomationErrorCode::NativeUnavailable)
-        }
-    }
-
-    fn state(&self) -> serde_json::Value {
-        if let Some(window) = self.0.get_webview_window("main") {
-            let focused = window.is_focused().unwrap_or(false);
-            let visible = window.is_visible().unwrap_or(false);
-            json!({"label": "main", "focused": focused, "visible": visible})
-        } else {
-            json!({"label": "main", "focused": false, "visible": false})
-        }
-    }
-
-    fn screenshot(&self) -> Result<Vec<u8>, automation::core::errors::AutomationErrorCode> {
-        let Some(window) = self.0.get_webview_window("main") else {
-            return Err(automation::core::errors::AutomationErrorCode::NativeUnavailable);
-        };
-
-        let title = window.title().unwrap_or_default();
-        let window_id = get_cg_window_id(&title)
-            .ok_or(automation::core::errors::AutomationErrorCode::NativeUnavailable)?;
-
-        let tmp_path = std::env::temp_dir().join("matrix-automation-screenshot.png");
-
-        // Capture only this window via CGWindowID (-l flag).
-        // Works even when the window is behind other windows.
-        let output = std::process::Command::new("screencapture")
-            .args(["-o", "-x", "-t", "png", "-l", &window_id])
-            .arg(tmp_path.to_str().unwrap_or("/tmp/matrix-automation-screenshot.png"))
-            .output()
-            .map_err(|_| automation::core::errors::AutomationErrorCode::InternalError)?;
-
-        if !output.status.success() {
-            return Err(automation::core::errors::AutomationErrorCode::InternalError);
-        }
-
-        std::fs::read(&tmp_path)
-            .map_err(|_| automation::core::errors::AutomationErrorCode::InternalError)
-    }
-}
-
-/// Look up the CGWindowID for a window by its title using CGWindowListCopyWindowInfo
-/// via a Swift one-liner (built-in on macOS, no extra dependencies).
-#[cfg(all(desktop, any(test, debug_assertions)))]
-fn get_cg_window_id(title: &str) -> Option<String> {
-    let script = format!(
-        r#"import Cocoa; let ws = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String:Any]] ?? []; for w in ws {{ let n = w[kCGWindowName as String] as? String ?? ""; let o = w[kCGWindowOwnerName as String] as? String ?? ""; if n.contains("{title}") || o.contains("{title}") {{ print(w[kCGWindowNumber as String]!); break }} }}"#,
-        title = title.replace('\\', "\\\\").replace('"', "\\\"")
-    );
-    let output = std::process::Command::new("swift")
-        .args(["-e", &script])
-        .output()
-        .ok()?;
-    if output.status.success() {
-        let id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !id.is_empty() {
-            return Some(id);
-        }
-    }
-    None
-}
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-#[allow(dead_code)]
-struct TauriSidecarFacade {
-    handle: tauri::AppHandle,
-    port: u16,
-}
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-impl automation::runtime::desktop::DesktopSidecarFacade for TauriSidecarFacade {
-    fn status(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
-        use std::net::TcpStream;
-        use std::time::Duration;
-        let addr = format!("127.0.0.1:{}", self.port);
-        let running = TcpStream::connect_timeout(
-            &addr.parse().unwrap(),
-            Duration::from_millis(200),
-        )
-        .is_ok();
-        Ok(json!({"running": running, "port": self.port}))
-    }
-
-    fn restart(&self) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
-        Err(automation::core::errors::AutomationErrorCode::UnsupportedAction)
-    }
-
-    fn state(&self) -> serde_json::Value {
-        self.status()
-            .unwrap_or_else(|_| json!({"running": false, "port": self.port}))
-    }
-}
-
-#[cfg(all(desktop, any(test, debug_assertions)))]
-fn initialize_automation_runtime(app: &mut tauri::App<tauri::Wry>, sidecar_port: u16) {
-    append_automation_startup_log("entered_automation_setup");
-
-    let mut automation_state =
-        automation::state::AutomationState::from_env("MATRIX_AUTOMATION_PORT", 18_765);
-    append_automation_startup_log(&format!(
-        "configured_port={} token={}",
-        automation_state.port, automation_state.token
-    ));
-
-    automation_state.app_ready = true;
-    automation_state.sidecar_ready = true;
-    automation_state.webview_ready = true;
-
-    let route_state = Arc::new(RwLock::new(automation::runtime::router::RouteStateSnapshot {
-        platform: automation_state.platform.to_string(),
-        app_ready: automation_state.app_ready,
-        webview_ready: automation_state.webview_ready,
-        sidecar_ready: automation_state.sidecar_ready,
-        window: json!({
-            "label": "main",
-            "focused": true,
-            "visible": true
-        }),
-        webview: json!({
-            "url": format!("http://127.0.0.1:{sidecar_port}")
-        }),
-        sidecar: json!({
-            "running": true,
-            "port": sidecar_port
-        }),
-    }));
-
-    let webview_bridge = automation::runtime::webview::DesktopWebviewBridge::new(
-        automation::runtime::webview::TauriEventBridgeTransport::new(app.handle().clone()),
-    );
-
-    let app_handle_for_facades = app.handle().clone();
-    let desktop_adapter = automation::runtime::desktop::DesktopAutomationAdapter::new(
-        TauriWindowFacade(app_handle_for_facades.clone()),
-        TauriSidecarFacade {
-            handle: app_handle_for_facades,
-            port: sidecar_port,
-        },
-    );
-
-    let composite_backend = automation::runtime::composite::DesktopRuntimeBackend::new(
-        webview_bridge,
-        desktop_adapter,
-        route_state.clone(),
-    );
-
-    match automation::server::start_loopback_server(
-        automation_state.port,
-        automation_state.token.clone(),
-        route_state,
-        Arc::new(composite_backend),
-    ) {
-        Ok(automation_server) => {
-            automation_state.port = automation_server.local_addr().port();
-            append_automation_startup_log(&format!(
-                "loopback_server_started port={}",
-                automation_state.port
-            ));
-            println!(
-                "  Automation bridge: {}",
-                automation_state.base_url(),
-            );
-            app.manage(AutomationServerState(std::sync::Mutex::new(Some(
-                automation_server,
-            ))));
-        }
-        Err(error) => {
-            append_automation_startup_log(&format!("loopback_server_failed error={error}"));
-            eprintln!("  Automation bridge failed to start: {error}");
-        }
-    }
-}
-
-/// iOS Simulator automation bridge setup.
-/// Reads MATRIX_AUTOMATION_PORT_IOS (fallback to MATRIX_AUTOMATION_PORT) and
-/// MATRIX_AUTOMATION_TOKEN from env, then starts the bridge using the ios_sim adapter.
-#[cfg(all(mobile, any(test, debug_assertions)))]
-fn initialize_mobile_automation(
-    app: &mut tauri::App<tauri::Wry>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Prefer iOS-specific port, fall back to shared port
-    let port = std::env::var("MATRIX_AUTOMATION_PORT_IOS")
-        .ok()
-        .and_then(|raw| raw.parse::<u16>().ok())
-        .or_else(|| {
-            std::env::var("MATRIX_AUTOMATION_PORT")
-                .ok()
-                .and_then(|raw| raw.parse::<u16>().ok())
-        })
-        .unwrap_or(18_766);
-    let token = std::env::var("MATRIX_AUTOMATION_TOKEN").unwrap_or_else(|_| "dev".to_string());
-
-    let mut automation_state = automation::state::AutomationState::new(port, token);
-    automation_state.app_ready = true;
-    automation_state.webview_ready = true;
-
-    let dev_server_url = std::env::var("MATRIX_DEV_SERVER_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
-
-    let route_state = Arc::new(RwLock::new(automation::runtime::router::RouteStateSnapshot {
-        platform: automation_state.platform.to_string(),
-        app_ready: automation_state.app_ready,
-        webview_ready: automation_state.webview_ready,
-        sidecar_ready: false,
-        window: json!({
-            "label": "ios-main",
-            "focused": true,
-            "visible": true
-        }),
-        webview: json!({
-            "url": dev_server_url
-        }),
-        sidecar: serde_json::Value::Null,
-    }));
-
-    let webview_bridge = automation::runtime::webview::DesktopWebviewBridge::new(
-        automation::runtime::webview::TauriEventBridgeTransport::new(app.handle().clone()),
-    );
-
-    // Use ios_sim adapter — no window.focus or sidecar support
-    struct MobileAppFacade(tauri::AppHandle);
-    impl automation::runtime::ios_sim::IosAppFacade for MobileAppFacade {
-        fn reload(
-            &self,
-        ) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
-            if let Some(window) = self.0.get_webview_window("main") {
-                let _ = window.eval("window.location.reload()");
-                Ok(json!({"reloaded": true}))
-            } else {
-                Err(automation::core::errors::AutomationErrorCode::NativeUnavailable)
-            }
-        }
-
-        fn state(&self) -> serde_json::Value {
-            if let Some(window) = self.0.get_webview_window("main") {
-                let focused = window.is_focused().unwrap_or(false);
-                let visible = window.is_visible().unwrap_or(false);
-                json!({"label": "ios-main", "focused": focused, "visible": visible})
-            } else {
-                json!({"label": "ios-main", "focused": false, "visible": false})
-            }
-        }
-    }
-
-    struct MobileWebviewFacade;
-    impl automation::runtime::ios_sim::IosWebviewFacade for MobileWebviewFacade {
-        fn reset(
-            &self,
-            scopes: &[automation::core::models::ResetScope],
-        ) -> Result<serde_json::Value, automation::core::errors::AutomationErrorCode> {
-            Ok(json!({ "resetScopes": scopes }))
-        }
-
-        fn state(&self) -> serde_json::Value {
-            json!({ "platform": "ios-sim" })
-        }
-    }
-
-    let ios_adapter = automation::runtime::ios_sim::IosSimulatorAdapter::new(
-        MobileAppFacade(app.handle().clone()),
-        MobileWebviewFacade,
-    );
-
-    // The ios_sim adapter implements AutomationRouterBackend, so use it directly
-    // wrapped with webview eval support via a composite-like approach.
-    // For simplicity, use ios_adapter directly — it handles native + test_control.
-    // Webview eval goes through the webview_bridge.
-    struct IosRuntimeBackend<W> {
-        webview: W,
-        native: automation::runtime::ios_sim::IosSimulatorAdapter<MobileAppFacade, MobileWebviewFacade>,
-    }
-
-    impl<W: automation::core::capabilities::WebviewCapability + Send + Sync>
-        automation::runtime::router::AutomationRouterBackend for IosRuntimeBackend<W>
-    {
-        fn webview_capability(
-            &self,
-        ) -> Option<&dyn automation::core::capabilities::WebviewCapability> {
-            Some(&self.webview)
-        }
-
-        fn native_capability(
-            &self,
-        ) -> Option<&dyn automation::core::capabilities::NativeCapability> {
-            use automation::runtime::router::AutomationRouterBackend;
-            self.native.native_capability()
-        }
-
-        fn test_control_capability(
-            &self,
-        ) -> Option<&dyn automation::core::capabilities::TestControlCapability> {
-            use automation::runtime::router::AutomationRouterBackend;
-            self.native.test_control_capability()
-        }
-    }
-
-    let ios_backend = IosRuntimeBackend {
-        webview: webview_bridge,
-        native: ios_adapter,
-    };
-
-    match automation::server::start_loopback_server(
-        automation_state.port,
-        automation_state.token.clone(),
-        route_state,
-        Arc::new(ios_backend),
-    ) {
-        Ok(automation_server) => {
-            automation_state.port = automation_server.local_addr().port();
-            eprintln!(
-                "[matrix-client] iOS automation bridge: {}",
-                automation_state.base_url(),
-            );
-            app.manage(AutomationServerState(std::sync::Mutex::new(Some(
-                automation_server,
-            ))));
-        }
-        Err(error) => {
-            eprintln!("[matrix-client] iOS automation bridge failed to start: {error}");
-        }
-    }
-
-    Ok(())
 }

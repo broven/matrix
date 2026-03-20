@@ -8,13 +8,11 @@
     "dev": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; exec pnpm -r --parallel dev'",
     "dev:mac": "wireit",
     "dev:ios": "wireit",
-    "dev:ios-autoconnect": "wireit",
     "dev:all": "wireit",
     "open": "sh -c 'set -a; . ./.env.local; set +a; open \"http://localhost:${CLIENT_PORT:-5173}/?serverUrl=http://localhost:${MATRIX_PORT:-8080}&token=${MATRIX_TOKEN}&autoConnect=1\"'",
     "smoke:mac-automation": "bash scripts/smoke-mac-automation.sh",
     "test:release": "vitest run --config tests/release/vitest.config.ts",
-    "test:release:real-agent": "REAL_AGENT=1 vitest run --config tests/release/vitest.config.ts",
-    "test:release:wait-for-bridge": "node tests/release/scripts/wait-for-bridge.mjs"
+    "test:release:real-agent": "REAL_AGENT=1 vitest run --config tests/release/vitest.config.ts"
   },
   "wireit": {
     "dev:mac": {
@@ -26,16 +24,6 @@
       ]
     },
     "dev:ios": {
-      "dependencies": [
-        "./packages/protocol:dev",
-        "./packages/sdk:dev",
-        "./packages/server:dev:mac",
-        "./packages/client:dev:ios"
-      ]
-    },
-    "dev:ios-autoconnect": {
-      "command": "sh -c 'set -a; [ -f .env.local ] && . ./.env.local; set +a; exec node scripts/ios-autoconnect.mjs'",
-      "service": true,
       "dependencies": [
         "./packages/protocol:dev",
         "./packages/sdk:dev",

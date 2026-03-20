@@ -1,82 +1,65 @@
 # Automation Bridge
 
-`packages/client` contains the development-only automation bridge used to verify the native client without manual app releases.
+The automation bridge enables automated testing and verification of the Matrix native client without manual interaction.
+
+## Architecture
+
+The bridge uses a WebSocket-based server-client architecture:
+
+- **Bridge Server** lives in `packages/server` — WebSocket endpoint + HTTP API, all on the existing server port
+- **App webviews** connect as WebSocket clients from the browser/Tauri frontend
+- **Test runners** interact via HTTP API on the same server (`/bridge/*` endpoints)
 
 ## Startup
 
-- Start the client in development mode with `pnpm --filter @matrix/client tauri:dev`.
-- The bridge is enabled only in dev/test builds.
-- On desktop, startup writes a discovery file and prints the bridge base URL to stdout.
-- The bridge listens on loopback only and uses a bearer token for every request.
+1. Start the server with `pnpm --filter @matrix/server dev` (or let Tauri spawn it as a sidecar)
+2. Start the client with `pnpm --filter @matrix/client tauri:dev`
+3. The client's webview automatically connects to the bridge via WebSocket at `/bridge`
+4. The client registers as a bridge client (e.g., `macos-main` or `ios-main`)
 
-## Discovery
+## Configuration
 
-The bridge writes `automation.json` to the dev discovery directory.
+The bridge uses the same server port and token as the Matrix server:
 
-Default location on macOS and iOS simulator hosts:
+- `MATRIX_PORT` — server port (set in `.env.local`)
+- `MATRIX_TOKEN` — auth token (set in `.env.local`)
 
-- `~/Library/Application Support/Matrix/dev/automation.json`
+No separate automation ports or discovery files are needed.
 
-The file is written atomically and has this shape:
+## HTTP Endpoints
 
-```json
-{
-  "enabled": true,
-  "platform": "macos",
-  "baseUrl": "http://127.0.0.1:18765",
-  "token": "dev-...",
-  "pid": 12345
-}
-```
+All endpoints require `Authorization: Bearer <token>` header.
 
-Notes:
+- `GET /bridge/health` — bridge status + connected client count
+- `GET /bridge/clients` — list connected clients with metadata
+- `POST /bridge/eval` — `{ clientId?, script }` — execute JS in webview, returns result
+- `POST /bridge/event` — `{ clientId?, name, payload? }` — dispatch event to webview
+- `POST /bridge/reset` — `{ clientId?, scopes? }` — reset test state
+- `POST /bridge/wait` — `{ clientId?, condition, timeoutMs?, intervalMs? }` — poll eval until truthy
 
-- `enabled` is always `true` for a running dev bridge.
-- `platform` is the runtime platform name reported by the app.
-- `baseUrl` is the HTTP loopback address for the bridge.
-- `token` is required in the `Authorization: Bearer ...` header.
-- `pid` is the current app process id.
+## WebSocket Protocol
 
-## Endpoints
+Clients connect to `ws://<server>/bridge?token=<token>` and send:
 
-The current bridge exposes these endpoints:
+- `{ type: "register", token, platform, label, userAgent? }` — register as a client
+- `{ type: "response", requestId, result?, error? }` — respond to server requests
+- `{ type: "heartbeat" }` — keep-alive
 
-- `GET /health`
-- `GET /state`
-- `POST /webview/eval`
-- `POST /webview/event`
-- `POST /native/invoke`
-- `POST /native/screenshot`
-- `POST /test/reset`
-- `POST /wait`
+Server sends to clients:
 
-Response errors use stable string codes such as `unauthorized`, `invalid_json`, `unsupported_action`, `unsupported_condition`, `timeout`, `webview_unavailable`, `native_unavailable`, `reset_failed`, and `internal_error`.
+- `{ type: "eval", requestId, script }` — execute JavaScript
+- `{ type: "event", requestId, name, payload? }` — dispatch event
+- `{ type: "reset", requestId, scopes? }` — reset test state
 
-## Capability Matrix
+## Multi-Client Support
 
-The protocol is shared across desktop and iOS simulator, but platform support differs.
-
-| Capability | Desktop | iOS simulator |
-| --- | --- | --- |
-| `GET /health` | Supported | Supported by the shared contract |
-| `GET /state` | Supported | Supported by the shared contract |
-| `POST /webview/eval` | Supported | Supported by the shared contract |
-| `POST /webview/event` | Supported | Supported by the shared contract |
-| `POST /native/invoke` | Supported for `window.focus`, `window.reload`, and `sidecar.status` | Adapter exists in code, but the live startup path is desktop-first; desktop-only actions should return `unsupported_action` when routed through the shared contract |
-| `POST /native/screenshot` | Supported — returns `image/png` bytes | Returns `unsupported_action` via the shared contract |
-| `POST /test/reset` | Supported | Supported by the shared contract |
-| `POST /wait` | Supported | Supported by the shared contract |
-
-Desktop state includes window and sidecar metadata. iOS simulator state does not have a sidecar and should report that as unavailable.
-
-The iOS simulator adapter is present in `packages/client/src-tauri/src/automation/runtime/ios_sim.rs`, but the current dev startup wiring still boots the desktop bridge path.
+The bridge supports multiple simultaneous clients (e.g., macOS + iOS).
+Client IDs are `{platform}-{label}` (e.g., `macos-main`, `ios-main`).
+When `clientId` is omitted in HTTP requests, the first connected client is used.
 
 ## Troubleshooting
 
-- If the bridge does not start, check the app console for `Automation bridge failed to start`.
-- If discovery is missing, confirm the app is running in dev/test mode and that `MATRIX_AUTOMATION_DISCOVERY_DIR` is writable when overridden.
-- If local smoke checks hit a proxy-generated `503` or HTML error page, bypass system proxies for loopback requests. The bundled smoke script now forces `curl --noproxy "*"`.
-- If requests return `401`, make sure the `Authorization` header uses the token from `automation.json`.
-- If `/webview/eval` returns `webview_unavailable`, the frontend bridge was not installed or did not respond in time.
-- If `/native/invoke` returns `unsupported_action`, the requested action is not part of the current whitelist.
-- If `/wait` times out, verify the condition against `/state` or `webview.eval` first.
+- If no clients are connected, check that the app webview loaded successfully and `shouldInstallBridge()` returns true
+- If `/bridge/eval` returns `502`, the target client may have disconnected
+- If `/bridge/wait` times out (408), verify the condition against `/bridge/eval` first
+- The client auto-reconnects with exponential backoff (1s → 30s) if the WebSocket drops

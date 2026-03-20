@@ -8,7 +8,7 @@ allowed-tools: Bash(curl *), Bash(cat *), Bash(ps *), Bash(pgrep *), Bash(kill *
 
 # Automation Bridge
 
-Interact with the running Matrix macOS dev client through the local HTTP automation bridge.
+Interact with the running Matrix dev client through the WebSocket-based automation bridge on the Matrix server.
 
 ## Prerequisites
 
@@ -18,197 +18,122 @@ The dev app must be running:
 pnpm dev:mac
 ```
 
-## Step 1: Read Discovery
+## Step 1: Get Connection Info
+
+Read `MATRIX_PORT` and `MATRIX_TOKEN` from `.env.local`:
 
 ```bash
-cat ~/Library/Application\ Support/Matrix/dev/automation.json
+set -a; source .env.local; set +a
+export B="http://127.0.0.1:$MATRIX_PORT"
+export T="$MATRIX_TOKEN"
 ```
-
-This returns:
-
-```json
-{
-  "enabled": true,
-  "platform": "macos",
-  "baseUrl": "http://127.0.0.1:18765",
-  "token": "dev-...",
-  "pid": 12345
-}
-```
-
-Extract `baseUrl` and `token`. Verify the process is alive:
-
-```bash
-ps -p <pid> -o comm=
-```
-
-If the process is dead, restart the app.
 
 ## Step 2: Verify Health
 
 ```bash
-curl --noproxy "*" -s -H "Authorization: Bearer <token>" "<baseUrl>/health" | python3 -m json.tool
+curl --noproxy "*" -s -H "Authorization: Bearer $T" "$B/bridge/health" | python3 -m json.tool
 ```
 
-All fields should be `true` before proceeding.
+Should show `clientCount > 0` before proceeding.
 
 ## Step 3: Use Endpoints
 
-All requests require `Authorization: Bearer <token>` and `--noproxy "*"` (to bypass system proxies on loopback).
+All requests require `Authorization: Bearer $T` and `--noproxy "*"` (to bypass system proxies on loopback).
 
-### GET /health
+### GET /bridge/health
 
-Check app readiness.
-
-```bash
-curl --noproxy "*" -s -H "Authorization: Bearer $TOKEN" "$BASE/health"
-```
-
-### GET /state
-
-Inspect window, webview, and sidecar state.
+Check bridge status and connected clients.
 
 ```bash
-curl --noproxy "*" -s -H "Authorization: Bearer $TOKEN" "$BASE/state"
+curl --noproxy "*" -s -H "Authorization: Bearer $T" "$B/bridge/health"
 ```
 
-### POST /webview/eval
+### GET /bridge/clients
+
+List all connected webview clients.
+
+```bash
+curl --noproxy "*" -s -H "Authorization: Bearer $T" "$B/bridge/clients"
+```
+
+### POST /bridge/eval
 
 Run a script inside the webview and get a JSON-safe result.
 
 ```bash
 curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $T" \
   -H "Content-Type: application/json" \
-  -d '{"script":"window.location.href"}' \
-  "$BASE/webview/eval"
+  -d '{"script":"document.title"}' \
+  "$B/bridge/eval"
 ```
 
-### POST /webview/event
+### POST /bridge/event
 
 Dispatch a named event into the frontend bridge.
 
 ```bash
 curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $T" \
   -H "Content-Type: application/json" \
   -d '{"name":"automation:ping","payload":{}}' \
-  "$BASE/webview/event"
-```
-
-### POST /native/invoke
-
-Invoke a whitelisted native action. Supported: `window.focus`, `window.reload`, `sidecar.status`.
-
-```bash
-curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"action":"sidecar.status"}' \
-  "$BASE/native/invoke"
-```
-
-### POST /native/screenshot
-
-Capture a PNG screenshot of the Matrix window only (not full screen). Returns binary PNG data. Works even when the window is occluded by other windows.
-
-```bash
-curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -o /tmp/matrix-screenshot.png \
-  "$BASE/native/screenshot"
-```
-
-Verify the result:
-
-```bash
-file /tmp/matrix-screenshot.png
-# PNG image data, 1280 x 900, 8-bit/color RGBA, non-interlaced
+  "$B/bridge/event"
 ```
 
 ### DOM Snapshot (diagnose)
 
-Capture DOM diagnostic state for debugging — testids, dialogs, focused element, and visible text. Uses `/webview/eval` with a diagnostic script.
+Capture DOM diagnostic state for debugging — testids, dialogs, focused element, and visible text. Uses `/bridge/eval` with a diagnostic script.
 
 ```bash
 curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $T" \
   -H "Content-Type: application/json" \
   -d '{"script":"(()=>{const testids=Array.from(document.querySelectorAll(\"[data-testid]\")).map(el=>el.getAttribute(\"data-testid\"));const dialogs=Array.from(document.querySelectorAll(\".fixed\")).map(el=>el.className);const focused=document.activeElement?.tagName+\"#\"+document.activeElement?.getAttribute(\"data-testid\");const url=window.location.href;const bodyText=document.body.innerText.substring(0,500);return JSON.stringify({url,testids,dialogs,focused,bodyText},null,2)})()"}' \
-  "$BASE/webview/eval"
+  "$B/bridge/eval"
 ```
 
-Returns:
+### POST /bridge/reset
 
-```json
-{
-  "ok": true,
-  "result": "{\"url\":\"...\",\"testids\":[\"add-repo-btn\",\"settings-btn\",...],\"dialogs\":[...],\"focused\":\"BODY#null\",\"bodyText\":\"...\"}"
-}
-```
-
-### POST /test/reset
-
-Reset test state before repeating a scenario. Scopes: `web-storage`, `indexed-db`, `automation-state`, `session-cache`, `sidecar`.
+Reset test state before repeating a scenario.
 
 ```bash
 curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $T" \
   -H "Content-Type: application/json" \
   -d '{"scopes":["automation-state"]}' \
-  "$BASE/test/reset"
+  "$B/bridge/reset"
 ```
 
-### POST /wait
+### POST /bridge/wait
 
-Wait for a condition without polling manually.
-
-**webview.eval** — poll until script returns truthy:
+Wait for a condition without polling manually. The `condition` is a JavaScript expression that should return truthy when the condition is met.
 
 ```bash
 curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $T" \
   -H "Content-Type: application/json" \
-  -d '{"timeoutMs":5000,"intervalMs":100,"condition":{"kind":"webview.eval","script":"window.__MATRIX_AUTOMATION__ != null"}}' \
-  "$BASE/wait"
-```
-
-**state.match** — poll until route state path equals expected value:
-
-```bash
-curl --noproxy "*" -s -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"timeoutMs":5000,"intervalMs":100,"condition":{"kind":"state.match","path":"sidecar.running","equals":true}}' \
-  "$BASE/wait"
+  -d '{"condition":"window.__MATRIX_AUTOMATION__ != null","timeoutMs":5000,"intervalMs":100}' \
+  "$B/bridge/wait"
 ```
 
 ## Error Codes
 
 | Code | Meaning |
 |------|---------|
-| `unauthorized` | Missing or wrong bearer token |
-| `invalid_json` | Request body is not valid JSON |
-| `unsupported_action` | Native action not in whitelist |
-| `unsupported_condition` | Wait condition kind not recognized |
-| `timeout` | Wait condition not met within deadline |
-| `webview_unavailable` | Frontend bridge not responding |
-| `native_unavailable` | Native capability not available |
-| `reset_failed` | Test reset capability not available |
-| `internal_error` | Unexpected server error |
+| `401` | Missing or wrong bearer token |
+| `502` | Client disconnected or eval failed |
+| `408` | Wait condition not met within deadline |
 
 ## Recommended Workflow
 
-1. Read discovery file, extract `baseUrl` and `token`
-2. `GET /health` — confirm all ready
-3. `GET /state` — understand current state
-4. Use `/webview/eval` for DOM assertions
-5. Use `/webview/event` to trigger frontend hooks
-6. Use `/native/invoke` for window/sidecar control
-7. Use `/native/screenshot` to capture window PNG for visual debugging
-8. Use DOM snapshot (diagnose script via `/webview/eval`) for test failure analysis
-9. Use `/test/reset` before repeating scenarios
-10. Use `/wait` instead of `sleep` loops
+1. Source `.env.local` for `MATRIX_PORT` and `MATRIX_TOKEN`
+2. `GET /bridge/health` — confirm clientCount > 0
+3. `GET /bridge/clients` — see connected clients
+4. Use `/bridge/eval` for DOM assertions
+5. Use `/bridge/event` to trigger frontend hooks
+6. Use DOM snapshot (diagnose script via `/bridge/eval`) for test failure analysis
+7. Use `/bridge/reset` before repeating scenarios
+8. Use `/bridge/wait` instead of `sleep` loops
 
 ## Debugging Flaky E2E Tests
 
@@ -219,8 +144,9 @@ When an e2e test (`tests/release/flows/*.test.ts`) fails or is flaky, **DO NOT**
 1. **Read the failing test** to understand its step-by-step flow
 2. **Set up environment vars** for bridge access:
    ```bash
-   export T=$(cat ~/Library/Application\ Support/Matrix/dev/automation.json | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-   export B=$(cat ~/Library/Application\ Support/Matrix/dev/automation.json | python3 -c "import sys,json; print(json.load(sys.stdin)['baseUrl'])")
+   set -a; source .env.local; set +a
+   export B="http://127.0.0.1:$MATRIX_PORT"
+   export T="$MATRIX_TOKEN"
    ```
 3. **Replay each test step individually** via curl, checking the result after each one
 4. **Use DOM snapshot between steps** to see what the UI actually looks like
@@ -232,76 +158,54 @@ When an e2e test (`tests/release/flows/*.test.ts`) fails or is flaky, **DO NOT**
 ```bash
 curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
   -d '{"script":"(() => { const el = document.querySelector(\"[data-testid=\\\"add-repo-btn\\\"]\"); el.dispatchEvent(new PointerEvent(\"pointerdown\",{bubbles:true,cancelable:true,pointerId:1})); el.dispatchEvent(new PointerEvent(\"pointerup\",{bubbles:true,cancelable:true,pointerId:1})); el.click(); })()"}' \
-  "$B/webview/eval"
+  "$B/bridge/eval"
 ```
 
-**Type into an input (React-compatible, works for both `<input>` and `<textarea>`):**
+**Type into an input (React-compatible):**
 ```bash
 curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
   -d '{"script":"(() => { const el = document.querySelector(\"[data-testid=\\\"chat-input\\\"]\"); const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; const setter = Object.getOwnPropertyDescriptor(proto, \"value\")?.set; if(setter) setter.call(el, \"your text\"); else el.value=\"your text\"; el.dispatchEvent(new Event(\"input\",{bubbles:true})); el.dispatchEvent(new Event(\"change\",{bubbles:true})); })()"}' \
-  "$B/webview/eval"
-```
-
-**Send a chat message (React _valueTracker trick + Enter keydown):**
-```bash
-# Step 1: Set value with _valueTracker
-curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-  -d '{"script":"(() => { const el = document.querySelector(\"[data-testid=\\\"chat-input\\\"]\"); el.focus(); const s = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, \"value\").set; s.call(el, \"hi\"); const t = el._valueTracker; if(t) t.setValue(\"\"); el.dispatchEvent(new Event(\"input\",{bubbles:true})); })()"}' \
-  "$B/webview/eval"
-# Step 2: Submit via Enter (after 500ms)
-curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-  -d '{"script":"(() => { const el = document.querySelector(\"[data-testid=\\\"chat-input\\\"]\"); el.dispatchEvent(new KeyboardEvent(\"keydown\",{key:\"Enter\",code:\"Enter\",keyCode:13,bubbles:true,cancelable:true})); })()"}' \
-  "$B/webview/eval"
+  "$B/bridge/eval"
 ```
 
 **Check element existence:**
 ```bash
 curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
   -d '{"script":"!!document.querySelector(\"[data-testid=\\\"assistant-message\\\"]\")"}' \
-  "$B/webview/eval"
+  "$B/bridge/eval"
 ```
 
 **Poll until condition is met:**
 ```bash
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  RES=$(curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-    -d '{"script":"!!document.querySelector(\"[data-testid=\\\"assistant-message\\\"]\")"}' "$B/webview/eval")
-  if echo "$RES" | grep -q '"result":true'; then echo "Ready after ${i}s"; break; fi
-  sleep 1
-done
+curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+  -d '{"condition":"!!document.querySelector(\"[data-testid=\\\"assistant-message\\\"]\")","timeoutMs":10000,"intervalMs":1000}' \
+  "$B/bridge/wait"
 ```
 
-### Sidecar API Access
+### Server API Access
 
-Some debugging requires checking server-side state:
+Access server API directly using the same token:
 
 ```bash
-# Get sidecar connection info
-STATE=$(curl -s -H "Authorization: Bearer $T" "$B/state")
-SIDECAR_PORT=$(echo "$STATE" | python3 -c "import sys,json; print(json.load(sys.stdin)['sidecar']['port'])")
-ST=$(curl -s "http://127.0.0.1:$SIDECAR_PORT/api/auth-info" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-
 # Check repos, agents, config
-curl -s -H "Authorization: Bearer $ST" "http://127.0.0.1:$SIDECAR_PORT/repositories"
-curl -s -H "Authorization: Bearer $ST" "http://127.0.0.1:$SIDECAR_PORT/custom-agents"
-curl -s -H "Authorization: Bearer $ST" "http://127.0.0.1:$SIDECAR_PORT/server/config"
+curl -s -H "Authorization: Bearer $T" "$B/repositories"
+curl -s -H "Authorization: Bearer $T" "$B/custom-agents"
+curl -s -H "Authorization: Bearer $T" "$B/server/config"
 ```
 
-### Key Gotchas Found Through Manual Debugging
+### Key Gotchas
 
 - **`HTMLInputElement.prototype.value.set` throws on `<textarea>`** — always check `el instanceof HTMLTextAreaElement` and use the matching prototype
-- **`removeAllRepos` via API doesn't update UI** — must `window.reload` + wait after API-level cleanup
-- **`spawnAgentViaMessage` may return instantly** if input was never disabled — wait for `assistant-message` to appear instead
-- **After `window.reload`, old DOM may still be queryable** — add 1.5s delay before polling to let the page tear down
-- **`webview/eval` returns `internal_error`** when the evaluated JS throws — the error message is not passed through, so wrap scripts in try/catch during debugging
+- **After `window.location.reload()`, old DOM may still be queryable** — add 1.5s delay before polling to let the page tear down
+- **`/bridge/eval` returns `502`** when the webview client is disconnected or the script throws — wrap scripts in try/catch during debugging
+- **Multi-client**: If both macOS and iOS clients are connected, pass `clientId` to target a specific one
 
 ## Troubleshooting
 
-- **Bridge not starting**: Check app console for `Automation bridge failed to start`
-- **Discovery missing**: Confirm app is running in dev mode
+- **No clients**: Check that the app webview loaded and connected to the bridge WebSocket
+- **502 errors**: Client disconnected — check app logs
 - **503 or HTML errors**: Add `--noproxy "*"` to curl commands
-- **401 Unauthorized**: Use the token from the current `automation.json`
-- **webview_unavailable**: Frontend bridge not installed or timed out — wait and retry
+- **401 Unauthorized**: Check MATRIX_TOKEN matches what the server is using
 - **Process died**: Restart with `pnpm dev:mac`
 
 ## Reference
