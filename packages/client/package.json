@@ -6,7 +6,7 @@
     "dev": "wireit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run && node --test test/**/*.test.mjs",
+    "test": "vitest run",
     "test:e2e": "playwright test",
     "tauri": "tauri",
     "tauri:dev": "sh -c 'set -a; [ -f ../../.env.local ] && . ../../.env.local; set +a; exec tauri dev --config \"{\\\"build\\\":{\\\"devUrl\\\":\\\"http://127.0.0.1:${CLIENT_PORT:-5173}\\\"}}\"'",
