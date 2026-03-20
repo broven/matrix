@@ -19,7 +19,7 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ onBack, repositories, onDeleteRepository }: SettingsPageProps) {
-  const { client, connect, connectionInfo, status } = useMatrixClient();
+  const { client, connect, connectionInfo, status, error: connectionError } = useMatrixClient();
   const { servers, addServer, removeServer } = useServerStore();
   const {
     state: updateState,
@@ -165,6 +165,7 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
               <SettingsGeneralTab
                 connectionInfo={connectionInfo}
                 status={status}
+                connectionError={connectionError}
                 updateState={updateState}
                 updateInfo={updateInfo ? { version: updateInfo.version } : null}
                 checkForUpdate={checkForUpdate}

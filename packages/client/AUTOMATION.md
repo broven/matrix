@@ -46,6 +46,7 @@ The current bridge exposes these endpoints:
 - `POST /webview/eval`
 - `POST /webview/event`
 - `POST /native/invoke`
+- `POST /native/screenshot`
 - `POST /test/reset`
 - `POST /wait`
 
@@ -62,6 +63,7 @@ The protocol is shared across desktop and iOS simulator, but platform support di
 | `POST /webview/eval` | Supported | Supported by the shared contract |
 | `POST /webview/event` | Supported | Supported by the shared contract |
 | `POST /native/invoke` | Supported for `window.focus`, `window.reload`, and `sidecar.status` | Adapter exists in code, but the live startup path is desktop-first; desktop-only actions should return `unsupported_action` when routed through the shared contract |
+| `POST /native/screenshot` | Supported — returns `image/png` bytes | Returns `unsupported_action` via the shared contract |
 | `POST /test/reset` | Supported | Supported by the shared contract |
 | `POST /wait` | Supported | Supported by the shared contract |
 

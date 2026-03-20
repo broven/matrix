@@ -7,6 +7,12 @@ use super::models::{
 
 pub trait NativeCapability {
     fn invoke(&self, action: &str, args: Option<&Value>) -> Result<Value, AutomationErrorCode>;
+
+    /// Capture a screenshot of the application window.
+    /// Returns PNG-encoded bytes on success.
+    fn screenshot(&self) -> Result<Vec<u8>, AutomationErrorCode> {
+        Err(AutomationErrorCode::UnsupportedAction)
+    }
 }
 
 pub trait WebviewCapability {
@@ -44,6 +50,12 @@ pub fn invoke_native<C: NativeCapability + ?Sized>(
         Ok(result) => AutomationEnvelope::success(result),
         Err(error) => AutomationEnvelope::failure(error),
     }
+}
+
+pub fn capture_screenshot<C: NativeCapability + ?Sized>(
+    capability: &C,
+) -> Result<Vec<u8>, AutomationErrorCode> {
+    capability.screenshot()
 }
 
 pub fn evaluate_webview<C: WebviewCapability + ?Sized>(

@@ -40,6 +40,7 @@ export function AppLayout() {
   const [showCloneFromUrl, setShowCloneFromUrl] = useState(false);
   const [worktreeDialogRepo, setWorktreeDialogRepo] = useState<RepositoryInfo | null>(null);
   const [cloneError, setCloneError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [cloningRepos, setCloningRepos] = useState<Map<string, string>>(new Map()); // jobId → repoName
   const clonePollIntervals = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
 
@@ -75,6 +76,7 @@ export function AppLayout() {
 
         if (cancelled) return;
 
+        setLoadError(null);
         setAgents(agentItems);
         setSessions(sessionItems);
         setRepositories(repoItems);
@@ -97,6 +99,10 @@ export function AppLayout() {
         }
       } catch (error) {
         console.error("Failed to load layout data:", error);
+        if (!cancelled) {
+          const msg = error instanceof Error ? error.message : "Failed to load data from server";
+          setLoadError(msg === "Failed to fetch" ? "Unable to reach server — check URL and network" : msg);
+        }
       }
     };
 
@@ -457,6 +463,24 @@ export function AppLayout() {
         </>
         )}
       </main>
+
+      {/* Connection / load error notification */}
+      {loadError && (
+        <div className="fixed bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 shadow-lg backdrop-blur">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="flex-1 text-sm">
+            <p className="font-medium text-destructive">Connection error</p>
+            <p className="mt-1 text-muted-foreground">{loadError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLoadError(null)}
+            className="shrink-0 rounded-md p-1 hover:bg-accent"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
 
       {/* Clone error notification */}
       {cloneError && (

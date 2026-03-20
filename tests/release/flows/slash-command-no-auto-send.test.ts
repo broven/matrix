@@ -1,7 +1,7 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { rm } from "node:fs/promises";
 import { createBridgeClient, type BridgeClient } from "../lib/bridge-client";
-import { setBridge, waitFor, waitForGone, isVisible, getValue, typeChar } from "../lib/ui";
+import { setBridge, waitFor, waitForGone, getValue, type as typeText } from "../lib/ui";
 import { resetUI, ensureWorktree, removeAllRepos, spawnAgentViaMessage } from "../lib/flows/setup";
 
 describe("Slash command 选择后不自动发送", () => {
@@ -30,9 +30,33 @@ describe("Slash command 选择后不自动发送", () => {
   it("选择一个 slash command 后仅填入输入框，不自动发送", async () => {
     await waitFor('[data-testid="chat-input"]');
 
-    // Type "/" to open dropdown
-    await typeChar('[data-testid="chat-input"]', "/");
-    await waitFor('[data-testid="slash-command-dropdown"]', { timeout: 5_000 });
+    // Wait for available_commands to propagate, then type "/" to open dropdown.
+    // Retry loop: focus → clear → type "/" → check for dropdown.
+    const deadline = Date.now() + 15_000;
+    let dropdownVisible = false;
+
+    while (Date.now() < deadline) {
+      await bridge.eval(`document.querySelector('[data-testid="chat-input"]')?.focus()`);
+      await new Promise((r) => setTimeout(r, 200));
+
+      await typeText('[data-testid="chat-input"]', "/");
+      await new Promise((r) => setTimeout(r, 500));
+
+      const visible = await bridge.eval(
+        `!!document.querySelector('[data-testid="slash-command-dropdown"]')`,
+      );
+      if (visible) {
+        dropdownVisible = true;
+        break;
+      }
+
+      await typeText('[data-testid="chat-input"]', "");
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+
+    if (!dropdownVisible) {
+      throw new Error("Slash command dropdown did not appear after retries (available_commands may not have arrived)");
+    }
 
     // mousedown on the first command item (dropdown uses onMouseDown, not onClick)
     await bridge.eval(`

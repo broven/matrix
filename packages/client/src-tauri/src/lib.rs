@@ -337,6 +337,54 @@ impl automation::runtime::desktop::DesktopWindowFacade for TauriWindowFacade {
             json!({"label": "main", "focused": false, "visible": false})
         }
     }
+
+    fn screenshot(&self) -> Result<Vec<u8>, automation::core::errors::AutomationErrorCode> {
+        let Some(window) = self.0.get_webview_window("main") else {
+            return Err(automation::core::errors::AutomationErrorCode::NativeUnavailable);
+        };
+
+        let title = window.title().unwrap_or_default();
+        let window_id = get_cg_window_id(&title)
+            .ok_or(automation::core::errors::AutomationErrorCode::NativeUnavailable)?;
+
+        let tmp_path = std::env::temp_dir().join("matrix-automation-screenshot.png");
+
+        // Capture only this window via CGWindowID (-l flag).
+        // Works even when the window is behind other windows.
+        let output = std::process::Command::new("screencapture")
+            .args(["-o", "-x", "-t", "png", "-l", &window_id])
+            .arg(tmp_path.to_str().unwrap_or("/tmp/matrix-automation-screenshot.png"))
+            .output()
+            .map_err(|_| automation::core::errors::AutomationErrorCode::InternalError)?;
+
+        if !output.status.success() {
+            return Err(automation::core::errors::AutomationErrorCode::InternalError);
+        }
+
+        std::fs::read(&tmp_path)
+            .map_err(|_| automation::core::errors::AutomationErrorCode::InternalError)
+    }
+}
+
+/// Look up the CGWindowID for a window by its title using CGWindowListCopyWindowInfo
+/// via a Swift one-liner (built-in on macOS, no extra dependencies).
+#[cfg(all(desktop, any(test, debug_assertions)))]
+fn get_cg_window_id(title: &str) -> Option<String> {
+    let script = format!(
+        r#"import Cocoa; let ws = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String:Any]] ?? []; for w in ws {{ let n = w[kCGWindowName as String] as? String ?? ""; let o = w[kCGWindowOwnerName as String] as? String ?? ""; if n.contains("{title}") || o.contains("{title}") {{ print(w[kCGWindowNumber as String]!); break }} }}"#,
+        title = title.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    let output = std::process::Command::new("swift")
+        .args(["-e", &script])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !id.is_empty() {
+            return Some(id);
+        }
+    }
+    None
 }
 
 #[cfg(all(desktop, any(test, debug_assertions)))]

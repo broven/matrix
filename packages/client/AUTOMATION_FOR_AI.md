@@ -53,6 +53,7 @@ Authorization: Bearer <token>
 - `POST /webview/eval`
 - `POST /webview/event`
 - `POST /native/invoke`
+- `POST /native/screenshot`
 - `POST /test/reset`
 - `POST /wait`
 
@@ -158,6 +159,22 @@ Request:
 }
 ```
 
+### `POST /native/screenshot`
+
+Capture a screenshot of the application window. Returns raw PNG bytes with `Content-Type: image/png`.
+
+No request body is needed.
+
+On success the response is raw PNG image data (not JSON). On failure the response is a JSON envelope with an error code.
+
+Example with curl:
+
+```bash
+curl --noproxy "*" -s -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  "$BASE/native/screenshot" > /tmp/screenshot.png
+```
+
 ### `POST /test/reset`
 
 Reset test state. Use this before repeating a scenario.
@@ -211,7 +228,7 @@ Start the app with `pnpm --filter @matrix/client tauri:dev`.
 Then read `~/Library/Application Support/Matrix/dev/automation.json` to get `baseUrl` and `token`.
 Send all requests with `Authorization: Bearer <token>`.
 Always begin with `GET /health` and `GET /state`.
-Use `/webview/eval` for DOM or frontend assertions, `/webview/event` to trigger frontend hooks, `/native/invoke` for whitelisted native actions, `/test/reset` to reset state, and `/wait` instead of ad hoc sleeps.
+Use `/webview/eval` for DOM or frontend assertions, `/webview/event` to trigger frontend hooks, `/native/invoke` for whitelisted native actions, `/native/screenshot` to capture a window screenshot as PNG, `/test/reset` to reset state, and `/wait` instead of ad hoc sleeps.
 If the discovery path is overridden, prefer `MATRIX_AUTOMATION_DISCOVERY_DIR`.
 Read `packages/client/AUTOMATION.md` only if more protocol detail is needed.
 ```

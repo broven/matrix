@@ -140,17 +140,27 @@ export async function removeRepoById(
   }).catch(() => {});
 }
 
-/** Remove all repos (and their worktrees) from the sidecar DB. */
+/** Remove all repos (and their worktrees) from the sidecar DB, then reload UI to sync. */
 export async function removeAllRepos(bridge: BridgeClient): Promise<void> {
   const { url, token } = await getSidecarInfo(bridge);
   const res = await fetch(`${url}/repositories`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  let deleted = false;
   if (res.ok) {
     const repos = (await res.json()) as { id: string }[];
     for (const repo of repos) {
       await removeRepoById(bridge, repo.id);
     }
+    if (repos.length > 0) deleted = true;
+  }
+  // Reload webview so UI reflects the clean state
+  if (deleted) {
+    await bridge.invoke("window.reload");
+    // Brief pause so the old page tears down before we start polling
+    await new Promise((r) => setTimeout(r, 1_500));
+    await waitForWebview(bridge);
+    await waitFor('[data-testid="add-repo-btn"]', { timeout: 15_000 });
   }
 }
 
@@ -238,14 +248,17 @@ export async function spawnAgentViaMessage(
 ): Promise<void> {
   await sendMessage(bridge, "hi");
 
-  // Wait for agent to respond — input becomes re-enabled
+  // Wait for agent to actually respond (assistant-message appears in DOM).
+  // Previously we checked `!el.disabled`, but that returns immediately if
+  // the input was never disabled (e.g., agent not yet spawned).
   await bridge.wait(
     {
       kind: "webview.eval",
-      script: `(() => { const el = document.querySelector('[data-testid="chat-input"]'); return el && !el.disabled; })()`,
+      script: `!!document.querySelector('[data-testid="assistant-message"]')`,
     },
     { timeoutMs: opts?.timeoutMs ?? 90_000, intervalMs: 1_000 },
   );
+
 }
 
 /** Open the settings overlay. */

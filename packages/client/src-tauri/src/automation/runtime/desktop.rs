@@ -11,6 +11,11 @@ pub trait DesktopWindowFacade: Send + Sync {
     fn focus(&self) -> Result<Value, AutomationErrorCode>;
     fn reload(&self) -> Result<Value, AutomationErrorCode>;
     fn state(&self) -> Value;
+
+    /// Capture a screenshot of the window. Returns PNG-encoded bytes.
+    fn screenshot(&self) -> Result<Vec<u8>, AutomationErrorCode> {
+        Err(AutomationErrorCode::UnsupportedAction)
+    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -34,6 +39,10 @@ where
 
     fn state(&self) -> Value {
         self.as_ref().state()
+    }
+
+    fn screenshot(&self) -> Result<Vec<u8>, AutomationErrorCode> {
+        self.as_ref().screenshot()
     }
 }
 
@@ -103,6 +112,10 @@ impl<W: DesktopWindowFacade, S: DesktopSidecarFacade> NativeCapability for Deskt
             "sidecar.status" => self.sidecar.status(),
             _ => Err(AutomationErrorCode::UnsupportedAction),
         }
+    }
+
+    fn screenshot(&self) -> Result<Vec<u8>, AutomationErrorCode> {
+        self.window.screenshot()
     }
 }
 

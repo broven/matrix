@@ -346,22 +346,8 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 
 const app = new Hono();
 
-// CORS for web client
-if (config.localMode) {
-  // Local sidecar mode: allow all origins (only accessible on loopback)
-  app.use("/*", cors({ origin: (origin) => origin || "*" }));
-} else {
-  const corsOrigins = [
-    "http://localhost:5173",  // Vite dev server
-    "http://localhost:1420",  // Tauri dev
-    "tauri://localhost",      // Tauri production (macOS)
-    "https://tauri.localhost", // Tauri production (Windows/Linux)
-  ];
-  if (process.env.CLIENT_PORT) {
-    corsOrigins.push(`http://localhost:${process.env.CLIENT_PORT}`);
-  }
-  app.use("/*", cors({ origin: corsOrigins }));
-}
+// CORS for web client — allow any origin since access is gated by bearer token
+app.use("/*", cors({ origin: (origin) => origin || "*" }));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
