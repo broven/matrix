@@ -16,7 +16,9 @@ async function getSidecarInfo(bridge: BridgeClient): Promise<SidecarInfo> {
   const state = await bridge.state();
   const port = (state.sidecar as { port: number }).port;
   const url = `http://127.0.0.1:${port}`;
-  const authRes = await fetch(`${url}/api/auth-info`);
+  const authRes = await fetch(`${url}/api/auth-info`, {
+    headers: { "X-Matrix-Internal": "true" },
+  });
   const { token } = (await authRes.json()) as { token: string };
   return { url, token };
 }

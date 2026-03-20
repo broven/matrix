@@ -22,7 +22,9 @@ async function getBridgeAndSidecar() {
   const state = (await stateRes.json()) as { sidecar: { port: number } };
   const sidecarUrl = `http://127.0.0.1:${state.sidecar.port}`;
 
-  const authRes = await fetch(`${sidecarUrl}/api/auth-info`);
+  const authRes = await fetch(`${sidecarUrl}/api/auth-info`, {
+    headers: { "X-Matrix-Internal": "true" },
+  });
   const { token: sidecarToken } = (await authRes.json()) as { token: string };
 
   const configRes = await fetch(`${sidecarUrl}/server/config`, {
