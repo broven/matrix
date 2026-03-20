@@ -203,6 +203,56 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
       return c.json({ ok: false, result: null, error: message }, 502);
     }
   });
+
+  app.post("/bridge/screenshot", async (c: Context) => {
+    const body = await c.req.json<{ clientId?: string }>();
+    const client = clientRegistry.getClient(body.clientId);
+
+    if (!client) {
+      const msg = body.clientId
+        ? `Client "${body.clientId}" not found`
+        : "No clients connected";
+      return c.json({ ok: false, error: msg }, 502);
+    }
+
+    try {
+      let base64Data: string;
+
+      if (client.info.platform === "ios") {
+        // iOS Simulator: capture via xcrun simctl on host
+        const { execSync } = await import("node:child_process");
+        const { readFileSync, unlinkSync } = await import("node:fs");
+        const { randomUUID } = await import("node:crypto");
+        const tmpFile = `/tmp/matrix-screenshot-${randomUUID()}.png`;
+        execSync(`xcrun simctl io booted screenshot "${tmpFile}"`, {
+          timeout: 10_000,
+        });
+        base64Data = readFileSync(tmpFile).toString("base64");
+        unlinkSync(tmpFile);
+      } else {
+        // macOS: relay through WebSocket to Tauri command
+        const requestId = clientRegistry.generateRequestId();
+        const result = await clientRegistry.sendRequest(body.clientId, {
+          type: "screenshot",
+          requestId,
+        });
+        base64Data = result as string;
+      }
+
+      // Return raw PNG binary
+      const pngBuffer = Buffer.from(base64Data, "base64");
+      return new Response(pngBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Length": String(pngBuffer.length),
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "screenshot failed";
+      return c.json({ ok: false, error: message }, 502);
+    }
+  });
 }
 
 export { ClientRegistry } from "./client-registry.js";
