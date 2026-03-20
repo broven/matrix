@@ -187,6 +187,22 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
 
     return c.json({ ok: false, result: null, error: `wait timed out after ${timeoutMs}ms` }, 408);
   });
+
+  app.post("/bridge/snapshot", async (c: Context) => {
+    const body = await c.req.json<{ clientId?: string }>();
+    const requestId = clientRegistry.generateRequestId();
+
+    try {
+      const result = await clientRegistry.sendRequest(body.clientId, {
+        type: "snapshot",
+        requestId,
+      });
+      return c.json({ ok: true, result, error: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "snapshot failed";
+      return c.json({ ok: false, result: null, error: message }, 502);
+    }
+  });
 }
 
 export { ClientRegistry } from "./client-registry.js";
