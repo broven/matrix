@@ -8,6 +8,11 @@ export default mergeConfig(
       environment: "jsdom",
       include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
       setupFiles: ["./test/setup.ts"],
+      coverage: {
+        provider: "v8",
+        reporter: ["text", "lcov"],
+        reportsDirectory: "./coverage",
+      },
     },
   }),
 );
