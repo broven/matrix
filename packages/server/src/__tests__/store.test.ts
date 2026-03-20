@@ -71,13 +71,13 @@ describe("Store", () => {
     });
 
     store.updateSessionState("sess_1", {
-      status: "suspended",
+      status: "active",
       suspendedAt: "2026-03-14T12:00:00.000Z",
       closeReason: "idle_timeout",
     });
 
     const session = store.getSession("sess_1");
-    expect(session?.status).toBe("suspended");
+    expect(session?.status).toBe("active");
     expect(session?.suspendedAt).toBe("2026-03-14T12:00:00.000Z");
     expect(session?.closeReason).toBe("idle_timeout");
     expect(session?.recoverable).toBe(true);
@@ -101,7 +101,7 @@ describe("Store", () => {
 
     store.normalizeSessionsOnStartup();
 
-    expect(store.getSession("sess_recoverable")?.status).toBe("suspended");
+    expect(store.getSession("sess_recoverable")?.status).toBe("active");
     expect(store.getSession("sess_recoverable")?.closeReason).toBeNull();
     expect(store.getSession("sess_unrecoverable")?.status).toBe("closed");
     expect(store.getSession("sess_unrecoverable")?.closeReason).toBe("server_restart_unrecoverable");

@@ -5,7 +5,7 @@ export type RepositoryId = string;
 export type WorktreeId = string;
 
 /** Worktree status */
-export type WorktreeStatus = "active" | "suspended" | "closed";
+export type WorktreeStatus = "active" | "closed";
 
 /** GET /repositories response item */
 export interface RepositoryInfo {
@@ -42,17 +42,12 @@ export interface WorktreeInfo {
 export interface CreateWorktreeRequest {
   branch: string;
   baseBranch: string;
-  agentId: string;
-  taskDescription?: string;
 }
 
 /** POST /repositories/:repoId/worktrees response */
 export interface CreateWorktreeResponse {
   worktree: WorktreeInfo;
-  session: {
-    sessionId: string;
-    modes: { currentModeId: string; availableModes: unknown[] };
-  };
+  sessionId: string;
 }
 
 // ── Filesystem ────────────────────────────────────────────────────
@@ -118,4 +113,5 @@ export function parseRepoName(url: string): string {
 export interface ServerConfig {
   reposPath: string;
   worktreesPath: string;
+  defaultAgent?: string;
 }

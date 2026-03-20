@@ -6,7 +6,7 @@ interface ChatHeaderProps {
   session: SessionInfo;
   repositoryName?: string;
   isProcessing: boolean;
-  sessionStatus: SessionInfo["status"];
+  sessionStatus: "active" | "closed" | "restoring";
   statusMessage?: string | null;
 }
 
@@ -19,12 +19,12 @@ export function ChatHeader({ session, repositoryName, isProcessing, sessionStatu
             className={cn(
               "size-2 rounded-full",
               sessionStatus === "active" && "bg-success",
-              sessionStatus === "restoring" && "bg-primary animate-pulse",
-              sessionStatus === "suspended" && "bg-amber-400",
               sessionStatus === "closed" && "bg-muted-foreground/40",
             )}
           />
-          <h1 className="text-sm font-medium">{session.agentId}</h1>
+          <h1 className="text-sm font-medium">
+            {session.agentId ?? "No agent"}
+          </h1>
         </div>
         {session.branch ? (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -38,16 +38,14 @@ export function ChatHeader({ session, repositoryName, isProcessing, sessionStatu
         )}
       </div>
       <div className="flex items-center gap-3">
-        {(isProcessing || sessionStatus === "restoring") && (
+        {isProcessing && (
           <div className="flex items-center gap-1.5">
             <div className="flex gap-0.5">
               <span className="thinking-dot size-1 rounded-full bg-primary" />
               <span className="thinking-dot size-1 rounded-full bg-primary" />
               <span className="thinking-dot size-1 rounded-full bg-primary" />
             </div>
-            <span className="text-xs text-muted-foreground">
-              {sessionStatus === "restoring" ? "Restoring" : "Thinking"}
-            </span>
+            <span className="text-xs text-muted-foreground">Thinking</span>
           </div>
         )}
       </div>

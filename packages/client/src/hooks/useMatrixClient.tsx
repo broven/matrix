@@ -16,6 +16,7 @@ interface MatrixClientState {
   client: MatrixClient | null;
   status: ConnectionStatus;
   connectionInfo: ConnectionInfo | null;
+  error: string | null;
   connect: (config: MatrixClientConfig, opts?: { source?: ConnectionInfo["source"]; serverId?: string }) => void;
   restoreLastConnection: () => void;
   disconnect: () => void;
@@ -25,6 +26,7 @@ const MatrixClientContext = createContext<MatrixClientState>({
   client: null,
   status: "offline",
   connectionInfo: null,
+  error: null,
   connect: () => {},
   restoreLastConnection: () => {},
   disconnect: () => {},
@@ -43,10 +45,12 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
   const [client, setClient] = useState<MatrixClient | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("offline");
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const connectedRef = useRef(false);
 
   const connect = useCallback((config: MatrixClientConfig, opts?: { source?: ConnectionInfo["source"]; serverId?: string }) => {
     connectedRef.current = true;
+    setError(null);
 
     // Disconnect existing client before connecting new one
     setClient((prev: MatrixClient | null) => {
@@ -56,6 +60,7 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
 
     const newClient = new MatrixClient(config);
     newClient.onStatusChange(setStatus);
+    newClient.onError((err) => setError(err.message));
     newClient.connect();
     setClient(newClient);
     setConnectionInfo({
@@ -134,7 +139,7 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
 
   return (
     <MatrixClientContext.Provider
-      value={{ client, status, connectionInfo, connect, restoreLastConnection, disconnect }}
+      value={{ client, status, connectionInfo, error, connect, restoreLastConnection, disconnect }}
     >
       {children}
     </MatrixClientContext.Provider>

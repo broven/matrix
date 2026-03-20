@@ -9,6 +9,7 @@ import { sessionRoutes } from "./sessions.js";
 import { repositoryRoutes } from "./repositories.js";
 import { filesystemRoutes } from "./filesystem.js";
 import { serverConfigRoutes } from "./server-config.js";
+import { customAgentRoutes } from "./custom-agents.js";
 
 interface RestRouteDeps {
   agentManager: AgentManager;
@@ -16,11 +17,7 @@ interface RestRouteDeps {
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
   cloneManager: CloneManager;
-  createSessionForWorktree: (
-    agentId: string,
-    cwd: string,
-    worktreeId: string,
-  ) => Promise<{ sessionId: string; modes: { currentModeId: string; availableModes: unknown[] } }>;
+  onAgentConfigChange: () => void;
 }
 
 export function createRestRoutes(deps: RestRouteDeps) {
@@ -32,9 +29,13 @@ export function createRestRoutes(deps: RestRouteDeps) {
     sessionManager: deps.sessionManager,
     worktreeManager: deps.worktreeManager,
     cloneManager: deps.cloneManager,
-    createSessionForWorktree: deps.createSessionForWorktree,
   }));
   app.route("/", filesystemRoutes());
   app.route("/", serverConfigRoutes());
+  app.route("/", customAgentRoutes({
+    store: deps.store,
+    agentManager: deps.agentManager,
+    onConfigChange: deps.onAgentConfigChange,
+  }));
   return app;
 }

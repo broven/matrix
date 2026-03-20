@@ -44,6 +44,9 @@ export interface BridgeClient {
   }, opts?: { timeoutMs?: number; intervalMs?: number }): Promise<unknown>;
 
   mockFileDialog(path: string): Promise<void>;
+
+  /** Capture a screenshot of the app window. Returns raw PNG bytes. */
+  screenshot(): Promise<Buffer>;
 }
 
 const DISCOVERY_PATH = join(
@@ -97,6 +100,37 @@ async function request(
     const text = await res.text();
     if (!text) return undefined;
     return JSON.parse(text);
+  }
+
+  throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
+}
+
+async function requestBinary(
+  baseUrl: string,
+  token: string,
+  method: string,
+  path: string,
+): Promise<Buffer> {
+  const url = `${baseUrl}${path}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, { method, headers });
+
+    if (res.status === 408 && attempt < MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Bridge ${method} ${path} returned ${res.status}: ${text}`);
+    }
+
+    const arrayBuf = await res.arrayBuffer();
+    return Buffer.from(arrayBuf);
   }
 
   throw new Error(`Bridge ${method} ${path} failed after ${MAX_RETRIES} retries`);
@@ -183,6 +217,10 @@ export async function createBridgeClient(): Promise<BridgeClient> {
       await request(baseUrl, token, "POST", "/test/mock-file-dialog", {
         path,
       });
+    },
+
+    async screenshot(): Promise<Buffer> {
+      return requestBinary(baseUrl, token, "POST", "/native/screenshot");
     },
   };
 

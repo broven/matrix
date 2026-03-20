@@ -62,9 +62,34 @@ pub trait AutomationRouterBackend: Send + Sync {
 }
 
 #[derive(Debug, Clone)]
+pub enum RouterResponseBody {
+    Json(Value),
+    Binary {
+        content_type: &'static str,
+        data: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct RouterResponse {
     pub status: u16,
-    pub body: Value,
+    pub body: RouterResponseBody,
+}
+
+impl RouterResponse {
+    pub fn json(status: u16, body: Value) -> Self {
+        Self {
+            status,
+            body: RouterResponseBody::Json(body),
+        }
+    }
+
+    pub fn binary(status: u16, content_type: &'static str, data: Vec<u8>) -> Self {
+        Self {
+            status,
+            body: RouterResponseBody::Binary { content_type, data },
+        }
+    }
 }
 
 pub fn route_request(
@@ -78,160 +103,142 @@ pub fn route_request(
 ) -> RouterResponse {
     let expected = format!("Bearer {token}");
     if authorization != Some(expected.as_str()) {
-        return RouterResponse {
-            status: 401,
-            body: json!({"error": "unauthorized"}),
-        };
+        return RouterResponse::json(401, json!({"error": "unauthorized"}));
     }
 
     match (method, path) {
-        ("GET", "/health") => RouterResponse {
-            status: 200,
-            body: json!(HealthResponse {
+        ("GET", "/health") => RouterResponse::json(
+            200,
+            json!(HealthResponse {
                 ok: true,
                 platform: state.platform.clone(),
                 app_ready: state.app_ready,
                 webview_ready: state.webview_ready,
                 sidecar_ready: state.sidecar_ready,
             }),
-        },
-        ("GET", "/state") => RouterResponse {
-            status: 200,
-            body: json!(StateResponse {
+        ),
+        ("GET", "/state") => RouterResponse::json(
+            200,
+            json!(StateResponse {
                 window: state.window.clone(),
                 webview: state.webview.clone(),
                 sidecar: state.sidecar.clone(),
             }),
-        },
+        ),
         ("POST", "/webview/eval") => {
             let request = match serde_json::from_slice::<WebviewEvalRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
-                    return RouterResponse {
-                        status: 400,
-                        body: json!({ "error": "invalid_json" }),
-                    }
+                    return RouterResponse::json(400, json!({ "error": "invalid_json" }))
                 }
             };
             if request.script.trim().is_empty() {
-                return RouterResponse {
-                    status: 400,
-                    body: json!({ "error": "missing_script" }),
-                };
+                return RouterResponse::json(400, json!({ "error": "missing_script" }));
             }
             let Some(capability) = backend.webview_capability() else {
                 return capability_unavailable_response(AutomationErrorCode::WebviewUnavailable);
             };
-            RouterResponse {
-                status: 200,
-                body: json!(capabilities::evaluate_webview(capability, &request.script)),
-            }
+            RouterResponse::json(
+                200,
+                json!(capabilities::evaluate_webview(capability, &request.script)),
+            )
         }
         ("POST", "/webview/event") => {
             let request = match serde_json::from_slice::<WebviewEventRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
-                    return RouterResponse {
-                        status: 400,
-                        body: json!({ "error": "invalid_json" }),
-                    }
+                    return RouterResponse::json(400, json!({ "error": "invalid_json" }))
                 }
             };
             let Some(capability) = backend.webview_capability() else {
                 return capability_unavailable_response(AutomationErrorCode::WebviewUnavailable);
             };
-            RouterResponse {
-                status: 200,
-                body: json!(capabilities::dispatch_webview_event(capability, &request)),
-            }
+            RouterResponse::json(
+                200,
+                json!(capabilities::dispatch_webview_event(capability, &request)),
+            )
         }
         ("POST", "/native/invoke") => {
             let request = match serde_json::from_slice::<NativeActionRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
-                    return RouterResponse {
-                        status: 400,
-                        body: json!({ "error": "invalid_json" }),
-                    }
+                    return RouterResponse::json(400, json!({ "error": "invalid_json" }))
                 }
             };
             let Some(capability) = backend.native_capability() else {
                 return capability_unavailable_response(AutomationErrorCode::NativeUnavailable);
             };
-            RouterResponse {
-                status: 200,
-                body: json!(capabilities::invoke_native(capability, &request)),
+            RouterResponse::json(
+                200,
+                json!(capabilities::invoke_native(capability, &request)),
+            )
+        }
+        ("POST", "/native/screenshot") => {
+            let Some(capability) = backend.native_capability() else {
+                return capability_unavailable_response(AutomationErrorCode::NativeUnavailable);
+            };
+            match capabilities::capture_screenshot(capability) {
+                Ok(png_bytes) => RouterResponse::binary(200, "image/png", png_bytes),
+                Err(error) => RouterResponse::json(
+                    200,
+                    json!(AutomationEnvelope::<Value>::failure(error)),
+                ),
             }
         }
         ("POST", "/test/reset") => {
             let request = match serde_json::from_slice::<ResetRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
-                    return RouterResponse {
-                        status: 400,
-                        body: json!({ "error": "invalid_json" }),
-                    }
+                    return RouterResponse::json(400, json!({ "error": "invalid_json" }))
                 }
             };
             let Some(capability) = backend.test_control_capability() else {
                 return capability_unavailable_response(AutomationErrorCode::ResetFailed);
             };
-            RouterResponse {
-                status: 200,
-                body: json!(capabilities::reset_test_control(
+            RouterResponse::json(
+                200,
+                json!(capabilities::reset_test_control(
                     capability,
                     &request.scopes
                 )),
-            }
+            )
         }
         ("POST", "/test/mock-file-dialog") => {
             let request = match serde_json::from_slice::<MockFileDialogRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
-                    return RouterResponse {
-                        status: 400,
-                        body: json!({ "error": "invalid_json" }),
-                    }
+                    return RouterResponse::json(400, json!({ "error": "invalid_json" }))
                 }
             };
             let Some(capability) = backend.test_control_capability() else {
                 return capability_unavailable_response(AutomationErrorCode::ResetFailed);
             };
-            RouterResponse {
-                status: 200,
-                body: json!(capabilities::mock_file_dialog(capability, &request.path)),
-            }
+            RouterResponse::json(
+                200,
+                json!(capabilities::mock_file_dialog(capability, &request.path)),
+            )
         }
         ("POST", "/wait") => {
             let request = match serde_json::from_slice::<WaitRequest>(body) {
                 Ok(request) => request,
                 Err(_) => {
-                    return RouterResponse {
-                        status: 400,
-                        body: json!({ "error": "invalid_json" }),
-                    }
+                    return RouterResponse::json(400, json!({ "error": "invalid_json" }))
                 }
             };
             let Some(capability) = backend.wait_capability() else {
                 return capability_unavailable_response(AutomationErrorCode::UnsupportedCondition);
             };
-            RouterResponse {
-                status: 200,
-                body: json!(capabilities::wait_for_condition(capability, &request)),
-            }
+            RouterResponse::json(
+                200,
+                json!(capabilities::wait_for_condition(capability, &request)),
+            )
         }
-        _ => RouterResponse {
-            status: 404,
-            body: json!({"error": "not_found"}),
-        },
+        _ => RouterResponse::json(404, json!({"error": "not_found"})),
     }
 }
 
 fn capability_unavailable_response(error: AutomationErrorCode) -> RouterResponse {
-    RouterResponse {
-        status: 200,
-        body: json!(AutomationEnvelope::<Value>::failure(error)),
-    }
+    RouterResponse::json(200, json!(AutomationEnvelope::<Value>::failure(error)))
 }
 
 #[cfg(test)]
@@ -308,6 +315,13 @@ mod tests {
                 _ => Err(AutomationErrorCode::UnsupportedAction),
             }
         }
+
+        fn screenshot(&self) -> Result<Vec<u8>, AutomationErrorCode> {
+            // Return a minimal valid PNG for testing
+            Ok(vec![
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+            ])
+        }
     }
 
     impl TestControlCapability for MockRouterBackend {
@@ -345,6 +359,16 @@ mod tests {
         }
     }
 
+    /// Extract JSON body from a RouterResponse, panicking if it's binary.
+    fn json_body(response: &super::RouterResponse) -> &Value {
+        match &response.body {
+            super::RouterResponseBody::Json(value) => value,
+            super::RouterResponseBody::Binary { .. } => {
+                panic!("expected JSON response, got binary")
+            }
+        }
+    }
+
     fn sample_state() -> RouteStateSnapshot {
         RouteStateSnapshot {
             platform: "macos".to_string(),
@@ -372,7 +396,7 @@ mod tests {
 
         assert_eq!(response.status, 200);
         assert_eq!(
-            response.body,
+            *json_body(&response),
             json!({
                 "ok": true,
                 "result": {
@@ -406,8 +430,8 @@ mod tests {
             &backend,
         );
         assert_eq!(supported.status, 200);
-        assert_eq!(supported.body["ok"], json!(true));
-        assert_eq!(supported.body["error"], json!(null));
+        assert_eq!(json_body(&supported)["ok"], json!(true));
+        assert_eq!(json_body(&supported)["error"], json!(null));
 
         let unsupported = route_request(
             "POST",
@@ -419,8 +443,8 @@ mod tests {
             &backend,
         );
         assert_eq!(unsupported.status, 200);
-        assert_eq!(unsupported.body["ok"], json!(false));
-        assert_eq!(unsupported.body["error"], json!("unsupported_action"));
+        assert_eq!(json_body(&unsupported)["ok"], json!(false));
+        assert_eq!(json_body(&unsupported)["error"], json!("unsupported_action"));
     }
 
     #[test]
@@ -437,7 +461,7 @@ mod tests {
         );
 
         assert_eq!(response.status, 200);
-        assert_eq!(response.body["ok"], json!(true));
+        assert_eq!(json_body(&response)["ok"], json!(true));
         assert_eq!(
             backend
                 .reset_scopes
@@ -462,7 +486,7 @@ mod tests {
         );
 
         assert_eq!(success.status, 200);
-        assert_eq!(success.body["ok"], json!(true));
+        assert_eq!(json_body(&success)["ok"], json!(true));
 
         *backend
             .timeout_next_wait
@@ -479,7 +503,32 @@ mod tests {
         );
 
         assert_eq!(timeout.status, 200);
-        assert_eq!(timeout.body["ok"], json!(false));
-        assert_eq!(timeout.body["error"], json!("timeout"));
+        assert_eq!(json_body(&timeout)["ok"], json!(false));
+        assert_eq!(json_body(&timeout)["error"], json!("timeout"));
+    }
+
+    #[test]
+    fn route_request_dispatches_screenshot() {
+        let backend = MockRouterBackend::default();
+        let response = route_request(
+            "POST",
+            "/native/screenshot",
+            Some("Bearer test-token"),
+            &[],
+            "test-token",
+            &sample_state(),
+            &backend,
+        );
+
+        assert_eq!(response.status, 200);
+        match &response.body {
+            super::RouterResponseBody::Binary { content_type, data } => {
+                assert_eq!(*content_type, "image/png");
+                assert_eq!(&data[..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+            }
+            super::RouterResponseBody::Json(_) => {
+                panic!("expected binary response for screenshot");
+            }
+        }
     }
 }

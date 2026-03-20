@@ -270,9 +270,9 @@ describe("SessionManager", () => {
 
       expect(bridge.destroy).toHaveBeenCalledOnce();
       expect(sessionManager.has("sess_idle")).toBe(false);
-      expect(store.getSession("sess_idle")?.status).toBe("suspended");
+      // Session stays active — agent bridge is killed but session remains active for lazy restore
+      expect(store.getSession("sess_idle")?.status).toBe("active");
       expect(store.getSession("sess_idle")?.suspendedAt).toBe("2026-03-14T00:31:00.000Z");
-      expect(store.getSession("sess_idle")?.closeReason).toBeNull();
     });
 
     it("does not suspend non-recoverable sessions", () => {

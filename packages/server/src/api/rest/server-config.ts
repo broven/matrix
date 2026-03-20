@@ -10,6 +10,7 @@ const SERVER_CONFIG_FILE = path.join(CONFIG_DIR, "server-config.json");
 const DEFAULT_CONFIG: ServerConfig = {
   reposPath: path.join(os.homedir(), "Projects", "repos"),
   worktreesPath: path.join(os.homedir(), "Projects", "worktrees"),
+  defaultAgent: undefined,
 };
 
 function readServerConfig(): ServerConfig {
@@ -48,6 +49,7 @@ export function serverConfigRoutes() {
     const updated: ServerConfig = {
       reposPath: body.reposPath ?? current.reposPath,
       worktreesPath: body.worktreesPath ?? current.worktreesPath,
+      defaultAgent: body.defaultAgent !== undefined ? body.defaultAgent : current.defaultAgent,
     };
 
     // Expand ~ in paths

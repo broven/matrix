@@ -16,6 +16,9 @@ import type {
   CloneRepositoryResponse,
   CloneJobInfo,
   ServerConfig,
+  CustomAgent,
+  AgentEnvProfile,
+  AgentTestResult,
 } from "@matrix/protocol";
 import { createTransport, type Transport } from "./transport/index.js";
 import { MatrixSession } from "./session.js";
@@ -33,6 +36,7 @@ export class MatrixClient {
   private transport: Transport | null = null;
   private sessions = new Map<string, MatrixSession>();
   private statusListeners: Array<(status: ConnectionStatus) => void> = [];
+  private errorListeners: Array<(error: Error) => void> = [];
 
   constructor(config: MatrixClientConfig) {
     this.serverUrl = config.serverUrl;
@@ -62,6 +66,9 @@ export class MatrixClient {
       },
       onError: (err) => {
         console.error("[MatrixClient] Transport error:", err);
+        for (const listener of this.errorListeners) {
+          listener(err);
+        }
       },
     });
   }
@@ -75,6 +82,13 @@ export class MatrixClient {
     this.statusListeners.push(listener);
     return () => {
       this.statusListeners = this.statusListeners.filter((l) => l !== listener);
+    };
+  }
+
+  onError(listener: (error: Error) => void): () => void {
+    this.errorListeners.push(listener);
+    return () => {
+      this.errorListeners = this.errorListeners.filter((l) => l !== listener);
     };
   }
 
@@ -94,7 +108,7 @@ export class MatrixClient {
     return res.json();
   }
 
-  async createSession(request: CreateSessionRequest): Promise<MatrixSession> {
+  async createSession(request: CreateSessionRequest): Promise<CreateSessionResponse> {
     const res = await this.fetch("/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -104,16 +118,7 @@ export class MatrixClient {
       const err = await res.json().catch(() => ({ error: "Failed to create session" }));
       throw new Error((err as any).error || `Failed to create session: ${res.status}`);
     }
-    const data: CreateSessionResponse = await res.json();
-
-    const session = new MatrixSession(
-      data.sessionId,
-      this.transport!,
-      (path, init) => this.fetch(path, init),
-    );
-    this.sessions.set(data.sessionId, session);
-
-    return session;
+    return res.json();
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -231,7 +236,7 @@ export class MatrixClient {
     return res.json();
   }
 
-  async createWorktree(repositoryId: string, request: CreateWorktreeRequest): Promise<CreateWorktreeResponse> {
+  async createWorktree(repositoryId: string, request: { branch: string; baseBranch: string }): Promise<CreateWorktreeResponse> {
     const res = await this.fetch(`/repositories/${repositoryId}/worktrees`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -249,6 +254,98 @@ export class MatrixClient {
     if (!res.ok) {
       throw new Error(`Failed to delete worktree ${id}: ${res.status}`);
     }
+  }
+
+  // ── Custom Agents ──────────────────────────────────────────────
+
+  async getCustomAgents(): Promise<CustomAgent[]> {
+    const res = await this.fetch("/custom-agents");
+    if (!res.ok) throw new Error(`Failed to get custom agents: ${res.status}`);
+    return res.json();
+  }
+
+  async createCustomAgent(agent: Omit<CustomAgent, "id"> & { id?: string }): Promise<CustomAgent> {
+    const res = await this.fetch("/custom-agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(agent),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to create custom agent" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async updateCustomAgent(id: string, patch: Partial<Omit<CustomAgent, "id">>): Promise<CustomAgent> {
+    const res = await this.fetch(`/custom-agents/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to update custom agent" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async deleteCustomAgent(id: string): Promise<void> {
+    const res = await this.fetch(`/custom-agents/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`Failed to delete custom agent ${id}: ${res.status}`);
+  }
+
+  async testCustomAgent(config: { command: string; args: string[]; env?: Record<string, string> }): Promise<AgentTestResult> {
+    const res = await this.fetch("/custom-agents/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to test agent" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // ── Agent Env Profiles ────────────────────────────────────────
+
+  async getAgentProfiles(parentAgentId?: string): Promise<AgentEnvProfile[]> {
+    const params = parentAgentId ? `?parentAgentId=${encodeURIComponent(parentAgentId)}` : "";
+    const res = await this.fetch(`/agent-profiles${params}`);
+    if (!res.ok) throw new Error(`Failed to get agent profiles: ${res.status}`);
+    return res.json();
+  }
+
+  async createAgentProfile(profile: { parentAgentId: string; name: string; env?: Record<string, string> }): Promise<AgentEnvProfile> {
+    const res = await this.fetch("/agent-profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to create profile" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async updateAgentProfile(id: string, patch: { name?: string; env?: Record<string, string> }): Promise<AgentEnvProfile> {
+    const res = await this.fetch(`/agent-profiles/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to update profile" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async deleteAgentProfile(id: string): Promise<void> {
+    const res = await this.fetch(`/agent-profiles/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`Failed to delete profile ${id}: ${res.status}`);
   }
 
   // ── Session helpers ──────────────────────────────────────────────

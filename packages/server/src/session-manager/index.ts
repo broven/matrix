@@ -13,6 +13,7 @@ export interface SessionBridgeFactory {
     agentId: string,
     cwd: string,
     restoreAgentSessionId?: string | null,
+    profileId?: string,
   ): Promise<{
     bridge: AcpBridge;
     modes: { currentModeId: string; availableModes: unknown[] };
@@ -215,7 +216,7 @@ export class SessionManager {
     const session = store.getSession(sessionId);
     if (
       !session
-      || session.status !== "suspended"
+      || !session.agentId
       || !session.recoverable
       || !session.agentSessionId
     ) {
@@ -223,20 +224,15 @@ export class SessionManager {
     }
 
     const promise = (async () => {
-      store.updateSessionState(sessionId, {
-        status: "restoring",
-        suspendedAt: null,
-        closeReason: null,
-      });
-
       try {
         const { bridge, agentSessionId } = await factory(
           sessionId,
-          session.agentId,
+          session.agentId!,
           session.cwd,
           session.agentSessionId,
+          session.profileId ?? undefined,
         );
-        this.register(sessionId, bridge, session.agentId, session.cwd);
+        this.register(sessionId, bridge, session.agentId!, session.cwd);
         store.updateSessionState(sessionId, {
           status: "active",
           agentSessionId: agentSessionId ?? bridge.agentSessionId,
@@ -261,6 +257,20 @@ export class SessionManager {
     return promise;
   }
 
+  /** Clear all pending restart timers (for test cleanup). */
+  clearAllTimers(): void {
+    for (const entry of this.sessions.values()) {
+      if (entry.restartTimer) {
+        clearTimeout(entry.restartTimer);
+        entry.restartTimer = undefined;
+      }
+    }
+  }
+
+  /**
+   * Reclaim resources for idle sessions by killing agent bridges.
+   * Sessions remain "active" — agents are lazily restored on next prompt.
+   */
   suspendIdleSessions(store: Store, nowMs: number, idleTimeoutMs: number): string[] {
     const cutoffMs = nowMs - idleTimeoutMs;
     const suspendedIds: string[] = [];
@@ -284,6 +294,7 @@ export class SessionManager {
         continue;
       }
 
+      // Kill the bridge to reclaim resources, but keep session active
       entry.explicitlyClosed = true;
       if (entry.restartTimer) {
         clearTimeout(entry.restartTimer);
@@ -291,9 +302,7 @@ export class SessionManager {
       this.sessions.delete(session.sessionId);
       entry.bridge.destroy();
       store.updateSessionState(session.sessionId, {
-        status: "suspended",
         suspendedAt: new Date(nowMs).toISOString(),
-        closeReason: null,
       });
       suspendedIds.push(session.sessionId);
     }

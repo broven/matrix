@@ -19,7 +19,8 @@ import { SessionManager } from "./session-manager/index.js";
 import { WorktreeManager } from "./worktree-manager/index.js";
 import { CloneManager } from "./clone-manager/index.js";
 import { CommandCache } from "./command-cache.js";
-import type { AgentCapabilities, CreateSessionRequest } from "@matrix/protocol";
+import { getServerConfig } from "./api/rest/server-config.js";
+import type { AgentCapabilities, CreateSessionRequest, SessionInfo } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
 import { buildConnectionUri, getLocalIp } from "./connect-info.js";
@@ -40,6 +41,9 @@ const IDLE_SUSPEND_SWEEP_INTERVAL_MS = 60 * 1000;
 /** Per-session buffer for aggregating agent_message_chunk text */
 const agentMessageBuffers = new Map<string, string>();
 
+/** Deduplication map for in-flight lazy agent initialization */
+const pendingLazyInits = new Map<string, Promise<AcpBridge>>();
+
 function flushAgentMessageBuffer(sessionId: string): void {
   const buffered = agentMessageBuffers.get(sessionId);
   if (buffered) {
@@ -51,8 +55,17 @@ function flushAgentMessageBuffer(sessionId: string): void {
 // Discover and register ACP agents
 const discoveredAgents = await discoverAgents();
 for (const agent of discoveredAgents) {
-  agentManager.register(agent);
+  agentManager.register(agent, "builtin");
 }
+
+// Merge custom agents and profiles from store
+function refreshAgentConfigs(): void {
+  agentManager.mergeCustomConfigs(
+    store.listCustomAgents(),
+    store.listAgentEnvProfiles(),
+  );
+}
+refreshAgentConfigs();
 
 function buildSnapshots(sessionId?: string) {
   const sessions = store
@@ -76,7 +89,7 @@ function emitSessionError(sessionId: string, code: string, message: string): voi
   });
 }
 
-async function handlePrompt(sessionId: string, prompt: Array<{ type: string; text: string }>) {
+async function handlePrompt(sessionId: string, prompt: Array<{ type: string; text: string; agentId?: string; profileId?: string }>) {
   console.log(`[session ${sessionId}] handlePrompt:`, JSON.stringify(prompt).slice(0, 200));
   const session = store.getSession(sessionId);
   if (!session) {
@@ -90,12 +103,75 @@ async function handlePrompt(sessionId: string, prompt: Array<{ type: string; tex
   }
 
   let bridge = sessionManager.getBridge(sessionId);
-  if (!bridge && session.status === "suspended" && session.recoverable) {
-    connectionManager.broadcastToSession(sessionId, {
-      type: "session:restoring",
-      sessionId,
-    } as any);
-    bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
+
+  // Lazy agent initialization: spawn agent on first prompt
+  if (!bridge && !session.agentId) {
+    const agentId = prompt[0]?.agentId;
+    const profileId = prompt[0]?.profileId ?? null;
+    if (!agentId) {
+      emitSessionError(sessionId, "agent_required", "No agent selected. Please select an agent before sending a message.");
+      return;
+    }
+
+    // Validate that the agent exists before attempting to spawn
+    if (!agentManager.getConfig(agentId)) {
+      emitSessionError(sessionId, "agent_not_found", `Agent "${agentId}" not found`);
+      return;
+    }
+
+    // Deduplicate concurrent lazy init attempts for the same session
+    let initPromise = pendingLazyInits.get(sessionId);
+    if (!initPromise) {
+      initPromise = (async () => {
+        const result = await createBridge(sessionId, agentId, session.cwd, undefined, profileId ?? undefined);
+        sessionManager.register(sessionId, result.bridge, agentId, session.cwd);
+        store.updateSessionState(sessionId, {
+          agentId,
+          profileId,
+          recoverable: result.recoverable,
+          agentSessionId: result.agentSessionId,
+        });
+        return result.bridge;
+      })();
+      pendingLazyInits.set(sessionId, initPromise);
+    }
+
+    try {
+      bridge = await initPromise;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to spawn agent";
+      emitSessionError(sessionId, "agent_spawn_failed", message);
+      return;
+    } finally {
+      pendingLazyInits.delete(sessionId);
+    }
+  }
+
+  // Restore idle agent (bridge was killed to reclaim resources)
+  if (!bridge && session.agentId) {
+    if (session.recoverable && session.agentSessionId) {
+      connectionManager.broadcastToSession(sessionId, {
+        type: "session:restoring",
+        sessionId,
+      } as any);
+      bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
+    }
+    // If not recoverable or restore failed, spawn a fresh agent
+    if (!bridge) {
+      try {
+        const result = await createBridge(sessionId, session.agentId, session.cwd, undefined, session.profileId ?? undefined);
+        bridge = result.bridge;
+        sessionManager.register(sessionId, bridge, session.agentId, session.cwd);
+        store.updateSessionState(sessionId, {
+          recoverable: result.recoverable,
+          agentSessionId: result.agentSessionId,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to spawn agent";
+        emitSessionError(sessionId, "agent_spawn_failed", message);
+        return;
+      }
+    }
   }
 
   if (!bridge) {
@@ -140,13 +216,14 @@ async function createBridge(
   agentId: string,
   cwd: string,
   restoreAgentSessionId?: string | null,
+  profileId?: string,
 ): Promise<{
   bridge: AcpBridge;
   modes: { currentModeId: string; availableModes: unknown[] };
   recoverable: boolean;
   agentSessionId: string | null;
 }> {
-  const handle = agentManager.spawn(agentId, cwd);
+  const handle = agentManager.spawn(agentId, cwd, profileId);
 
   const bridge = new AcpBridge(handle.process, {
     onSessionUpdate(sid, update) {
@@ -162,7 +239,7 @@ async function createBridge(
       // Cache available commands per worktree+agent
       if (update.sessionUpdate === "available_commands_update") {
         const sess = store.getSession(sessionId);
-        if (sess?.worktreeId) {
+        if (sess?.worktreeId && sess.agentId) {
           commandCache.set(sess.worktreeId, sess.agentId, update.availableCommands);
         }
       }
@@ -267,47 +344,10 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
   }
 }
 
-/**
- * Helper to create a session inside a worktree (used by repository routes).
- */
-async function createSessionForWorktree(
-  agentId: string,
-  cwd: string,
-  worktreeId: string,
-): Promise<{ sessionId: string; modes: { currentModeId: string; availableModes: unknown[] } }> {
-  const sessionId = `sess_${nanoid()}`;
-  const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, agentId, cwd);
-
-  sessionManager.register(sessionId, bridge, agentId, cwd);
-  store.createSession(sessionId, agentId, cwd, {
-    recoverable,
-    agentSessionId,
-    worktreeId,
-  });
-
-  pushCachedCommands(sessionId, worktreeId, agentId);
-
-  return { sessionId, modes };
-}
-
 const app = new Hono();
 
-// CORS for web client
-if (config.localMode) {
-  // Local sidecar mode: allow all origins (only accessible on loopback)
-  app.use("/*", cors({ origin: (origin) => origin || "*" }));
-} else {
-  const corsOrigins = [
-    "http://localhost:5173",  // Vite dev server
-    "http://localhost:1420",  // Tauri dev
-    "tauri://localhost",      // Tauri production (macOS)
-    "https://tauri.localhost", // Tauri production (Windows/Linux)
-  ];
-  if (process.env.CLIENT_PORT) {
-    corsOrigins.push(`http://localhost:${process.env.CLIENT_PORT}`);
-  }
-  app.use("/*", cors({ origin: corsOrigins }));
-}
+// CORS for web client — allow any origin since access is gated by bearer token
+app.use("/*", cors({ origin: (origin) => origin || "*" }));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -320,6 +360,10 @@ app.use("/worktrees", authMiddleware(serverToken));
 app.use("/worktrees/*", authMiddleware(serverToken));
 app.use("/fs/*", authMiddleware(serverToken));
 app.use("/server/*", authMiddleware(serverToken));
+app.use("/custom-agents", authMiddleware(serverToken));
+app.use("/custom-agents/*", authMiddleware(serverToken));
+app.use("/agent-profiles", authMiddleware(serverToken));
+app.use("/agent-profiles/*", authMiddleware(serverToken));
 
 function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
@@ -354,7 +398,7 @@ app.route("/", createRestRoutes({
   sessionManager,
   worktreeManager,
   cloneManager,
-  createSessionForWorktree,
+  onAgentConfigChange: refreshAgentConfigs,
 }));
 app.route("/", createTransportRoutes({
   connectionManager,
@@ -365,7 +409,7 @@ app.route("/", createTransportRoutes({
   onPermissionResponse: handlePermissionResponse,
 }));
 
-// Session creation (needs special handling — spawns agent)
+// Session creation (lazy — no agent spawned)
 app.post("/sessions", async (c) => {
   const body = await c.req.json<CreateSessionRequest>();
 
@@ -387,24 +431,9 @@ app.post("/sessions", async (c) => {
   }
 
   const sessionId = `sess_${nanoid()}`;
-  try {
-    const { bridge, modes, recoverable, agentSessionId } = await createBridge(sessionId, body.agentId, cwd);
+  store.createSession(sessionId, null, cwd, { worktreeId });
 
-    sessionManager.register(sessionId, bridge, body.agentId, cwd);
-    store.createSession(sessionId, body.agentId, cwd, {
-      recoverable,
-      agentSessionId,
-      worktreeId,
-    });
-
-    pushCachedCommands(sessionId, worktreeId, body.agentId);
-
-    return c.json({ sessionId, modes });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create session";
-    console.error(`[session ${sessionId}] Creation failed:`, message);
-    return c.json({ error: message }, 500);
-  }
+  return c.json({ sessionId });
 });
 
 // WebSocket setup
@@ -417,8 +446,11 @@ const { injectWebSocket } = setupWebSocket(app as any, {
   onPermissionResponse: handlePermissionResponse,
   onSubscribe: (sessionId: string) => {
     const sess = store.getSession(sessionId);
-    if (sess?.worktreeId) {
-      pushCachedCommands(sessionId, sess.worktreeId, sess.agentId);
+    if (!sess?.worktreeId) return;
+    // Use session's agentId, or fall back to server's defaultAgent config
+    const agentId = sess.agentId || getServerConfig().defaultAgent;
+    if (agentId) {
+      pushCachedCommands(sessionId, sess.worktreeId, agentId);
     }
   },
 });
@@ -431,7 +463,7 @@ if (config.webDir) {
   app.get("/*", async (c, next) => {
     const p = c.req.path;
     // Skip API routes and WebSocket endpoint
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages") || p.startsWith("/custom-agents") || p.startsWith("/agent-profiles")) {
       return next();
     }
     const res = await serveStatic({ root: resolvedWebDir })(c, next);
@@ -441,7 +473,7 @@ if (config.webDir) {
   // SPA fallback: serve index.html for non-API GET requests
   app.get("/*", async (c, next) => {
     const p = c.req.path;
-    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages")) {
+    if (p === "/ws" || p.startsWith("/api/") || p.startsWith("/agents") || p.startsWith("/sessions") || p.startsWith("/repositories") || p.startsWith("/worktrees") || p.startsWith("/fs/") || p.startsWith("/server/") || p.startsWith("/poll") || p.startsWith("/sse") || p.startsWith("/messages") || p.startsWith("/custom-agents") || p.startsWith("/agent-profiles")) {
       return next();
     }
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);

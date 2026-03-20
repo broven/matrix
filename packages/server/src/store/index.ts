@@ -8,6 +8,8 @@ import type {
   RepositoryInfo,
   WorktreeInfo,
   WorktreeStatus,
+  CustomAgent,
+  AgentEnvProfile,
 } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 
@@ -20,6 +22,8 @@ interface CreateSessionOptions {
 
 interface SessionStatePatch {
   status?: SessionInfo["status"];
+  agentId?: string | null;
+  profileId?: string | null;
   recoverable?: boolean;
   agentSessionId?: string | null;
   lastActiveAt?: string;
@@ -41,7 +45,7 @@ export class Store {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         session_id TEXT PRIMARY KEY,
-        agent_id TEXT NOT NULL,
+        agent_id TEXT,
         cwd TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -84,6 +88,25 @@ export class Store {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         last_active_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+
+      CREATE TABLE IF NOT EXISTS custom_agents (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        command TEXT NOT NULL,
+        args TEXT NOT NULL DEFAULT '[]',
+        env TEXT,
+        icon TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS agent_env_profiles (
+        id TEXT PRIMARY KEY,
+        parent_agent_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        env TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
 
     // Session column migrations
@@ -110,6 +133,9 @@ export class Store {
     }
     if (!sessionColumnNames.includes("worktree_id")) {
       this.db.exec(`ALTER TABLE sessions ADD COLUMN worktree_id TEXT REFERENCES worktrees(id)`);
+    }
+    if (!sessionColumnNames.includes("profile_id")) {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN profile_id TEXT`);
     }
 
     // History column migrations
@@ -252,7 +278,7 @@ export class Store {
     return this.db
       .prepare(
         `SELECT s.session_id, s.agent_id, s.cwd, s.status, s.created_at, s.recoverable,
-                s.agent_session_id, s.last_active_at, s.suspended_at, s.close_reason, s.worktree_id,
+                s.agent_session_id, s.last_active_at, s.suspended_at, s.close_reason, s.worktree_id, s.profile_id,
                 w.repository_id AS wt_repository_id, w.branch AS wt_branch
          FROM sessions s
          LEFT JOIN worktrees w ON s.worktree_id = w.id
@@ -280,7 +306,7 @@ export class Store {
 
   createSession(
     sessionId: string,
-    agentId: string,
+    agentId: string | null,
     cwd: string,
     options: CreateSessionOptions = {},
   ): SessionInfo {
@@ -319,6 +345,7 @@ export class Store {
       `SELECT
         s.session_id,
         s.agent_id,
+        s.profile_id,
         s.cwd,
         s.status,
         s.created_at,
@@ -355,6 +382,7 @@ export class Store {
       `SELECT
         s.session_id,
         s.agent_id,
+        s.profile_id,
         s.cwd,
         s.status,
         s.created_at,
@@ -381,6 +409,14 @@ export class Store {
     if (patch.status !== undefined) {
       assignments.push("status = ?");
       values.push(patch.status);
+    }
+    if (patch.agentId !== undefined) {
+      assignments.push("agent_id = ?");
+      values.push(patch.agentId);
+    }
+    if (patch.profileId !== undefined) {
+      assignments.push("profile_id = ?");
+      values.push(patch.profileId);
     }
     if (patch.recoverable !== undefined) {
       assignments.push("recoverable = ?");
@@ -419,21 +455,160 @@ export class Store {
 
   normalizeSessionsOnStartup(): void {
     const now = this.getCurrentTimestamp();
+    // Recoverable sessions stay active — agent will be lazily restored on next prompt
     this.db.prepare(
       `UPDATE sessions
-      SET status = 'suspended',
-          suspended_at = COALESCE(suspended_at, ?),
-          close_reason = NULL
-      WHERE status != 'closed' AND recoverable = 1`
+      SET suspended_at = COALESCE(suspended_at, ?)
+      WHERE status = 'active' AND recoverable = 1`
     ).run(now);
 
+    // Non-recoverable active sessions must be closed
     this.db.prepare(
       `UPDATE sessions
       SET status = 'closed',
           suspended_at = NULL,
           close_reason = 'server_restart_unrecoverable'
-      WHERE status != 'closed' AND recoverable = 0`
+      WHERE status = 'active' AND recoverable = 0 AND agent_id IS NOT NULL`
     ).run();
+
+    // Close stale lazy sessions (never had an agent assigned)
+    this.db.prepare(
+      `UPDATE sessions
+      SET status = 'closed',
+          close_reason = 'server_restart_unused'
+      WHERE status = 'active' AND agent_id IS NULL`
+    ).run();
+  }
+
+  // ── Custom Agents ────────────────────────────────────────────────
+
+  createCustomAgent(agent: Omit<CustomAgent, "id"> & { id?: string }): CustomAgent {
+    const id = agent.id || `agent_${nanoid()}`;
+    const now = this.getCurrentTimestamp();
+    this.db.prepare(
+      `INSERT INTO custom_agents (id, name, command, args, env, icon, description, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      agent.name,
+      agent.command,
+      JSON.stringify(agent.args),
+      agent.env ? JSON.stringify(agent.env) : null,
+      agent.icon ?? null,
+      agent.description ?? null,
+      now,
+    );
+    return this.getCustomAgent(id)!;
+  }
+
+  getCustomAgent(id: string): CustomAgent | null {
+    const row = this.db
+      .prepare("SELECT * FROM custom_agents WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapCustomAgent(row) : null;
+  }
+
+  listCustomAgents(): CustomAgent[] {
+    return this.db
+      .prepare("SELECT * FROM custom_agents ORDER BY created_at ASC")
+      .all()
+      .map((row: any) => this.mapCustomAgent(row));
+  }
+
+  updateCustomAgent(id: string, patch: Partial<Omit<CustomAgent, "id">>): CustomAgent | null {
+    const assignments: string[] = [];
+    const values: Array<string | null> = [];
+
+    if (patch.name !== undefined) { assignments.push("name = ?"); values.push(patch.name); }
+    if (patch.command !== undefined) { assignments.push("command = ?"); values.push(patch.command); }
+    if (patch.args !== undefined) { assignments.push("args = ?"); values.push(JSON.stringify(patch.args)); }
+    if (patch.env !== undefined) { assignments.push("env = ?"); values.push(JSON.stringify(patch.env)); }
+    if (patch.icon !== undefined) { assignments.push("icon = ?"); values.push(patch.icon ?? null); }
+    if (patch.description !== undefined) { assignments.push("description = ?"); values.push(patch.description ?? null); }
+
+    if (assignments.length === 0) return this.getCustomAgent(id);
+
+    values.push(id);
+    this.db.prepare(`UPDATE custom_agents SET ${assignments.join(", ")} WHERE id = ?`).run(...values);
+    return this.getCustomAgent(id);
+  }
+
+  deleteCustomAgent(id: string): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM agent_env_profiles WHERE parent_agent_id = ?").run(id);
+      this.db.prepare("DELETE FROM custom_agents WHERE id = ?").run(id);
+    })();
+  }
+
+  private mapCustomAgent(row: Record<string, unknown>): CustomAgent {
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      command: String(row.command),
+      args: JSON.parse(String(row.args || "[]")),
+      env: row.env ? JSON.parse(String(row.env)) : undefined,
+      icon: row.icon == null ? undefined : String(row.icon),
+      description: row.description == null ? undefined : String(row.description),
+    };
+  }
+
+  // ── Agent Env Profiles ──────────────────────────────────────────
+
+  createAgentEnvProfile(profile: Omit<AgentEnvProfile, "id"> & { id?: string }): AgentEnvProfile {
+    const id = profile.id || `profile_${nanoid()}`;
+    const now = this.getCurrentTimestamp();
+    this.db.prepare(
+      `INSERT INTO agent_env_profiles (id, parent_agent_id, name, env, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(id, profile.parentAgentId, profile.name, JSON.stringify(profile.env), now);
+    return this.getAgentEnvProfile(id)!;
+  }
+
+  getAgentEnvProfile(id: string): AgentEnvProfile | null {
+    const row = this.db
+      .prepare("SELECT * FROM agent_env_profiles WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapAgentEnvProfile(row) : null;
+  }
+
+  listAgentEnvProfiles(parentAgentId?: string): AgentEnvProfile[] {
+    if (parentAgentId) {
+      return this.db
+        .prepare("SELECT * FROM agent_env_profiles WHERE parent_agent_id = ? ORDER BY created_at ASC")
+        .all(parentAgentId)
+        .map((row: any) => this.mapAgentEnvProfile(row));
+    }
+    return this.db
+      .prepare("SELECT * FROM agent_env_profiles ORDER BY created_at ASC")
+      .all()
+      .map((row: any) => this.mapAgentEnvProfile(row));
+  }
+
+  updateAgentEnvProfile(id: string, patch: Partial<Omit<AgentEnvProfile, "id" | "parentAgentId">>): AgentEnvProfile | null {
+    const assignments: string[] = [];
+    const values: Array<string | null> = [];
+
+    if (patch.name !== undefined) { assignments.push("name = ?"); values.push(patch.name); }
+    if (patch.env !== undefined) { assignments.push("env = ?"); values.push(JSON.stringify(patch.env)); }
+
+    if (assignments.length === 0) return this.getAgentEnvProfile(id);
+
+    values.push(id);
+    this.db.prepare(`UPDATE agent_env_profiles SET ${assignments.join(", ")} WHERE id = ?`).run(...values);
+    return this.getAgentEnvProfile(id);
+  }
+
+  deleteAgentEnvProfile(id: string): void {
+    this.db.prepare("DELETE FROM agent_env_profiles WHERE id = ?").run(id);
+  }
+
+  private mapAgentEnvProfile(row: Record<string, unknown>): AgentEnvProfile {
+    return {
+      id: String(row.id),
+      parentAgentId: String(row.parent_agent_id),
+      name: String(row.name),
+      env: JSON.parse(String(row.env || "{}")),
+    };
   }
 
   // ── History ───────────────────────────────────────────────────────
@@ -505,7 +680,8 @@ export class Store {
     const worktreeId = row.worktree_id == null ? null : String(row.worktree_id);
     return {
       sessionId: String(row.session_id),
-      agentId: String(row.agent_id),
+      agentId: row.agent_id == null ? null : String(row.agent_id),
+      profileId: row.profile_id == null ? null : String(row.profile_id),
       cwd: String(row.cwd),
       status: row.status as SessionInfo["status"],
       createdAt: String(row.created_at),

@@ -2,7 +2,7 @@ import { Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StatusBarProps {
-  status: "working" | "idle" | "error" | "suspended" | "closed" | "restoring";
+  status: "working" | "idle" | "error" | "closed";
   message?: string | null;
   onCancel?: () => void;
 }
@@ -25,14 +25,8 @@ export function StatusBar({ status, message, onCancel }: StatusBarProps) {
               <span>Thinking...</span>
             </div>
           )}
-          {status === "restoring" && (
-            <span className="text-primary/70">Restoring session...</span>
-          )}
           {status === "error" && (
             <span className="text-destructive">{message ?? "Error"}</span>
-          )}
-          {status === "suspended" && (
-            <span className="text-amber-500/80">{message ?? "Session suspended"}</span>
           )}
           {status === "closed" && (
             <span className="text-muted-foreground/60">{message ?? "Session closed"}</span>

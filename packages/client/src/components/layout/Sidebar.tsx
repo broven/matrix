@@ -28,8 +28,6 @@ interface SidebarProps {
 
 function getWorktreeStatusColor(sessions: SessionInfo[]) {
   if (sessions.some((s) => s.status === "active")) return "bg-success";
-  if (sessions.some((s) => s.status === "restoring")) return "bg-primary animate-pulse";
-  if (sessions.some((s) => s.status === "suspended")) return "bg-amber-400";
   return "bg-muted-foreground/30";
 }
 
@@ -376,7 +374,7 @@ export function Sidebar({
                   if (!query) return true;
                   const q = query.toLowerCase();
                   return (
-                    session.agentId.toLowerCase().includes(q) ||
+                    (session.agentId ?? "").toLowerCase().includes(q) ||
                     session.cwd.toLowerCase().includes(q)
                   );
                 })

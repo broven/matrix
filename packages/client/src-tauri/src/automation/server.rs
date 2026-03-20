@@ -15,9 +15,18 @@ const REQUEST_BODY_MAX_BYTES: usize = 64 * 1024;
 const REQUEST_READ_TIMEOUT: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Clone)]
+enum HttpResponseBody {
+    Json(Value),
+    Binary {
+        content_type: &'static str,
+        data: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Clone)]
 struct HttpResponse {
     status: u16,
-    body: Value,
+    body: HttpResponseBody,
 }
 
 pub struct AutomationServer {
@@ -104,9 +113,15 @@ fn route_request(
         state,
         eval_backend,
     );
+    let body = match response.body {
+        router::RouterResponseBody::Json(value) => HttpResponseBody::Json(value),
+        router::RouterResponseBody::Binary { content_type, data } => {
+            HttpResponseBody::Binary { content_type, data }
+        }
+    };
     HttpResponse {
         status: response.status,
-        body: response.body,
+        body,
     }
 }
 
@@ -116,6 +131,9 @@ fn handle_connection(
     state: &Arc<RwLock<router::RouteStateSnapshot>>,
     eval_backend: &Arc<dyn router::AutomationRouterBackend>,
 ) -> std::io::Result<()> {
+    // The listener is non-blocking, but accepted streams must be blocking
+    // so that write_all works correctly for large binary responses (screenshots).
+    stream.set_nonblocking(false)?;
     let request = match parse_http_request(stream) {
         Ok(request) => request,
         Err(RequestParseError::Timeout) => {
@@ -140,7 +158,12 @@ fn handle_connection(
             eval_backend.as_ref(),
         )
     };
-    write_json_response(stream, response.status, &response.body)
+    match response.body {
+        HttpResponseBody::Json(ref body) => write_json_response(stream, response.status, body),
+        HttpResponseBody::Binary { content_type, ref data } => {
+            write_binary_response(stream, response.status, content_type, data)
+        }
+    }
 }
 
 fn write_simple_error(stream: &mut TcpStream, status: u16, message: &str) -> std::io::Result<()> {
@@ -151,6 +174,24 @@ fn write_simple_error(stream: &mut TcpStream, status: u16, message: &str) -> std
 fn write_json_response(stream: &mut TcpStream, status: u16, body: &Value) -> std::io::Result<()> {
     let body_bytes =
         serde_json::to_vec(body).map_err(|error| std::io::Error::other(error.to_string()))?;
+    write_raw_response(stream, status, "application/json", &body_bytes)
+}
+
+fn write_binary_response(
+    stream: &mut TcpStream,
+    status: u16,
+    content_type: &str,
+    data: &[u8],
+) -> std::io::Result<()> {
+    write_raw_response(stream, status, content_type, data)
+}
+
+fn write_raw_response(
+    stream: &mut TcpStream,
+    status: u16,
+    content_type: &str,
+    body_bytes: &[u8],
+) -> std::io::Result<()> {
     let status_text = match status {
         200 => "OK",
         400 => "Bad Request",
@@ -162,12 +203,13 @@ fn write_json_response(stream: &mut TcpStream, status: u16, body: &Value) -> std
     };
     write!(
         stream,
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         status,
         status_text,
+        content_type,
         body_bytes.len()
     )?;
-    stream.write_all(&body_bytes)?;
+    stream.write_all(body_bytes)?;
     stream.flush()?;
     Ok(())
 }
@@ -433,6 +475,15 @@ mod tests {
         }
     }
 
+    fn json_body(response: &super::HttpResponse) -> &serde_json::Value {
+        match &response.body {
+            super::HttpResponseBody::Json(value) => value,
+            super::HttpResponseBody::Binary { .. } => {
+                panic!("expected JSON response, got binary")
+            }
+        }
+    }
+
     #[test]
     fn get_health_returns_expected_shape() {
         let state = sample_state();
@@ -447,17 +498,18 @@ mod tests {
         );
 
         assert_eq!(response.status, 200);
+        let body = json_body(&response);
         assert_eq!(
-            response.body.get("ok").and_then(|v| v.as_bool()),
+            body.get("ok").and_then(|v| v.as_bool()),
             Some(true)
         );
         assert_eq!(
-            response.body.get("platform").and_then(|v| v.as_str()),
+            body.get("platform").and_then(|v| v.as_str()),
             Some("macos")
         );
-        assert!(response.body.get("appReady").is_some());
-        assert!(response.body.get("webviewReady").is_some());
-        assert!(response.body.get("sidecarReady").is_some());
+        assert!(body.get("appReady").is_some());
+        assert!(body.get("webviewReady").is_some());
+        assert!(body.get("sidecarReady").is_some());
     }
 
     #[test]
@@ -474,9 +526,10 @@ mod tests {
         );
 
         assert_eq!(response.status, 200);
-        assert!(response.body.get("window").is_some());
-        assert!(response.body.get("webview").is_some());
-        assert!(response.body.get("sidecar").is_some());
+        let body = json_body(&response);
+        assert!(body.get("window").is_some());
+        assert!(body.get("webview").is_some());
+        assert!(body.get("sidecar").is_some());
     }
 
     #[test]

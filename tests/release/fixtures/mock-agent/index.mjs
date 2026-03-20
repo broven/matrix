@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * Minimal ACP-compatible mock agent for release tests.
+ * Mock ACP agent for release tests.
  *
- * Accepts JSON-RPC 2.0 over stdio:
- * - initialize → returns capabilities
- * - session/create → returns a session ID
- * - session/load → returns success
- * - prompt/send → returns a fixed response
- * - permission/respond → no-op
+ * Implements the ACP protocol over JSON-RPC 2.0 on stdio:
+ * - initialize → capabilities + agent info
+ * - session/new → session ID + modes, then available_commands_update notification
+ * - session/load → session ID + modes
+ * - session/prompt → message chunks + completed notification, then result
+ * - session/cancel → ok
+ *
+ * Prompt modes:
+ * - "echo:<text>" → echoes back <text>
+ * - "env:<VAR>" → returns process.env[VAR]
+ * - default → "Mock response to: <input>"
  *
  * Usage: node tests/release/fixtures/mock-agent/index.mjs
  */
@@ -17,126 +22,122 @@ import { createInterface } from "node:readline";
 
 const rl = createInterface({ input: process.stdin });
 
-function send(response) {
-  process.stdout.write(JSON.stringify(response) + "\n");
+let sessionCounter = 0;
+
+function send(obj) {
+  process.stdout.write(JSON.stringify(obj) + "\n");
 }
+
+function sendNotification(method, params) {
+  send({ jsonrpc: "2.0", method, params });
+}
+
+function sendResult(id, result) {
+  send({ jsonrpc: "2.0", id, result });
+}
+
+function sendError(id, code, message) {
+  send({ jsonrpc: "2.0", id, error: { code, message } });
+}
+
+const DEFAULT_MODES = {
+  currentModeId: "default",
+  availableModes: [{ id: "default", name: "Default" }],
+};
+
+const SLASH_COMMANDS = [
+  { name: "compact", description: "Compact conversation history" },
+  { name: "review", description: "Review current changes" },
+  { name: "plan", description: "Create an implementation plan" },
+];
 
 function handleRequest(msg) {
   const { id, method, params } = msg;
 
   switch (method) {
     case "initialize":
-      return send({
-        jsonrpc: "2.0",
-        id,
-        result: {
-          protocolVersion: "0.1.0",
-          capabilities: {
-            tools: true,
-            permissions: true,
+      return sendResult(id, {
+        protocolVersion: 1,
+        serverCapabilities: {
+          loadSession: true,
+          promptCapabilities: {
+            supportedModes: ["default"],
           },
-          serverInfo: {
-            name: "mock-agent",
-            version: "0.0.1",
-          },
+        },
+        agentInfo: {
+          name: "mock-acp-agent",
+          title: "Mock ACP Agent",
+          version: "1.0.0",
         },
       });
 
-    case "session/create": {
-      const sid = `mock-session-${Date.now()}`;
-      send({
-        jsonrpc: "2.0",
-        id,
-        result: {
-          sessionId: sid,
+    case "session/new": {
+      sessionCounter++;
+      const sessionId = `mock_sess_${sessionCounter}`;
+      sendResult(id, { sessionId, modes: DEFAULT_MODES });
+      // Send available_commands_update notification after session creation
+      sendNotification("session/update", {
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: SLASH_COMMANDS,
         },
       });
-      // Send available_commands_update after session creation
-      return send({
-        jsonrpc: "2.0",
-        method: "session/update",
-        params: {
-          sessionId: sid,
-          update: {
-            sessionUpdate: "available_commands_update",
-            availableCommands: [
-              { name: "compact", description: "Compact conversation history" },
-              { name: "review", description: "Review current changes" },
-              { name: "plan", description: "Create an implementation plan" },
-            ],
-          },
-        },
-      });
+      return;
     }
 
-    case "session/load":
-      return send({
-        jsonrpc: "2.0",
-        id,
-        result: {
-          sessionId: params?.agentSessionId ?? `mock-session-${Date.now()}`,
-        },
-      });
+    case "session/load": {
+      const sessionId = params?.sessionId ?? `mock_sess_${++sessionCounter}`;
+      return sendResult(id, { sessionId, modes: DEFAULT_MODES });
+    }
 
-    case "prompt/send": {
-      // Send a fixed assistant response
+    case "session/prompt": {
       const sessionId = params?.sessionId;
+      const inputText = params?.prompt?.[0]?.text ?? "";
 
-      // First send message chunks as notifications
-      send({
-        jsonrpc: "2.0",
-        method: "session/update",
-        params: {
-          sessionId,
+      let response;
+      if (inputText.startsWith("echo:")) {
+        response = inputText.slice(5);
+      } else if (inputText.startsWith("env:")) {
+        response = process.env[inputText.slice(4)] ?? "";
+      } else {
+        response = `Mock response to: ${inputText}`;
+      }
+
+      // Send agent_message_chunk notification
+      sendNotification("session/update", {
+        sessionId,
+        update: {
           sessionUpdate: "agent_message_chunk",
-          content: {
-            type: "text",
-            text: "Hello from mock agent! This is a test response.",
-          },
+          content: { type: "text", text: response },
         },
       });
 
-      // Then send completion
-      send({
-        jsonrpc: "2.0",
-        method: "session/update",
-        params: {
-          sessionId,
+      // Send completed notification
+      sendNotification("session/update", {
+        sessionId,
+        update: {
           sessionUpdate: "completed",
+          stopReason: "end_turn",
         },
       });
 
-      // Respond to the request
-      return send({
-        jsonrpc: "2.0",
-        id,
-        result: { ok: true },
-      });
+      // Return result
+      return sendResult(id, { stopReason: "end_turn" });
     }
 
-    case "permission/respond":
-      return send({
-        jsonrpc: "2.0",
-        id,
-        result: { ok: true },
-      });
+    case "session/cancel":
+      return sendResult(id, { ok: true });
 
     default:
-      return send({
-        jsonrpc: "2.0",
-        id,
-        error: {
-          code: -32601,
-          message: `Method not found: ${method}`,
-        },
-      });
+      return sendError(id, -32601, `Method not found: ${method}`);
   }
 }
 
 rl.on("line", (line) => {
   try {
     const msg = JSON.parse(line);
-    // Ignore notifications (no id)
+    // Only handle requests (messages with an id)
     if (msg.id !== undefined) {
       handleRequest(msg);
     }

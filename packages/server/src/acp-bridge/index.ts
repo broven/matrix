@@ -97,10 +97,7 @@ export class AcpBridge {
   async initialize(clientInfo: { name: string; version: string }): Promise<InitializeResult> {
     const result = await this.request("initialize", {
       protocolVersion: 1,
-      clientCapabilities: {
-        fs: false,
-        terminal: false,
-      },
+      clientCapabilities: {},
       clientInfo,
     }) as InitializeResult;
     this.capabilities = result.serverCapabilities ?? result.agentCapabilities ?? result.capabilities ?? null;

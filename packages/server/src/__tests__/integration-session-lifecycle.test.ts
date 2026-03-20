@@ -217,7 +217,7 @@ describe("Integration: session lifecycle", () => {
           }
 
           let bridge = sessionManager.getBridge(sessionId);
-          if (!bridge && session.status === "suspended" && session.recoverable) {
+          if (!bridge && session.agentId && session.recoverable) {
             bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
           }
 
@@ -244,7 +244,6 @@ describe("Integration: session lifecycle", () => {
       agentSessionId: "agent-existing-session",
     });
     store.updateSessionState("sess_restore", {
-      status: "suspended",
       suspendedAt: "2026-03-14T12:00:00.000Z",
     });
 
