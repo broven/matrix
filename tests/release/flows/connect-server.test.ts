@@ -6,23 +6,23 @@ import { expectVisible } from "../lib/assertions";
 
 describe("连接 Sidecar 服务", () => {
   it("Automation Bridge 健康检查通过", async () => {
-    const bridge = await createBridgeClient();
+    const bridge = createBridgeClient();
     setBridge(bridge);
 
     const health = await bridge.health();
     expect(health.ok).toBe(true);
-    expect(health.appReady).toBe(true);
-    expect(health.webviewReady).toBe(true);
+    expect(health.clientCount).toBeGreaterThan(0);
   });
 
-  it("Sidecar 正在运行", async () => {
-    const bridge = await createBridgeClient();
+  it("Bridge client 已连接", async () => {
+    const bridge = createBridgeClient();
     const health = await bridge.health();
-    expect(health.sidecarReady).toBe(true);
+    expect(health.clients.length).toBeGreaterThan(0);
+    expect(health.clients[0].platform).toBeTruthy();
   });
 
   it("UI 显示已连接状态", async () => {
-    const bridge = await createBridgeClient();
+    const bridge = createBridgeClient();
     setBridge(bridge);
 
     await verifyConnected(bridge);
