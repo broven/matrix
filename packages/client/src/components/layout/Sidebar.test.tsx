@@ -21,6 +21,7 @@ const makeRepo = (overrides?: Partial<RepositoryInfo>): RepositoryInfo => ({
   remoteUrl: "https://github.com/user/my-project",
   serverId: "server-1",
   defaultBranch: "main",
+  createdAt: "2026-03-20T10:00:00.000Z",
   ...overrides,
 });
 
@@ -30,6 +31,10 @@ const makeWorktree = (overrides?: Partial<WorktreeInfo>): WorktreeInfo => ({
   branch: "feat-login",
   baseBranch: "main",
   path: "/tmp/worktrees/feat-login",
+  status: "active",
+  taskDescription: null,
+  createdAt: "2026-03-20T10:00:00.000Z",
+  lastActiveAt: "2026-03-20T10:00:00.000Z",
   ...overrides,
 });
 
