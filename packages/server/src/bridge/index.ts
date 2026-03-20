@@ -225,8 +225,30 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
         const { randomUUID } = await import("node:crypto");
         const { promisify } = await import("node:util");
         const execAsync = promisify(exec);
+
+        // Resolve which simulator to capture — "booted" only works when
+        // exactly one simulator is running; with multiple we need a UDID.
+        const { stdout: deviceJson } = await execAsync(
+          "xcrun simctl list devices booted -j",
+          { timeout: 5_000 },
+        );
+        const parsed = JSON.parse(deviceJson) as {
+          devices: Record<string, Array<{ udid: string; name: string; state: string }>>;
+        };
+        const booted = Object.values(parsed.devices).flat().filter((d) => d.state === "Booted");
+        if (booted.length === 0) {
+          return c.json({ ok: false, error: "No booted iOS simulators found" }, 502);
+        }
+        if (booted.length > 1) {
+          return c.json(
+            { ok: false, error: `Multiple booted simulators (${booted.map((d) => d.name).join(", ")}); pass clientId to select one, or boot only one simulator` },
+            502,
+          );
+        }
+        const simUdid = booted[0].udid;
+
         const tmpFile = `/tmp/matrix-screenshot-${randomUUID()}.png`;
-        await execAsync(`xcrun simctl io booted screenshot "${tmpFile}"`, {
+        await execAsync(`xcrun simctl io "${simUdid}" screenshot "${tmpFile}"`, {
           timeout: 10_000,
         });
         base64Data = (await readFile(tmpFile)).toString("base64");
