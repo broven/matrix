@@ -180,7 +180,7 @@ export function PromptInput({
   const selectedProfile = (selectedAgent?.profiles ?? []).find((p) => p.id === selectedProfileId);
 
   return (
-    <div className="px-4 pb-4 pt-2 md:px-6" style={{ paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + 1rem)` }}>
+    <div className="px-4 pb-4 pt-2 md:px-6">
       <div className="mx-auto max-w-3xl">
         <div className="relative">
           {/* Popover menus rendered outside overflow-hidden card container */}
