@@ -88,6 +88,7 @@ export function PromptInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const agentBtnRef = useRef<HTMLButtonElement>(null);
 
   const { isOpen, filtered, selectedIndex, setSelectedIndex, slashIndex } =
     useSlashAutocomplete(text, availableCommands, cursorPos);
@@ -122,7 +123,11 @@ export function PromptInput({
   useEffect(() => {
     if (!agentMenuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        menuRef.current && !menuRef.current.contains(target) &&
+        agentBtnRef.current && !agentBtnRef.current.contains(target)
+      ) {
         setAgentMenuOpen(false);
       }
     };
@@ -172,6 +177,7 @@ export function PromptInput({
 
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const profileBtnRef = useRef<HTMLButtonElement>(null);
 
   const availableAgents = agents.filter((a) => a.available);
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
@@ -182,7 +188,11 @@ export function PromptInput({
   useEffect(() => {
     if (!profileMenuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        profileMenuRef.current && !profileMenuRef.current.contains(target) &&
+        profileBtnRef.current && !profileBtnRef.current.contains(target)
+      ) {
         setProfileMenuOpen(false);
       }
     };
@@ -194,6 +204,7 @@ export function PromptInput({
     <div className="px-4 pb-4 pt-2 md:px-6">
       <div className="mx-auto max-w-3xl">
         <div className="relative">
+          {/* Popover menus rendered outside overflow-hidden card container */}
           {isOpen && (
             <div
               ref={dropdownRef}
@@ -227,6 +238,68 @@ export function PromptInput({
               ))}
             </div>
           )}
+          {agentMenuOpen && !agentLocked && availableAgents.length > 0 && (
+            <div ref={menuRef} className="absolute bottom-full left-0 z-50 mb-1 min-w-[180px] rounded-lg border border-border bg-popover p-1 shadow-md">
+              {availableAgents.map((agent) => (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => {
+                    onAgentChange?.(agent.id);
+                    onProfileChange?.(null);
+                    setAgentMenuOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                    agent.id === selectedAgentId
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50",
+                  )}
+                >
+                  <span className="size-1.5 rounded-full bg-primary" />
+                  <span className="truncate">{agent.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {profileMenuOpen && agentProfiles.length > 0 && (
+            <div ref={profileMenuRef} className="absolute bottom-full left-0 z-50 mb-1 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-md">
+              <button
+                type="button"
+                onClick={() => {
+                  onProfileChange?.(null);
+                  setProfileMenuOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                  !selectedProfileId
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50",
+                )}
+              >
+                Default
+              </button>
+              {agentProfiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  onClick={() => {
+                    onProfileChange?.(profile.id);
+                    setProfileMenuOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+                    profile.id === selectedProfileId
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50",
+                  )}
+                  data-testid={`profile-option-${profile.id}`}
+                >
+                  {profile.name}
+                </button>
+              ))}
+            </div>
+          )}
           <div
             className={cn(
               "overflow-hidden rounded-[1.25rem] border border-border/60 bg-card shadow-sm transition-shadow",
@@ -248,8 +321,9 @@ export function PromptInput({
               data-testid="chat-input"
             />
             <div className="flex items-center justify-between px-3 pb-2.5 pt-0">
-              <div className="relative flex items-center gap-2" ref={menuRef}>
+              <div className="flex items-center gap-2">
                 <button
+                  ref={agentBtnRef}
                   type="button"
                   onClick={() => !agentLocked && setAgentMenuOpen(!agentMenuOpen)}
                   className={cn(
@@ -262,35 +336,13 @@ export function PromptInput({
                   {selectedAgent?.name ?? "Select agent"}
                   {!agentLocked && <ChevronDown className="size-3 text-muted-foreground" />}
                 </button>
-                {agentMenuOpen && !agentLocked && availableAgents.length > 0 && (
-                  <div className="absolute bottom-full left-0 mb-1 min-w-[180px] rounded-lg border border-border bg-popover p-1 shadow-md">
-                    {availableAgents.map((agent) => (
-                      <button
-                        key={agent.id}
-                        type="button"
-                        onClick={() => {
-                          onAgentChange?.(agent.id);
-                          onProfileChange?.(null); // Reset profile on agent change
-                          setAgentMenuOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
-                          agent.id === selectedAgentId
-                            ? "bg-accent text-accent-foreground"
-                            : "hover:bg-accent/50",
-                        )}
-                      >
-                        <span className="size-1.5 rounded-full bg-primary" />
-                        <span className="truncate">{agent.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Agent menu rendered outside overflow-hidden container via portal below */}
               </div>
               {/* Profile selector — only when selected agent has profiles */}
               {agentProfiles.length > 0 && (
-                <div className="relative" ref={profileMenuRef}>
+                <div>
                   <button
+                    ref={profileBtnRef}
                     type="button"
                     onClick={() => !agentLocked && setProfileMenuOpen(!profileMenuOpen)}
                     className={cn(
@@ -303,44 +355,7 @@ export function PromptInput({
                     {selectedProfile?.name ?? "Default"}
                     <ChevronDown className="size-3 text-muted-foreground" />
                   </button>
-                  {profileMenuOpen && (
-                    <div className="absolute bottom-full left-0 mb-1 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-md">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onProfileChange?.(null);
-                          setProfileMenuOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
-                          !selectedProfileId
-                            ? "bg-accent text-accent-foreground"
-                            : "hover:bg-accent/50",
-                        )}
-                      >
-                        Default
-                      </button>
-                      {agentProfiles.map((profile) => (
-                        <button
-                          key={profile.id}
-                          type="button"
-                          onClick={() => {
-                            onProfileChange?.(profile.id);
-                            setProfileMenuOpen(false);
-                          }}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
-                            profile.id === selectedProfileId
-                              ? "bg-accent text-accent-foreground"
-                              : "hover:bg-accent/50",
-                          )}
-                          data-testid={`profile-option-${profile.id}`}
-                        >
-                          {profile.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  {/* Profile menu rendered outside overflow-hidden container via portal below */}
                 </div>
               )}
               <div className="flex items-center gap-1.5">
