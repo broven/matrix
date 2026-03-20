@@ -88,6 +88,7 @@ export function ServerStoreProvider({ children }: { children: ReactNode }) {
 
   const addServer = useCallback((server: Omit<SavedServer, "id" | "lastConnected">) => {
     setServers((prev) => {
+      if (prev.some((s) => s.serverUrl === server.serverUrl)) return prev;
       const updated = [...prev, { ...server, id: generateId(), lastConnected: null }];
       persistServers(updated);
       return updated;

@@ -3,6 +3,45 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 mod updater;
 
+#[cfg(desktop)]
+mod screenshot_impl {
+    use base64::Engine;
+    use std::io::Cursor;
+    use xcap::Window;
+
+    pub fn capture() -> Result<String, String> {
+        let our_pid = std::process::id();
+        let windows = Window::all().map_err(|e| format!("failed to list windows: {e}"))?;
+
+        let window = windows
+            .into_iter()
+            .find(|w| {
+                w.pid().map_or(false, |pid| pid == our_pid)
+                    && !w.is_minimized().unwrap_or(true)
+            })
+            .ok_or_else(|| {
+                "could not find Matrix window; refusing full-screen capture".to_string()
+            })?;
+
+        let image = window
+            .capture_image()
+            .map_err(|e| format!("capture_image failed: {e}"))?;
+
+        let mut png_bytes: Vec<u8> = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)
+            .map_err(|e| format!("PNG encode failed: {e}"))?;
+
+        Ok(base64::engine::general_purpose::STANDARD.encode(&png_bytes))
+    }
+}
+
+#[tauri::command]
+#[cfg(desktop)]
+fn screenshot() -> Result<String, String> {
+    screenshot_impl::capture()
+}
+
 /// Resolve sidecar port: in dev mode read SIDECAR_PORT env var, fallback to 19880.
 /// In release mode always returns 19880.
 #[cfg(desktop)]
@@ -63,6 +102,7 @@ pub fn run() {
         get_sidecar_port,
         mock_file_dialog,
         consume_mock_file_dialog,
+        screenshot,
     ]);
 
     #[cfg(all(desktop, not(target_os = "macos")))]
@@ -70,6 +110,7 @@ pub fn run() {
         get_sidecar_port,
         mock_file_dialog,
         consume_mock_file_dialog,
+        screenshot,
     ]);
 
     #[cfg(mobile)]

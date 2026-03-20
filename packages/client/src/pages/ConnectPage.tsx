@@ -105,7 +105,7 @@ export function ConnectPage() {
     connectionInfo?.serverUrl === localServerUrl && status === "connected";
 
   return (
-    <div className="surface-grid relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
+    <div className="surface-grid relative flex h-full items-center justify-center overflow-auto bg-background px-4 py-10">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_color-mix(in_oklch,var(--primary)_18%,transparent),transparent_35%),radial-gradient(circle_at_bottom_right,_color-mix(in_oklch,var(--warning)_20%,transparent),transparent_32%)]" />
 
       <div className="relative w-full max-w-2xl space-y-6">
@@ -449,7 +449,7 @@ function ScanQRView({
 
       onResult(serverUrl, token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Scan failed");
+      setError(err instanceof Error ? err.message : String(err || "Scan failed"));
       setScanning(false);
     }
   };

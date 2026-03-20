@@ -116,6 +116,61 @@ curl --noproxy "*" -s -X POST \
   "$B/bridge/wait"
 ```
 
+### POST /bridge/snapshot
+
+Capture a DOM diagnostic snapshot from the webview. Returns testids, dialogs, focused element, and visible text.
+
+```bash
+curl --noproxy "*" -s -X POST \
+  -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "$B/bridge/snapshot"
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "result": {
+    "url": "http://127.0.0.1:19880/",
+    "title": "Matrix",
+    "testids": ["add-repo-btn", "repo-item-matrix", "chat-input"],
+    "dialogs": [{ "tag": "DIV", "className": "fixed inset-0 ..." }],
+    "focused": { "tag": "TEXTAREA", "testid": "chat-input" },
+    "bodyText": "Matrix — first 1000 chars of visible text...",
+    "timestamp": 1742486400000
+  }
+}
+```
+
+### POST /bridge/screenshot
+
+Capture a screenshot of the application window. Returns raw PNG binary.
+
+- **macOS**: Captures the app window via `CGWindowListCreateImage` + `screencapture`
+- **iOS Simulator**: Captures via `xcrun simctl io booted screenshot`
+
+```bash
+curl --noproxy "*" -s -X POST \
+  -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "$B/bridge/screenshot" \
+  --output screenshot.png
+```
+
+To target a specific client (when both macOS and iOS are connected):
+
+```bash
+curl --noproxy "*" -s -X POST \
+  -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"ios-main"}' \
+  "$B/bridge/screenshot" \
+  --output ios-screenshot.png
+```
+
 ## Error Codes
 
 | Code | Meaning |

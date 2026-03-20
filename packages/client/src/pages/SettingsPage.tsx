@@ -125,7 +125,7 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-background" data-testid="settings-overlay">
+    <div className="flex h-full flex-1 bg-background" data-testid="settings-overlay">
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between border-b px-4 py-3 md:px-6">
           <div className="flex items-center gap-2">

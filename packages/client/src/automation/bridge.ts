@@ -187,7 +187,7 @@ export function installAutomationBridge(options?: InstallOptions): AutomationBri
 // --- WebSocket Bridge Client ---
 
 interface BridgeServerMessage {
-  type: "eval" | "event" | "reset";
+  type: "eval" | "event" | "reset" | "snapshot" | "screenshot";
   requestId: string;
   script?: string;
   name?: string;
@@ -307,6 +307,50 @@ export function connectBridgeWebSocket(
             error: err instanceof Error ? err.message : "reset failed",
           }));
         }
+        break;
+      }
+
+      case "snapshot": {
+        try {
+          const snapshot = {
+            url: window.location.href,
+            title: document.title,
+            testids: Array.from(document.querySelectorAll("[data-testid]"))
+              .map((el) => el.getAttribute("data-testid")),
+            dialogs: Array.from(document.querySelectorAll("[role='dialog'], .fixed"))
+              .map((el) => ({ tag: el.tagName, className: el.className })),
+            focused: {
+              tag: document.activeElement?.tagName ?? null,
+              testid: document.activeElement?.getAttribute("data-testid") ?? null,
+            },
+            bodyText: document.body.innerText.substring(0, 1000),
+            timestamp: Date.now(),
+          };
+          ws.send(JSON.stringify({ type: "response", requestId, result: snapshot }));
+        } catch (err) {
+          ws.send(JSON.stringify({
+            type: "response",
+            requestId,
+            error: err instanceof Error ? err.message : "snapshot failed",
+          }));
+        }
+        break;
+      }
+
+      case "screenshot": {
+        (async () => {
+          try {
+            const { invoke } = await import("@tauri-apps/api/core");
+            const base64: string = await invoke("screenshot");
+            ws.send(JSON.stringify({ type: "response", requestId, result: base64 }));
+          } catch (err) {
+            ws.send(JSON.stringify({
+              type: "response",
+              requestId,
+              error: err instanceof Error ? err.message : "screenshot failed",
+            }));
+          }
+        })();
         break;
       }
     }

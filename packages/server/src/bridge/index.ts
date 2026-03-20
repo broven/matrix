@@ -187,6 +187,124 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
 
     return c.json({ ok: false, result: null, error: `wait timed out after ${timeoutMs}ms` }, 408);
   });
+
+  app.post("/bridge/snapshot", async (c: Context) => {
+    const body = await c.req.json<{ clientId?: string }>();
+    const requestId = clientRegistry.generateRequestId();
+
+    try {
+      const result = await clientRegistry.sendRequest(body.clientId, {
+        type: "snapshot",
+        requestId,
+      });
+      return c.json({ ok: true, result, error: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "snapshot failed";
+      return c.json({ ok: false, result: null, error: message }, 502);
+    }
+  });
+
+  app.post("/bridge/screenshot", async (c: Context) => {
+    const body = await c.req.json<{ clientId?: string }>();
+    const client = clientRegistry.getClient(body.clientId);
+
+    if (!client) {
+      const msg = body.clientId
+        ? `Client "${body.clientId}" not found`
+        : "No clients connected";
+      return c.json({ ok: false, error: msg }, 502);
+    }
+
+    try {
+      let base64Data: string;
+
+      if (client.info.platform === "ios") {
+        // iOS Simulator: capture via xcrun simctl on host
+        const { exec } = await import("node:child_process");
+        const { readFile, unlink } = await import("node:fs/promises");
+        const { randomUUID } = await import("node:crypto");
+        const { promisify } = await import("node:util");
+        const execAsync = promisify(exec);
+
+        // Resolve which simulator to capture — "booted" only works when
+        // exactly one simulator is running; with multiple we need a UDID.
+        const { stdout: deviceJson } = await execAsync(
+          "xcrun simctl list devices booted -j",
+          { timeout: 5_000 },
+        );
+        const parsed = JSON.parse(deviceJson) as {
+          devices: Record<string, Array<{ udid: string; name: string; state: string }>>;
+        };
+        const booted = Object.values(parsed.devices).flat().filter((d) => d.state === "Booted");
+        if (booted.length === 0) {
+          return c.json({ ok: false, error: "No booted iOS simulators found" }, 502);
+        }
+        if (booted.length > 1) {
+          return c.json(
+            { ok: false, error: `Multiple booted simulators (${booted.map((d) => d.name).join(", ")}); boot only one simulator for iOS screenshot capture` },
+            502,
+          );
+        }
+        const simUdid = booted[0].udid;
+
+        const tmpFile = `/tmp/matrix-screenshot-${randomUUID()}.png`;
+        await execAsync(`xcrun simctl io "${simUdid}" screenshot "${tmpFile}"`, {
+          timeout: 10_000,
+        });
+        base64Data = (await readFile(tmpFile)).toString("base64");
+        await unlink(tmpFile).catch(() => {});
+      } else {
+        // macOS: try Tauri command via WebSocket, fallback to screencapture CLI
+        try {
+          const requestId = clientRegistry.generateRequestId();
+          const result = await clientRegistry.sendRequest(body.clientId, {
+            type: "screenshot",
+            requestId,
+          });
+          base64Data = result as string;
+        } catch {
+          // Tauri invoke unavailable (e.g. dev mode via browser) — use screencapture CLI
+          const { exec } = await import("node:child_process");
+          const { readFile, unlink } = await import("node:fs/promises");
+          const { randomUUID } = await import("node:crypto");
+          const { promisify } = await import("node:util");
+          const execAsync = promisify(exec);
+          const tmpFile = `/tmp/matrix-screenshot-${randomUUID()}.png`;
+          // Try to find the Matrix window ID for targeted capture
+          try {
+            const { stdout: wid } = await execAsync(
+              `osascript -e 'tell application "System Events" to tell (first process whose unix id is ${process.pid} or name contains "matrix-client") to get id of first window'`,
+              { timeout: 3_000 },
+            );
+            const windowId = wid.trim();
+            if (windowId) {
+              await execAsync(`screencapture -l ${windowId} -o -x "${tmpFile}"`, { timeout: 10_000 });
+            } else {
+              await execAsync(`screencapture -x "${tmpFile}"`, { timeout: 10_000 });
+            }
+          } catch {
+            // osascript failed — fallback to full-screen capture
+            await execAsync(`screencapture -x "${tmpFile}"`, { timeout: 10_000 });
+          }
+          base64Data = (await readFile(tmpFile)).toString("base64");
+          await unlink(tmpFile).catch(() => {});
+        }
+      }
+
+      // Return raw PNG binary
+      const pngBuffer = Buffer.from(base64Data, "base64");
+      return new Response(pngBuffer, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Length": String(pngBuffer.length),
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "screenshot failed";
+      return c.json({ ok: false, error: message }, 502);
+    }
+  });
 }
 
 export { ClientRegistry } from "./client-registry.js";

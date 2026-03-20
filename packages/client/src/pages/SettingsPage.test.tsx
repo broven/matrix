@@ -101,7 +101,7 @@ describe("SettingsPage", () => {
       <SettingsPage onBack={onBack} repositories={repositories} onDeleteRepository={mockDeleteRepository} />,
     );
 
-    expect(container.firstElementChild).toHaveClass("fixed", "inset-0", "z-50");
+    expect(container.firstElementChild).toHaveClass("flex", "h-full", "flex-1", "bg-background");
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /close settings/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
