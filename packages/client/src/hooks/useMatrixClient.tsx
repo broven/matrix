@@ -59,7 +59,10 @@ export function MatrixClientProvider({ children }: { children: ReactNode }) {
     });
 
     const newClient = new MatrixClient(config);
-    newClient.onStatusChange(setStatus);
+    newClient.onStatusChange((s) => {
+      setStatus(s);
+      if (s === "connected") setError(null);
+    });
     newClient.onError((err) => setError(err.message));
     newClient.connect();
     setClient(newClient);
