@@ -81,7 +81,7 @@ mod screenshot_impl {
         let our_pid = process::id() as i64;
         let window_id = find_window_id(our_pid)
             .ok_or_else(|| "could not find Matrix window; refusing full-screen capture".to_string())?;
-        capture_via_screencapture(Some(window_id))
+        capture_via_screencapture(window_id)
     }
 }
 
