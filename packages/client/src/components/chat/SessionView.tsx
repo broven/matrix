@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentListItem, AvailableCommand, HistoryEntry, SessionInfo, SessionUpdate, ServerConfig } from "@matrix/protocol";
+import type { AgentListItem, AvailableCommand, HistoryEntry, SessionInfo, SessionUpdate, ServerConfig, PromptContent } from "@matrix/protocol";
 import type { MatrixSession, PromptCallbacks } from "@matrix/sdk";
 import { nanoid } from "nanoid";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
@@ -51,6 +51,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
+  const [sessionFiles, setSessionFiles] = useState<string[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(sessionInfo.agentId);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(sessionInfo.profileId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -120,6 +121,14 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       }
     }
   }, [agents, selectedAgentId, sessionInfo.agentId, sessionInfo.sessionId, onSessionInfoChange]);
+
+  // Fetch files for @ mention
+  useEffect(() => {
+    if (!client || !sessionInfo.sessionId) return;
+    client.getSessionFiles(sessionInfo.sessionId)
+      .then(setSessionFiles)
+      .catch(() => {}); // silently fail
+  }, [client, sessionInfo.sessionId]);
 
   const addEvent = useCallback((type: string, data: SessionUpdate) => {
     setEvents((previous) => [
@@ -321,6 +330,49 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     [addEvent, session, viewStatus, selectedAgentId, selectedProfileId, isProcessing],
   );
 
+  const handleSendContent = useCallback(
+    (content: PromptContent[]) => {
+      if (!session || viewStatus === "closed") return;
+      if (!selectedAgentId) {
+        setErrorMessage("Please select an agent before sending a message.");
+        return;
+      }
+
+      // Build display text for the user message bubble
+      const displayText = content
+        .map((b) => (b.type === "text" ? b.text : `@${b.name}`))
+        .join("");
+
+      addEvent("message", {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: `> ${displayText}` },
+      });
+
+      // Tag the first text block with agentId/profileId
+      const taggedContent = content.map((block, i) => {
+        if (block.type === "text" && i === 0) {
+          return { ...block, agentId: selectedAgentId, profileId: selectedProfileId ?? undefined };
+        }
+        return block;
+      });
+
+      if (isProcessing) {
+        setMessageQueue((q) => [...q, { text: displayText, agentId: selectedAgentId, profileId: selectedProfileId }]);
+        return;
+      }
+
+      setIsProcessing(true);
+      setErrorMessage(null);
+
+      const callbacks: PromptCallbacks = {
+        onComplete: () => setIsProcessing(false),
+      };
+
+      session.promptWithContent(taggedContent, callbacks);
+    },
+    [addEvent, session, viewStatus, selectedAgentId, selectedProfileId, isProcessing],
+  );
+
   const handleCancel = useCallback(() => {
     session?.cancel();
   }, [session]);
@@ -400,6 +452,9 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       <StatusBar status={statusBarStatus} message={statusMessage} onCancel={handleCancel} />
       <PromptInput
         onSend={handleSend}
+        onSendContent={handleSendContent}
+        files={sessionFiles}
+        sessionCwd={sessionInfo.cwd}
         disabled={inputDisabled}
         placeholder={getInputPlaceholder(viewStatus, hasAgent, noAgentAvailable)}
         isProcessing={isProcessing}
