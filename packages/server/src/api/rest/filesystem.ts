@@ -1,22 +1,17 @@
 import { Hono } from "hono";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getDataDir } from "../../data-dir.js";
+import { getSrvDir } from "../../data-dir.js";
 
 export function filesystemRoutes() {
   const app = new Hono();
 
   app.get("/fs/list", async (c) => {
     const rawPath = c.req.query("path");
-    const browseRoot = getDataDir();
+    const defaultRoot = getSrvDir();
     const dirPath = path.resolve(
-      rawPath ? rawPath.replace(/^~/, browseRoot) : browseRoot,
+      rawPath ? rawPath.replace(/^~/, defaultRoot) : defaultRoot,
     );
-
-    // Path containment: must be within browse root
-    if (!dirPath.startsWith(browseRoot + path.sep) && dirPath !== browseRoot) {
-      return c.json({ error: `Path must be within ${browseRoot}` }, 403);
-    }
 
     let stat;
     try {

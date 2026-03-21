@@ -2,17 +2,17 @@ import { Hono } from "hono";
 import fs from "node:fs";
 import path from "node:path";
 import type { ServerConfig } from "@matrix/protocol";
-import { getDataDir } from "../../data-dir.js";
+import { getDataDir, getSrvDir } from "../../data-dir.js";
 
 function resolveConfigDir(): string {
   return path.join(getDataDir(), ".matrix");
 }
 
 function resolveDefaultConfig(): ServerConfig {
-  const dataDir = getDataDir();
+  const srvDir = getSrvDir();
   return {
-    reposPath: path.join(dataDir, "MatrixProjects", "repos"),
-    worktreesPath: path.join(dataDir, "MatrixProjects", "worktrees"),
+    reposPath: path.join(srvDir, "repos"),
+    worktreesPath: path.join(srvDir, "worktrees"),
     defaultAgent: undefined,
   };
 }
@@ -61,9 +61,9 @@ export function serverConfigRoutes() {
     };
 
     // Expand ~ in paths
-    const dataDir = getDataDir();
-    updated.reposPath = updated.reposPath.replace(/^~/, dataDir);
-    updated.worktreesPath = updated.worktreesPath.replace(/^~/, dataDir);
+    const srvDir = getSrvDir();
+    updated.reposPath = updated.reposPath.replace(/^~/, srvDir);
+    updated.worktreesPath = updated.worktreesPath.replace(/^~/, srvDir);
 
     writeServerConfig(updated);
     return c.json(updated);
