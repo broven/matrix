@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
-import { generateToken } from "./auth/token.js";
+import { generateToken, maskToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
@@ -368,15 +368,16 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+function isInternalLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
-  if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const isLoopback = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const hasInternalHeader = c.req.header("X-Matrix-Internal") === "true";
+  return isLoopback && hasInternalHeader;
 }
 
 // Auth info endpoint — loopback only, lets desktop app fetch its token
 app.get("/api/auth-info", (c) => {
-  if (!isLoopbackRequest(c)) {
+  if (!isInternalLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
   return c.json({ token: serverToken });
@@ -384,7 +385,7 @@ app.get("/api/auth-info", (c) => {
 
 // Local IP endpoint — loopback only, for sidecar QR code generation
 app.get("/api/local-ip", (c) => {
-  if (!isLoopbackRequest(c)) {
+  if (!isInternalLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
   const ip = getLocalIp();
@@ -512,10 +513,11 @@ const idleSuspendSweepTimer = setInterval(() => {
 idleSuspendSweepTimer.unref();
 
 console.log(`\n  Matrix Server running on http://${config.host}:${config.port}`);
-console.log(`\n  Auth token: ${serverToken}`);
+console.log(`\n  Auth token: ${maskToken(serverToken)}`);
 const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
 const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
-console.log(`\n  Connect URI: ${connectionUri}`);
+const maskedConnectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, maskToken(serverToken));
+console.log(`\n  Connect URI: ${maskedConnectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
 console.log(`\n  Discovered agents: ${discoveredAgents.map((a) => a.name).join(", ")}\n`);
