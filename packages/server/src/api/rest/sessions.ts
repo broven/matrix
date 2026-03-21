@@ -34,5 +34,27 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager, conn
     return c.json({ ok: true });
   });
 
+  app.post("/sessions/:id/resume", (c) => {
+    const sessionId = c.req.param("id");
+    const session = store.getSession(sessionId);
+    if (!session) {
+      return c.json({ error: "Session not found" }, 404);
+    }
+    if (session.status === "active") {
+      return c.json({ sessionId });
+    }
+    if (!session.agentSessionId) {
+      return c.json({ error: "Session has no agent conversation to resume" }, 409);
+    }
+
+    store.reopenSession(sessionId);
+    connectionManager.broadcastToAll({
+      type: "server:session_resumed",
+      sessionId,
+    });
+
+    return c.json({ sessionId });
+  });
+
   return app;
 }
