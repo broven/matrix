@@ -111,4 +111,47 @@ describe("PromptInput", () => {
     // The slash command should be filled in the input
     expect((input as HTMLTextAreaElement).value).toContain("/compact");
   });
+
+  it("shows file mention dropdown when typing @", () => {
+    const files = ["src/main.ts", "src/app.tsx"];
+    render(<PromptInput {...defaultProps} files={files} />);
+
+    const input = screen.getByTestId("chat-input");
+    fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
+
+    expect(screen.getByTestId("file-mention-dropdown")).toBeInTheDocument();
+  });
+
+  it("filters file mentions by query", () => {
+    const files = ["src/main.ts", "src/app.tsx"];
+    render(<PromptInput {...defaultProps} files={files} />);
+
+    const input = screen.getByTestId("chat-input");
+    fireEvent.change(input, { target: { value: "@main", selectionStart: 5 } });
+
+    expect(screen.getByTestId("file-mention-item-main.ts")).toBeInTheDocument();
+    expect(screen.queryByTestId("file-mention-item-app.tsx")).not.toBeInTheDocument();
+  });
+
+  it("inserts file marker on Enter when file dropdown is open", () => {
+    const onSend = vi.fn();
+    const files = ["src/main.ts"];
+    render(<PromptInput {...defaultProps} onSend={onSend} files={files} />);
+
+    const input = screen.getByTestId("chat-input");
+    fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect((input as HTMLTextAreaElement).value).toContain("@[src/main.ts]");
+  });
+
+  it("does not show file dropdown when no files prop", () => {
+    render(<PromptInput {...defaultProps} />);
+
+    const input = screen.getByTestId("chat-input");
+    fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
+
+    expect(screen.queryByTestId("file-mention-dropdown")).not.toBeInTheDocument();
+  });
 });
