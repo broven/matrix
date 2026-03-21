@@ -58,6 +58,9 @@ export function AppLayout() {
       setSelectedSession(null);
     }
   };
+  // Track intentionally-selected sessions that may not yet appear in allSessions
+  // (e.g., after remote worktree creation, before server refresh lands)
+  const pendingSessionIdRef = useRef<string | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showOpenProject, setShowOpenProject] = useState(false);
@@ -145,6 +148,15 @@ export function AppLayout() {
     }
 
     if (selectedSessionId && allSessions.some((session) => session.sessionId === selectedSessionId)) {
+      // Clear pending once the session appears in allSessions
+      if (pendingSessionIdRef.current === selectedSessionId) {
+        pendingSessionIdRef.current = null;
+      }
+      return;
+    }
+
+    // Don't override a pending selection that hasn't landed in allSessions yet
+    if (pendingSessionIdRef.current && pendingSessionIdRef.current === selectedSessionId) {
       return;
     }
 
@@ -399,6 +411,7 @@ export function AppLayout() {
 
     // Select the new session on the correct server
     if (result.sessionId) {
+      pendingSessionIdRef.current = result.sessionId;
       setSelectedSessionId(result.sessionId, serverId);
       setMobileSidebarOpen(false);
     }

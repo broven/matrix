@@ -54,8 +54,8 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(sessionInfo.agentId);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(sessionInfo.profileId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [messageQueue, setMessageQueue] = useState<string[]>([]);
-  const messageQueueRef = useRef<string[]>([]);
+  const [messageQueue, setMessageQueue] = useState<{ text: string; agentId: string; profileId: string | null }[]>([]);
+  const messageQueueRef = useRef<typeof messageQueue>([]);
   messageQueueRef.current = messageQueue;
   const sessionRef = useRef<MatrixSession | null>(null);
   const selectedAgentIdRef = useRef(selectedAgentId);
@@ -71,6 +71,9 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     if (selectedAgentId || !client) return;
     client.getServerConfig().then((config: ServerConfig) => {
       if (config.defaultAgent) {
+        // Trust the server's defaultAgent — custom agents may not be in
+        // the local agents list yet (async discovery). Ghost detection
+        // will reset it later if the agent is truly gone.
         setSelectedAgentId(config.defaultAgent);
       } else {
         // Fall back to first available agent
@@ -83,15 +86,21 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     });
   }, [client, selectedAgentId]);
 
-  // Ghost agent detection: reset if selected agent was uninstalled
+  // Ghost agent detection: reset if selected agent was uninstalled.
+  // Only check once the agents list has been populated — an empty list
+  // means agents are still loading, not that the selected one is gone.
   useEffect(() => {
-    if (!selectedAgentId) return;
+    if (!selectedAgentId || agents.length === 0) return;
     const stillExists = agents.some((a) => a.id === selectedAgentId && a.available);
     if (!stillExists) {
       setSelectedAgentId(null);
       setSelectedProfileId(null);
+      // If the session was agent-locked to this ghost agent, unlock it so user can pick a replacement
+      if (sessionInfo.agentId === selectedAgentId) {
+        onSessionInfoChange?.(sessionInfo.sessionId, { agentId: null });
+      }
     }
-  }, [agents, selectedAgentId]);
+  }, [agents, selectedAgentId, sessionInfo.agentId, sessionInfo.sessionId, onSessionInfoChange]);
 
   const addEvent = useCallback((type: string, data: SessionUpdate) => {
     setEvents((previous) => [
@@ -142,13 +151,10 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     const currentSession = sessionRef.current;
     if (!next || !currentSession) return;
 
-    const agentId = selectedAgentIdRef.current;
-    if (!agentId) return;
-
     // Remove from queue
     setMessageQueue((q) => q.slice(1));
 
-    // Send the queued message
+    // Send the queued message using its captured agent/profile
     setIsProcessing(true);
     setErrorMessage(null);
 
@@ -157,7 +163,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     };
 
     currentSession.promptWithContent(
-      [{ type: "text", text: next, agentId, profileId: selectedProfileIdRef.current ?? undefined }],
+      [{ type: "text", text: next.text, agentId: next.agentId, profileId: next.profileId ?? undefined }],
       callbacks,
     );
   }, []);
@@ -240,6 +246,12 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         onSessionInfoChange?.(sessionInfo.sessionId, {
           lastActiveAt: new Date().toISOString(),
         });
+        // Drain next queued message even after non-terminal errors to preserve FIFO
+        setTimeout(() => {
+          if (messageQueueRef.current.length > 0) {
+            drainQueue();
+          }
+        }, 0);
       },
     });
 
@@ -270,8 +282,8 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       });
 
       if (isProcessing) {
-        // Queue the message — it will be sent when current processing completes
-        setMessageQueue((q) => [...q, text]);
+        // Queue the message with its current agent/profile — it will be sent when current processing completes
+        setMessageQueue((q) => [...q, { text, agentId: selectedAgentId, profileId: selectedProfileId }]);
         return;
       }
 
@@ -323,7 +335,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       : isProcessing
         ? "working"
         : "idle";
-  const queuedTexts = useMemo(() => new Set(messageQueue), [messageQueue]);
+  const queuedTexts = useMemo(() => new Set(messageQueue.map((m) => m.text)), [messageQueue]);
   const inputDisabled = viewStatus === "closed";
 
   return (
