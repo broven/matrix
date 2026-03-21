@@ -43,7 +43,7 @@ export function AppLayout() {
   const [selectedSession, setSelectedSession] = useState<{ serverId: string; sessionId: string } | null>(null);
 
   // Aggregate sidecar + all remote server data
-  const { allSessions, allRepositories, allWorktrees, allAgents, sessionServerMap, serverDataMap } = useAllServersData({
+  const { allSessions, allRepositories, allWorktrees, allAgents, sessionServerMap, repoServerMap, serverDataMap, refreshRemoteServer } = useAllServersData({
     sessions,
     repositories,
     worktrees,
@@ -378,20 +378,28 @@ export function AppLayout() {
     branch: string,
     baseBranch: string,
   ) => {
-    if (!client) return;
+    // Route to the server that owns this repo
+    const serverId = repoServerMap.get(repoId) ?? SIDECAR_SERVER_ID;
+    const targetClient = serverId === SIDECAR_SERVER_ID ? client : getRemoteClient(serverId);
+    if (!targetClient) return;
 
-    const result = await client.createWorktree(repoId, {
+    const result = await targetClient.createWorktree(repoId, {
       branch,
       baseBranch,
     });
 
-    // Refresh worktrees and sessions
-    void handleRefreshWorktrees();
-    void handleRefreshSessions();
+    // Refresh data on the owning server
+    if (serverId === SIDECAR_SERVER_ID) {
+      void handleRefreshWorktrees();
+      void handleRefreshSessions();
+    } else {
+      // Remote servers have no worktree events, so trigger a full refresh
+      void refreshRemoteServer(serverId);
+    }
 
-    // Select the new session
+    // Select the new session on the correct server
     if (result.sessionId) {
-      setSelectedSessionId(result.sessionId);
+      setSelectedSessionId(result.sessionId, serverId);
       setMobileSidebarOpen(false);
     }
   };
@@ -409,7 +417,7 @@ export function AppLayout() {
 
   // Build server-grouped data for Sidebar
   const { servers: savedServers } = useServerStore();
-  const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect } = useMatrixClients();
+  const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect, getClient: getRemoteClient } = useMatrixClients();
 
   const sidebarServers: ServerInfo[] = useMemo(() => {
     const result: ServerInfo[] = [];
@@ -541,6 +549,7 @@ export function AppLayout() {
             sessionInfo={allSessions.find(s => s.sessionId === selectedSession.sessionId)!}
             agents={allAgents.get(selectedSession.serverId) ?? []}
             onSessionInfoChange={handleSessionInfoChange}
+            onNavigateSettings={() => setShowSettings(true)}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">

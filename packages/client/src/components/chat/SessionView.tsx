@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, AvailableCommand, HistoryEntry, SessionInfo, SessionUpdate, ServerConfig } from "@matrix/protocol";
 import type { MatrixSession, PromptCallbacks } from "@matrix/sdk";
 import { nanoid } from "nanoid";
@@ -9,12 +9,14 @@ import { PromptInput } from "@/components/PromptInput";
 import { StatusBar } from "@/components/chat/StatusBar";
 import { ChatHeader } from "@/components/layout/ChatHeader";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Bot } from "lucide-react";
 
 interface SessionViewProps {
   serverId: string;
   sessionInfo: SessionInfo;
   agents: AgentListItem[];
   onSessionInfoChange?: (sessionId: string, patch: Partial<SessionInfo>) => void;
+  onNavigateSettings?: () => void;
 }
 
 type ViewStatus = "active" | "closed" | "restoring";
@@ -23,9 +25,10 @@ function isTerminalSessionError(code: string) {
   return code === "session_closed" || code === "session_unavailable" || code === "session_not_found";
 }
 
-function getInputPlaceholder(status: ViewStatus, hasAgent: boolean) {
+function getInputPlaceholder(status: ViewStatus, hasAgent: boolean, noAgentAvailable: boolean) {
   if (status === "closed") return "This session is closed.";
-  if (!hasAgent) return "Select an agent and send a message to start...";
+  if (noAgentAvailable) return "No agents available. Go to Settings to install one.";
+  if (!hasAgent) return "Select an agent to start...";
   return "Ask to make changes, @mention files, run /commands";
 }
 
@@ -35,7 +38,7 @@ function getStatusMessage(status: ViewStatus, errorMessage: string | null) {
   return null;
 }
 
-export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange }: SessionViewProps) {
+export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange, onNavigateSettings }: SessionViewProps) {
   const { client: sidecarClient } = useMatrixClient();
   const { client: serverClient } = useServerClient(serverId);
   // Use the server-specific client if available, otherwise fall back to sidecar
@@ -51,6 +54,14 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(sessionInfo.agentId);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(sessionInfo.profileId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [messageQueue, setMessageQueue] = useState<string[]>([]);
+  const messageQueueRef = useRef<string[]>([]);
+  messageQueueRef.current = messageQueue;
+  const sessionRef = useRef<MatrixSession | null>(null);
+  const selectedAgentIdRef = useRef(selectedAgentId);
+  selectedAgentIdRef.current = selectedAgentId;
+  const selectedProfileIdRef = useRef(selectedProfileId);
+  selectedProfileIdRef.current = selectedProfileId;
 
   // Load default agent from server config if no agent selected
   const agentsRef = useRef(agents);
@@ -71,6 +82,16 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       if (firstAvailable) setSelectedAgentId(firstAvailable.id);
     });
   }, [client, selectedAgentId]);
+
+  // Ghost agent detection: reset if selected agent was uninstalled
+  useEffect(() => {
+    if (!selectedAgentId) return;
+    const stillExists = agents.some((a) => a.id === selectedAgentId && a.available);
+    if (!stillExists) {
+      setSelectedAgentId(null);
+      setSelectedProfileId(null);
+    }
+  }, [agents, selectedAgentId]);
 
   const addEvent = useCallback((type: string, data: SessionUpdate) => {
     setEvents((previous) => [
@@ -116,6 +137,31 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     [],
   );
 
+  const drainQueue = useCallback(() => {
+    const next = messageQueueRef.current[0];
+    const currentSession = sessionRef.current;
+    if (!next || !currentSession) return;
+
+    const agentId = selectedAgentIdRef.current;
+    if (!agentId) return;
+
+    // Remove from queue
+    setMessageQueue((q) => q.slice(1));
+
+    // Send the queued message
+    setIsProcessing(true);
+    setErrorMessage(null);
+
+    const callbacks: PromptCallbacks = {
+      onComplete: () => setIsProcessing(false),
+    };
+
+    currentSession.promptWithContent(
+      [{ type: "text", text: next, agentId, profileId: selectedProfileIdRef.current ?? undefined }],
+      callbacks,
+    );
+  }, []);
+
   useEffect(() => {
     setViewStatus(sessionInfo.status === "closed" ? "closed" : "active");
   }, [sessionInfo.sessionId, sessionInfo.status]);
@@ -130,6 +176,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     const attachedSession = client.attachSession(sessionInfo.sessionId);
     attachedSession.subscribe();
     setSession(attachedSession);
+    sessionRef.current = attachedSession;
 
     const markActiveIfRestoring = () => {
       setViewStatus((prev) => {
@@ -171,12 +218,19 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
           status: "active",
           lastActiveAt: new Date().toISOString(),
         });
+        // Drain next queued message after a tick
+        setTimeout(() => {
+          if (messageQueueRef.current.length > 0) {
+            drainQueue();
+          }
+        }, 0);
       },
       onError: (error: { code: string; message: string }) => {
         setIsProcessing(false);
         setErrorMessage(error.message);
         if (isTerminalSessionError(error.code)) {
           setViewStatus("closed");
+          setMessageQueue([]);
           onSessionInfoChange?.(sessionInfo.sessionId, {
             status: "closed",
             closeReason: error.code,
@@ -199,7 +253,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     });
 
     return unsubscribe;
-  }, [addEvent, client, replaceEventsFromHistory, sessionInfo.sessionId]);
+  }, [addEvent, client, drainQueue, replaceEventsFromHistory, sessionInfo.sessionId]);
 
   const handleSend = useCallback(
     (text: string) => {
@@ -209,24 +263,31 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         return;
       }
 
-      setIsProcessing(true);
-      setErrorMessage(null);
+      // Always show the user message immediately
       addEvent("message", {
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: `> ${text}` },
       });
 
+      if (isProcessing) {
+        // Queue the message — it will be sent when current processing completes
+        setMessageQueue((q) => [...q, text]);
+        return;
+      }
+
+      setIsProcessing(true);
+      setErrorMessage(null);
+
       const callbacks: PromptCallbacks = {
         onComplete: () => setIsProcessing(false),
       };
 
-      // Include agentId and profileId in the prompt for lazy initialization
       session.promptWithContent(
         [{ type: "text", text, agentId: selectedAgentId, profileId: selectedProfileId ?? undefined }],
         callbacks,
       );
     },
-    [addEvent, session, viewStatus, selectedAgentId, selectedProfileId],
+    [addEvent, session, viewStatus, selectedAgentId, selectedProfileId, isProcessing],
   );
 
   const handleCancel = useCallback(() => {
@@ -251,6 +312,8 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
+  const availableAgents = agents.filter((a) => a.available);
+  const noAgentAvailable = availableAgents.length === 0;
   const hasAgent = Boolean(sessionInfo.agentId || selectedAgentId);
   const statusMessage = getStatusMessage(viewStatus, errorMessage);
   const statusBarStatus = errorMessage
@@ -260,7 +323,8 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       : isProcessing
         ? "working"
         : "idle";
-  const inputDisabled = isProcessing || viewStatus === "closed";
+  const queuedTexts = useMemo(() => new Set(messageQueue), [messageQueue]);
+  const inputDisabled = viewStatus === "closed";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -271,14 +335,42 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         statusMessage={statusMessage}
       />
       <ScrollArea className="min-h-0 flex-1">
-        <MessageList events={events} onApprove={handleApprove} onReject={handleReject} />
-        <div ref={messagesEndRef} />
+        {noAgentAvailable && events.length === 0 ? (
+          <div className="flex h-full items-center justify-center p-8">
+            <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+                <Bot className="size-6 text-muted-foreground" />
+              </div>
+              <div>
+                <h3 className="text-sm font-medium">No agents available</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Install an agent in Settings to start chatting.
+                </p>
+              </div>
+              {onNavigateSettings && (
+                <button
+                  type="button"
+                  onClick={onNavigateSettings}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  data-testid="go-to-settings-btn"
+                >
+                  Go to Settings
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <MessageList events={events} onApprove={handleApprove} onReject={handleReject} queuedTexts={queuedTexts} />
+            <div ref={messagesEndRef} />
+          </>
+        )}
       </ScrollArea>
       <StatusBar status={statusBarStatus} message={statusMessage} onCancel={handleCancel} />
       <PromptInput
         onSend={handleSend}
         disabled={inputDisabled}
-        placeholder={getInputPlaceholder(viewStatus, hasAgent)}
+        placeholder={getInputPlaceholder(viewStatus, hasAgent, noAgentAvailable)}
         isProcessing={isProcessing}
         agents={agents}
         selectedAgentId={selectedAgentId}
@@ -287,6 +379,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         onProfileChange={setSelectedProfileId}
         availableCommands={availableCommands}
         agentLocked={Boolean(sessionInfo.agentId)}
+        noAgentAvailable={noAgentAvailable}
       />
     </div>
   );
