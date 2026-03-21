@@ -28,7 +28,8 @@ export type ServerEvent =
   | { type: "server:session_created"; session: SessionInfo }
   | { type: "server:session_closed"; sessionId: string }
   | { type: "server:repository_added"; repository: RepositoryInfo }
-  | { type: "server:repository_removed"; repositoryId: string };
+  | { type: "server:repository_removed"; repositoryId: string }
+  | { type: "server:agents_changed"; agents: AgentListItem[] };
 
 export interface MatrixClientConfig {
   serverUrl: string;
@@ -430,7 +431,8 @@ export class MatrixClient {
       case "server:session_created":
       case "server:session_closed":
       case "server:repository_added":
-      case "server:repository_removed": {
+      case "server:repository_removed":
+      case "server:agents_changed": {
         for (const listener of this.serverEventListeners) {
           listener(msg);
         }

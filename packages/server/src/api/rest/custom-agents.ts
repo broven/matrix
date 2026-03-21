@@ -5,10 +5,12 @@ import type { AgentTestStep, AgentTestResult } from "@matrix/protocol";
 import { encodeJsonRpc, parseJsonRpcMessages, type JsonRpcMessage } from "../../acp-bridge/jsonrpc.js";
 import type { Store } from "../../store/index.js";
 import type { AgentManager } from "../../agent-manager/index.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
 
 interface CustomAgentRouteDeps {
   store: Store;
   agentManager: AgentManager;
+  connectionManager: ConnectionManager;
   onConfigChange: () => void;
 }
 
@@ -239,6 +241,8 @@ export function customAgentRoutes(deps: CustomAgentRouteDeps) {
       description: body.description,
     });
     deps.onConfigChange();
+    const agents = deps.agentManager.listAgents();
+    deps.connectionManager.broadcastToAll({ type: "server:agents_changed", agents });
     return c.json(agent, 201);
   });
 
@@ -258,6 +262,8 @@ export function customAgentRoutes(deps: CustomAgentRouteDeps) {
 
     const updated = deps.store.updateCustomAgent(id, body);
     deps.onConfigChange();
+    const agents = deps.agentManager.listAgents();
+    deps.connectionManager.broadcastToAll({ type: "server:agents_changed", agents });
     return c.json(updated);
   });
 
@@ -271,6 +277,8 @@ export function customAgentRoutes(deps: CustomAgentRouteDeps) {
 
     deps.store.deleteCustomAgent(id);
     deps.onConfigChange();
+    const agents = deps.agentManager.listAgents();
+    deps.connectionManager.broadcastToAll({ type: "server:agents_changed", agents });
     return c.json({ ok: true });
   });
 
@@ -320,6 +328,8 @@ export function customAgentRoutes(deps: CustomAgentRouteDeps) {
       env: body.env ?? {},
     });
     deps.onConfigChange();
+    const agents = deps.agentManager.listAgents();
+    deps.connectionManager.broadcastToAll({ type: "server:agents_changed", agents });
     return c.json(profile, 201);
   });
 
@@ -338,6 +348,8 @@ export function customAgentRoutes(deps: CustomAgentRouteDeps) {
     }
     const updated = deps.store.updateAgentEnvProfile(id, body);
     deps.onConfigChange();
+    const agents = deps.agentManager.listAgents();
+    deps.connectionManager.broadcastToAll({ type: "server:agents_changed", agents });
     return c.json(updated);
   });
 
@@ -351,6 +363,8 @@ export function customAgentRoutes(deps: CustomAgentRouteDeps) {
 
     deps.store.deleteAgentEnvProfile(id);
     deps.onConfigChange();
+    const agents = deps.agentManager.listAgents();
+    deps.connectionManager.broadcastToAll({ type: "server:agents_changed", agents });
     return c.json({ ok: true });
   });
 

@@ -1,5 +1,5 @@
 import type { SessionUpdate, SessionModes, PermissionOutcome } from "./session.js";
-import type { HistoryEntry, SessionInfo } from "./api.js";
+import type { HistoryEntry, SessionInfo, AgentListItem } from "./api.js";
 import type { RepositoryInfo } from "./repository.js";
 
 /** Transport mode for client-server communication */
@@ -26,7 +26,8 @@ export type ServerMessage =
   | { type: "server:session_created"; session: SessionInfo }
   | { type: "server:session_closed"; sessionId: string }
   | { type: "server:repository_added"; repository: RepositoryInfo }
-  | { type: "server:repository_removed"; repositoryId: string };
+  | { type: "server:repository_removed"; repositoryId: string }
+  | { type: "server:agents_changed"; agents: AgentListItem[] };
 
 /** WebSocket message envelope from client to server */
 export type ClientMessage =

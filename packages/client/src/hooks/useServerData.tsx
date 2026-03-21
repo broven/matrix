@@ -104,6 +104,9 @@ export function useServerData(serverId: string): ServerData {
             return next;
           });
           break;
+        case "server:agents_changed":
+          setAgents(event.agents);
+          break;
       }
     });
 

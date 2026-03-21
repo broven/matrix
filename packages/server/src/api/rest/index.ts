@@ -38,6 +38,7 @@ export function createRestRoutes(deps: RestRouteDeps) {
   app.route("/", customAgentRoutes({
     store: deps.store,
     agentManager: deps.agentManager,
+    connectionManager: deps.connectionManager,
     onConfigChange: deps.onAgentConfigChange,
   }));
   return app;
