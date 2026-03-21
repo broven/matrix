@@ -668,6 +668,7 @@ export function AppLayout() {
         <CloneFromUrlDialog
           client={client}
           onCloneStarted={handleCloneStarted}
+          onOpenRepository={() => setShowCloneFromUrl(false)}
           onClose={() => setShowCloneFromUrl(false)}
         />
       )}
