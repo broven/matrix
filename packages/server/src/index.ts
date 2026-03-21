@@ -411,6 +411,7 @@ app.route("/", createRestRoutes({
   cloneManager,
   connectionManager,
   onAgentConfigChange: refreshAgentConfigs,
+  localMode: config.localMode,
 }));
 app.route("/", createTransportRoutes({
   connectionManager,

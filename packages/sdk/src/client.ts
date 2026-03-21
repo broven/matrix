@@ -323,6 +323,17 @@ export class MatrixClient {
     return res.json();
   }
 
+  async testAgent(agentId: string): Promise<AgentTestResult> {
+    const res = await this.fetch(`/agents/${encodeURIComponent(agentId)}/test`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to test agent" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
+
   // ── Agent Env Profiles ────────────────────────────────────────
 
   async getAgentProfiles(parentAgentId?: string): Promise<AgentEnvProfile[]> {

@@ -9,6 +9,7 @@ import { SettingsAgentsTab } from "./SettingsAgentsTab";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { PathInput } from "../../components/ui/path-input";
 import { AlertCircle, CheckCircle2, Loader2, Trash2, Unplug, Plug } from "lucide-react";
 
 const SIDECAR_SERVER_ID = "__sidecar__";
@@ -196,11 +197,19 @@ export function SettingsServerTab({ server }: SettingsServerTabProps) {
               <>
                 <div>
                   <label className="text-xs text-muted-foreground">Repos Path</label>
-                  <Input value={reposPath} onChange={(e) => setReposPath(e.target.value)} data-testid="server-repos-path-input" />
+                  {client ? (
+                    <PathInput value={reposPath} onChange={setReposPath} client={client} data-testid="server-repos-path-input" />
+                  ) : (
+                    <Input value={reposPath} onChange={(e) => setReposPath(e.target.value)} data-testid="server-repos-path-input" />
+                  )}
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground">Worktrees Path</label>
-                  <Input value={worktreesPath} onChange={(e) => setWorktreesPath(e.target.value)} data-testid="server-worktrees-path-input" />
+                  {client ? (
+                    <PathInput value={worktreesPath} onChange={setWorktreesPath} client={client} data-testid="server-worktrees-path-input" />
+                  ) : (
+                    <Input value={worktreesPath} onChange={(e) => setWorktreesPath(e.target.value)} data-testid="server-worktrees-path-input" />
+                  )}
                 </div>
                 <Button size="sm" onClick={handleSaveConfig} disabled={configSaving} data-testid="server-save-config-btn">
                   {configSaving ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : null}

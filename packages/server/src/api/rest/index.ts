@@ -20,6 +20,7 @@ interface RestRouteDeps {
   cloneManager: CloneManager;
   connectionManager: ConnectionManager;
   onAgentConfigChange: () => void;
+  localMode?: boolean;
 }
 
 export function createRestRoutes(deps: RestRouteDeps) {
@@ -33,7 +34,7 @@ export function createRestRoutes(deps: RestRouteDeps) {
     cloneManager: deps.cloneManager,
     connectionManager: deps.connectionManager,
   }));
-  app.route("/", filesystemRoutes());
+  app.route("/", filesystemRoutes({ localMode: deps.localMode }));
   app.route("/", serverConfigRoutes());
   app.route("/", customAgentRoutes({
     store: deps.store,

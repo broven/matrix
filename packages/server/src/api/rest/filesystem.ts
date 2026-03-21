@@ -1,35 +1,39 @@
 import { Hono } from "hono";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { getSrvDir } from "../../data-dir.js";
 
-export function filesystemRoutes() {
+export function filesystemRoutes(opts?: { localMode?: boolean }) {
   const app = new Hono();
+  const localMode = opts?.localMode ?? false;
 
   app.get("/fs/list", async (c) => {
     const rawPath = c.req.query("path");
-    const defaultRoot = getSrvDir();
+    const homeDir = os.homedir();
+    const defaultRoot = localMode ? homeDir : getSrvDir();
     const dirPath = path.resolve(
-      rawPath ? rawPath.replace(/^~/, defaultRoot) : defaultRoot,
+      rawPath ? rawPath.replace(/^~/, homeDir) : defaultRoot,
     );
 
-    // Resolve symlinks before containment check to prevent symlink escape
     let realDirPath: string;
-    let realDefaultRoot: string;
-    try {
-      realDefaultRoot = await fs.realpath(defaultRoot);
-    } catch {
-      return c.json({ error: "Browse root does not exist" }, 500);
-    }
     try {
       realDirPath = await fs.realpath(dirPath);
     } catch {
       return c.json({ error: "Path does not exist" }, 404);
     }
 
-    // Path containment: must be within browse root (using resolved paths)
-    if (!realDirPath.startsWith(realDefaultRoot + path.sep) && realDirPath !== realDefaultRoot) {
-      return c.json({ error: `Path must be within ${defaultRoot}` }, 403);
+    // Path containment: only enforce on remote servers
+    if (!localMode) {
+      let realDefaultRoot: string;
+      try {
+        realDefaultRoot = await fs.realpath(defaultRoot);
+      } catch {
+        return c.json({ error: "Browse root does not exist" }, 500);
+      }
+      if (!realDirPath.startsWith(realDefaultRoot + path.sep) && realDirPath !== realDefaultRoot) {
+        return c.json({ error: `Path must be within ${defaultRoot}` }, 403);
+      }
     }
 
     let stat;

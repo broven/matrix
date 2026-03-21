@@ -22,7 +22,10 @@ interface AllServersDataResult {
   allWorktrees: Map<string, WorktreeInfo[]>;
   allAgents: Map<string, AgentListItem[]>;
   sessionServerMap: Map<string, string>;
+  repoServerMap: Map<string, string>;
   serverDataMap: Map<string, ServerData>;
+  /** Trigger a full data refresh for a specific remote server */
+  refreshRemoteServer: (serverId: string) => void;
 }
 
 /**
@@ -271,6 +274,19 @@ export function useAllServersData(sidecar: {
     return merged;
   }, [sidecar.sessions, serverDataMap]);
 
+  const repoServerMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of sidecar.repositories) {
+      map.set(r.id, SIDECAR_SERVER_ID);
+    }
+    for (const [serverId, data] of serverDataMap) {
+      for (const r of data.repositories) {
+        map.set(r.id, serverId);
+      }
+    }
+    return map;
+  }, [sidecar.repositories, serverDataMap]);
+
   const allRepositories = useMemo(() => {
     const merged = [...sidecar.repositories];
     for (const [, data] of serverDataMap) {
@@ -304,6 +320,8 @@ export function useAllServersData(sidecar: {
     allWorktrees,
     allAgents,
     sessionServerMap,
+    repoServerMap,
     serverDataMap,
+    refreshRemoteServer: refreshServer,
   };
 }
