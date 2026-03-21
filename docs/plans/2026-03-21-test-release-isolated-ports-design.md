@@ -1,12 +1,12 @@
-# test:release Isolated Ports
+# test:e2e:mac Isolated Ports
 
 ## Problem
 
-`pnpm test:release` depends on `dev:mac` via wireit. Both use the same ports from `.env.local`, so running `dev:mac` manually and `test:release` simultaneously causes port conflicts.
+`pnpm test:e2e:mac` depends on `dev:mac` via wireit. Both use the same ports from `.env.local`, so running `dev:mac` manually and `test:e2e:mac` simultaneously causes port conflicts.
 
 ## Solution
 
-Give test:release its own port set so it can coexist with dev:mac.
+Give test:e2e:mac its own port set so it can coexist with dev:mac.
 
 ## Port Allocation
 
@@ -37,11 +37,11 @@ Change `--env-file=../../.env.local` to `--env-file=../../${ENV_FILE:-.env.local
 
 Change `. ../../.env.local` to `. ../../${ENV_FILE:-.env.local}` in all wireit commands. Default behavior unchanged.
 
-### 4. `package.json` — dev:mac:test + test:release rewire
+### 4. `package.json` — dev:mac:test + test:e2e:mac rewire
 
-Add `dev:mac:test` script: `ENV_FILE=.env.test.local pnpm dev:mac`. Change `test:release` wireit dependency from `dev:mac` to `dev:mac:test`.
+Add `dev:mac:test` script: `ENV_FILE=.env.test.local pnpm dev:mac`. Change `test:e2e:mac` wireit dependency from `dev:mac` to `dev:mac:test`.
 
-### 5. `tests/release/vitest.config.ts` — load test env
+### 5. `tests/e2e/mac/vitest.config.ts` — load test env
 
 Change dotenv to load `.env.test.local` instead of `.env.local`.
 
@@ -57,6 +57,6 @@ Change dotenv to load `.env.test.local` instead of `.env.local`.
 1. wt.toml (port generation + .env.test.local + pre-remove)
 2. server package.json (ENV_FILE)
 3. client package.json (ENV_FILE)
-4. root package.json (dev:mac:test + test:release)
+4. root package.json (dev:mac:test + test:e2e:mac)
 5. vitest.config.ts (dotenv path)
 6. Regenerate current .env.local + .env.test.local for this worktree

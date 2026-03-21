@@ -2,7 +2,7 @@ import path from "node:path";
 import dotenv from "dotenv";
 import { defineConfig } from "vitest/config";
 
-const projectRoot = path.resolve(import.meta.dirname, "../..");
+const projectRoot = path.resolve(import.meta.dirname, "../../..");
 
 // Load .env and .env.local into process.env so global-setup and forked workers can access them
 dotenv.config({ path: path.join(projectRoot, ".env") });

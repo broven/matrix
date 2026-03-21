@@ -2,13 +2,13 @@
 
 ## Problem
 
-E2e release tests (`tests/release/`) currently depend on real ACP agents (Claude Code etc.) being installed. This makes tests fragile and slow — agent availability, API rate limits, and response latency all cause flakiness.
+E2e release tests (`tests/e2e/mac/`) currently depend on real ACP agents (Claude Code etc.) being installed. This makes tests fragile and slow — agent availability, API rate limits, and response latency all cause flakiness.
 
-Additionally, the existing mock agent at `tests/release/fixtures/mock-agent/index.mjs` uses outdated method names (`session/create`, `prompt/send`) that don't match the current ACP protocol.
+Additionally, the existing mock agent at `tests/e2e/mac/fixtures/mock-agent/index.mjs` uses outdated method names (`session/create`, `prompt/send`) that don't match the current ACP protocol.
 
 ## Design
 
-### Mock Agent (`tests/release/fixtures/mock-agent/index.mjs`)
+### Mock Agent (`tests/e2e/mac/fixtures/mock-agent/index.mjs`)
 
 Rewrite to match official ACP protocol (from `@agentclientprotocol/sdk`):
 
@@ -32,11 +32,11 @@ Rewrite to match official ACP protocol (from `@agentclientprotocol/sdk`):
 
 Keep as `.mjs` — no build step, runs with `node` directly.
 
-### Global Setup (`tests/release/global-setup.ts`)
+### Global Setup (`tests/e2e/mac/global-setup.ts`)
 
 In `setup()`, after existing cleanup:
 
-1. `POST /custom-agents` → register mock agent with `{ name: "Mock Agent", command: "node", args: ["<absolute-path>/tests/release/fixtures/mock-agent/index.mjs"] }`
+1. `POST /custom-agents` → register mock agent with `{ name: "Mock Agent", command: "node", args: ["<absolute-path>/tests/e2e/mac/fixtures/mock-agent/index.mjs"] }`
 2. `PUT /server/config` → set `{ defaultAgent: "<returned-agent-id>" }`
 
 In `teardown()`:
@@ -54,12 +54,12 @@ Existing flow tests don't need changes because:
 
 ### What This Unblocks
 
-- `pnpm test:release` works without any real ACP agent installed
-- `REAL_AGENT=1 pnpm test:release` can still use real agents (skip mock registration when env var is set)
+- `pnpm test:e2e:mac` works without any real ACP agent installed
+- `REAL_AGENT=1 pnpm test:e2e:mac` can still use real agents (skip mock registration when env var is set)
 
 ## Implementation Plan
 
-### Step 1: Rewrite `tests/release/fixtures/mock-agent/index.mjs`
+### Step 1: Rewrite `tests/e2e/mac/fixtures/mock-agent/index.mjs`
 
 Replace the entire file. Keep as `.mjs`, `#!/usr/bin/env node`, using `createInterface` from `node:readline`.
 
@@ -94,9 +94,9 @@ case "session/cancel":
 { jsonrpc: "2.0", method: "session/update", params: { sessionId, update: { sessionUpdate: "...", ... } } }
 ```
 
-**Test after writing:** `echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | node tests/release/fixtures/mock-agent/index.mjs`
+**Test after writing:** `echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | node tests/e2e/mac/fixtures/mock-agent/index.mjs`
 
-### Step 2: Update `tests/release/global-setup.ts`
+### Step 2: Update `tests/e2e/mac/global-setup.ts`
 
 Add to `setup()` after the webview-ready poll:
 
@@ -137,7 +137,7 @@ Module-level: `let mockAgentId: string | null = null;`
 ### Step 3: Verify mock agent works standalone
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}' | node tests/release/fixtures/mock-agent/index.mjs
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}' | node tests/e2e/mac/fixtures/mock-agent/index.mjs
 ```
 
 Expected: JSON response with protocolVersion, serverCapabilities, agentInfo.

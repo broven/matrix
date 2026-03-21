@@ -26,10 +26,10 @@ WORKSPACE="$(echo "$WORKSPACE_RAW" | tr ' ' '-')"
 #   HMR_PORT                 = base + 1  (Tauri HMR WebSocket)
 #   MATRIX_PORT              = base + 2  (Matrix server)
 #   SIDECAR_PORT             = base + 3  (Tauri sidecar server, dev only)
-#   TEST_CLIENT_PORT         = base + 4  (test:release Vite)
-#   TEST_HMR_PORT            = base + 5  (test:release HMR)
-#   TEST_MATRIX_PORT         = base + 6  (test:release server)
-#   TEST_SIDECAR_PORT        = base + 7  (test:release sidecar)
+#   TEST_CLIENT_PORT         = base + 4  (test:e2e:mac Vite)
+#   TEST_HMR_PORT            = base + 5  (test:e2e:mac HMR)
+#   TEST_MATRIX_PORT         = base + 6  (test:e2e:mac server)
+#   TEST_SIDECAR_PORT        = base + 7  (test:e2e:mac sidecar)
 CLIENT_PORT=$((BASE_PORT))
 HMR_PORT=$((BASE_PORT + 1))
 MATRIX_PORT=$((BASE_PORT + 2))
@@ -56,7 +56,7 @@ TEST_MATRIX_PORT=$TEST_MATRIX_PORT
 TEST_SIDECAR_PORT=$TEST_SIDECAR_PORT
 EOF
 
-# .env.test.local — test:release server/client read this
+# .env.test.local — test:e2e:mac server/client read this
 cat > .env.test.local << EOF
 WORKSPACE_NAME="$WORKSPACE"
 CLIENT_PORT=$TEST_CLIENT_PORT

@@ -149,7 +149,7 @@ Blocks until client responds via WebSocket, with configurable timeout.
 | **Refactor** | `packages/client/src/automation/bridge.ts` — HTTP server → WS client |
 | **Remove** | `packages/client/src-tauri/src/automation/**` — entire Rust module |
 | **Modify** | `packages/client/src-tauri/src/lib.rs` — remove automation init |
-| **Modify** | `tests/release/lib/bridge-client.ts` — point to server HTTP endpoints |
+| **Modify** | `tests/e2e/mac/lib/bridge-client.ts` — point to server HTTP endpoints |
 | **Modify** | `.config/wt.toml` — remove automation ports |
 | **Remove** | `scripts/ios-autoconnect.mjs` — no longer needed (client auto-connects) |
 

@@ -192,7 +192,7 @@ curl --noproxy "*" -s -X POST \
 
 ## Debugging Flaky E2E Tests
 
-When an e2e test (`tests/release/flows/*.test.ts`) fails or is flaky, **DO NOT** repeatedly modify test code and rerun the full suite. Instead, manually replay the test steps via the bridge to find the exact step that breaks.
+When an e2e test (`tests/e2e/mac/flows/*.test.ts`) fails or is flaky, **DO NOT** repeatedly modify test code and rerun the full suite. Instead, manually replay the test steps via the bridge to find the exact step that breaks.
 
 ### Methodology
 
