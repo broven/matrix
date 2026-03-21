@@ -107,6 +107,93 @@ describe("Store", () => {
     expect(store.getSession("sess_unrecoverable")?.closeReason).toBe("server_restart_unrecoverable");
   });
 
+  it("fresh install: sets user_version and creates all tables", () => {
+    // store is already created in beforeEach on a clean DB
+    const raw = new Database(DB_PATH);
+    const { user_version } = raw.prepare("PRAGMA user_version").get() as { user_version: number };
+    expect(user_version).toBeGreaterThanOrEqual(1);
+
+    // All tables exist
+    const tables = raw.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ).all().map((r: any) => r.name);
+    expect(tables).toContain("sessions");
+    expect(tables).toContain("history");
+    expect(tables).toContain("repositories");
+    expect(tables).toContain("worktrees");
+    expect(tables).toContain("custom_agents");
+    expect(tables).toContain("agent_env_profiles");
+    raw.close();
+  });
+
+  it("legacy upgrade: makes agent_id nullable and preserves data", () => {
+    store.close();
+
+    // Create legacy schema with NOT NULL agent_id
+    const legacyDb = new Database(DB_PATH);
+    legacyDb.exec(`
+      DROP TABLE IF EXISTS history;
+      DROP TABLE IF EXISTS sessions;
+      CREATE TABLE sessions (
+        session_id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE history (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+      );
+      INSERT INTO sessions (session_id, agent_id, cwd) VALUES ('sess_old', 'my-agent', '/tmp/old');
+      INSERT INTO history (id, session_id, role, content) VALUES ('h1', 'sess_old', 'user', 'hello');
+      PRAGMA user_version = 0;
+    `);
+    legacyDb.close();
+
+    // Open store — should run migration
+    store = new Store(DB_PATH);
+
+    // Old data preserved
+    const session = store.getSession("sess_old");
+    expect(session).not.toBeNull();
+    expect(session?.agentId).toBe("my-agent");
+    expect(session?.cwd).toBe("/tmp/old");
+
+    // History preserved
+    const history = store.getHistory("sess_old");
+    expect(history).toHaveLength(1);
+    expect(history[0].content).toBe("hello");
+
+    // Can now create session with null agent_id (the bug fix)
+    const newSession = store.createSession("sess_new", null, "/tmp/new");
+    expect(newSession.agentId).toBeNull();
+  });
+
+  it("already migrated: skips migration if user_version is current", () => {
+    store.close();
+
+    // Get the current version
+    const raw = new Database(DB_PATH);
+    const { user_version } = raw.prepare("PRAGMA user_version").get() as { user_version: number };
+    raw.close();
+
+    // Re-open — should not error, no-op migration
+    store = new Store(DB_PATH);
+    const sessions = store.listSessions();
+    expect(sessions).toBeDefined();
+
+    // Version unchanged
+    const raw2 = new Database(DB_PATH);
+    const result = raw2.prepare("PRAGMA user_version").get() as { user_version: number };
+    expect(result.user_version).toBe(user_version);
+    raw2.close();
+  });
+
   it("migrates older session tables without failing on lifecycle columns", () => {
     store.close();
 
@@ -131,6 +218,7 @@ describe("Store", () => {
       );
       INSERT INTO sessions (session_id, agent_id, cwd, status, created_at)
       VALUES ('sess_legacy', 'echo-agent', '/tmp/legacy', 'active', '2026-03-14 13:46:26');
+      PRAGMA user_version = 0;
     `);
     legacyDb.close();
 
@@ -142,6 +230,12 @@ describe("Store", () => {
     expect(session?.recoverable).toBe(false);
     expect(session?.agentSessionId).toBeNull();
     expect(session?.lastActiveAt).toBe("2026-03-14 13:46:26");
+
+    // Verify migration version was set
+    const raw = new Database(DB_PATH);
+    const { user_version } = raw.prepare("PRAGMA user_version").get() as { user_version: number };
+    expect(user_version).toBeGreaterThanOrEqual(1);
+    raw.close();
   });
 
   it("appends and retrieves history", () => {
