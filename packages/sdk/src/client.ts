@@ -17,6 +17,7 @@ import type {
   CloneJobInfo,
   CloneValidationResult,
   ServerConfig,
+  BranchInfo,
   CustomAgent,
   AgentEnvProfile,
   AgentTestResult,
@@ -283,6 +284,28 @@ export class MatrixClient {
     if (!res.ok) {
       throw new Error(`Failed to delete worktree ${id}: ${res.status}`);
     }
+  }
+
+  // ── Branches ────────────────────────────────────────────────────
+
+  async getBranches(repositoryId: string): Promise<BranchInfo[]> {
+    const res = await this.fetch(`/repositories/${repositoryId}/branches`);
+    if (!res.ok) {
+      throw new Error(`Failed to get branches for ${repositoryId}: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async getRemoteBranches(url: string): Promise<BranchInfo[]> {
+    const res = await this.fetch("/branches/remote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to get remote branches: ${res.status}`);
+    }
+    return res.json();
   }
 
   // ── Custom Agents ──────────────────────────────────────────────

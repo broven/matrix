@@ -678,9 +678,10 @@ export function AppLayout() {
         />
       )}
 
-      {worktreeDialogRepo && (
+      {worktreeDialogRepo && client && (
         <NewWorktreeDialog
           repository={worktreeDialogRepo}
+          client={client}
           onCreateWorktree={handleCreateWorktree}
           onClose={() => setWorktreeDialogRepo(null)}
         />

@@ -206,6 +206,40 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     return c.json(store.listWorktrees(repoId));
   });
 
+  app.get("/repositories/:repoId/branches", async (c) => {
+    const repoId = c.req.param("repoId");
+    const repo = store.getRepository(repoId);
+    if (!repo) {
+      return c.json({ error: "Repository not found" }, 404);
+    }
+    try {
+      const branches = await worktreeManager.listBranches(repo.path);
+      return c.json(branches);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to list branches";
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  const ALLOWED_URL = /^(https?:\/\/|git:\/\/|git@)/;
+
+  app.post("/branches/remote", async (c) => {
+    const body = await c.req.json<{ url: string }>();
+    if (!body.url) {
+      return c.json({ error: "url is required" }, 400);
+    }
+    if (!ALLOWED_URL.test(body.url)) {
+      return c.json({ error: "URL must use https://, http://, git://, or git@ protocol" }, 400);
+    }
+    try {
+      const branches = await worktreeManager.listRemoteBranches(body.url);
+      return c.json(branches);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to list remote branches";
+      return c.json({ error: message }, 500);
+    }
+  });
+
   app.delete("/worktrees/:id", async (c) => {
     const id = c.req.param("id");
     const worktree = store.getWorktree(id);
