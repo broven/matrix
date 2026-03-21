@@ -11,17 +11,18 @@ export function useConnectionRecovery() {
   const { connect, statuses } = useMatrixClients();
   const { servers } = useServerStore();
 
-  // Connect to all saved servers on mount
+  // Connect to saved servers that don't have a status yet (handles async load)
   useEffect(() => {
     for (const server of servers) {
-      connect(server.id, {
-        serverUrl: server.serverUrl,
-        token: server.token,
-      });
+      const status = statuses.get(server.id);
+      if (!status) {
+        connect(server.id, {
+          serverUrl: server.serverUrl,
+          token: server.token,
+        });
+      }
     }
-    // Only run once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [servers, statuses, connect]);
 
   // On visibility restore, reconnect any offline servers
   useEffect(() => {

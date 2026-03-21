@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
+import type { ServerEvent } from "@matrix/sdk";
 import { MessageSquarePlus, AlertCircle, X } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { useServerStore } from "@/hooks/useServerStore";
 import { useMatrixClients } from "@/hooks/useMatrixClients";
-import { useServerData } from "@/hooks/useServerData";
 import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -35,16 +35,22 @@ const SIDECAR_SERVER_ID = "__sidecar__";
 
 export function AppLayout() {
   const { client, status } = useMatrixClient();
+  const { servers: savedServers } = useServerStore();
+  const { getClient: getMultiClient, statuses: multiStatuses } = useMatrixClients();
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [repositories, setRepositories] = useState<RepositoryInfo[]>([]);
   const [worktrees, setWorktrees] = useState<Map<string, WorktreeInfo[]>>(new Map());
   const [selectedSession, setSelectedSession] = useState<{ serverId: string; sessionId: string } | null>(null);
+  // Multi-server data keyed by serverId
+  const [multiSessions, setMultiSessions] = useState<Map<string, SessionInfo[]>>(new Map());
+  const [multiRepositories, setMultiRepositories] = useState<Map<string, RepositoryInfo[]>>(new Map());
+  const [multiWorktrees, setMultiWorktrees] = useState<Map<string, Map<string, WorktreeInfo[]>>>(new Map());
   // Backward-compat alias
   const selectedSessionId = selectedSession?.sessionId ?? null;
-  const setSelectedSessionId = (id: string | null) => {
+  const setSelectedSessionId = (id: string | null, serverId?: string) => {
     if (id) {
-      setSelectedSession({ serverId: SIDECAR_SERVER_ID, sessionId: id });
+      setSelectedSession({ serverId: serverId ?? SIDECAR_SERVER_ID, sessionId: id });
     } else {
       setSelectedSession(null);
     }
@@ -128,20 +134,141 @@ export function AppLayout() {
     };
   }, [client, status]);
 
+  // Load data from additional connected servers (multi-server)
+  useEffect(() => {
+    let cancelled = false;
+    const unsubs: (() => void)[] = [];
+
+    for (const server of savedServers) {
+      const serverStatus = multiStatuses.get(server.id);
+      if (serverStatus !== "connected") continue;
+
+      const serverClient = getMultiClient(server.id);
+      if (!serverClient) continue;
+
+      // Load initial data for this server
+      (async () => {
+        try {
+          const [sessionItems, repoItems] = await Promise.all([
+            serverClient.getSessions(),
+            serverClient.getRepositories(),
+          ]);
+          if (cancelled) return;
+
+          setMultiSessions((prev) => new Map(prev).set(server.id, sessionItems));
+          setMultiRepositories((prev) => new Map(prev).set(server.id, repoItems));
+
+          const wtMap = new Map<string, WorktreeInfo[]>();
+          await Promise.all(
+            repoItems.map(async (repo) => {
+              try {
+                const wts = await serverClient.getWorktrees(repo.id);
+                wtMap.set(repo.id, wts);
+              } catch {
+                wtMap.set(repo.id, []);
+              }
+            }),
+          );
+          if (!cancelled) {
+            setMultiWorktrees((prev) => new Map(prev).set(server.id, wtMap));
+          }
+        } catch {
+          // Skip failed servers
+        }
+      })();
+
+      // Subscribe to incremental events
+      const unsub = serverClient.onServerEvent((event: ServerEvent) => {
+        if (cancelled) return;
+        const sid = server.id;
+        switch (event.type) {
+          case "server:session_created":
+            setMultiSessions((prev) => {
+              const existing = prev.get(sid) ?? [];
+              return new Map(prev).set(sid, [...existing, event.session]);
+            });
+            break;
+          case "server:session_closed":
+            setMultiSessions((prev) => {
+              const existing = prev.get(sid) ?? [];
+              return new Map(prev).set(sid, existing.filter((s) => s.sessionId !== event.sessionId));
+            });
+            break;
+          case "server:repository_added":
+            setMultiRepositories((prev) => {
+              const existing = prev.get(sid) ?? [];
+              return new Map(prev).set(sid, [...existing, event.repository]);
+            });
+            break;
+          case "server:repository_removed":
+            setMultiRepositories((prev) => {
+              const existing = prev.get(sid) ?? [];
+              return new Map(prev).set(sid, existing.filter((r) => r.id !== event.repositoryId));
+            });
+            break;
+        }
+      });
+      unsubs.push(unsub);
+    }
+
+    // Clean up disconnected servers
+    setMultiSessions((prev) => {
+      const next = new Map(prev);
+      for (const [id] of next) {
+        if (!savedServers.some((s) => s.id === id && multiStatuses.get(id) === "connected")) {
+          next.delete(id);
+        }
+      }
+      return next;
+    });
+
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) unsub();
+    };
+  }, [savedServers, multiStatuses, getMultiClient]);
+
+  // Merge sidecar + multi-server data for display
+  const allSessions = useMemo(() => {
+    const merged = [...sessions];
+    for (const [, serverSessions] of multiSessions) {
+      merged.push(...serverSessions);
+    }
+    return merged;
+  }, [sessions, multiSessions]);
+
+  const allRepositories = useMemo(() => {
+    const merged = [...repositories];
+    for (const [, serverRepos] of multiRepositories) {
+      merged.push(...serverRepos);
+    }
+    return merged;
+  }, [repositories, multiRepositories]);
+
+  const allWorktrees = useMemo(() => {
+    const merged = new Map(worktrees);
+    for (const [, serverWts] of multiWorktrees) {
+      for (const [repoId, wts] of serverWts) {
+        merged.set(repoId, wts);
+      }
+    }
+    return merged;
+  }, [worktrees, multiWorktrees]);
+
   // Auto-select session
   useEffect(() => {
-    if (sessions.length === 0) {
+    if (allSessions.length === 0) {
       setSelectedSessionId(null);
       return;
     }
 
-    if (selectedSessionId && sessions.some((session) => session.sessionId === selectedSessionId)) {
+    if (selectedSessionId && allSessions.some((session) => session.sessionId === selectedSessionId)) {
       return;
     }
 
     const nextSession =
-      sortSessions(sessions).find((session) => session.status !== "closed") ??
-      sortSessions(sessions)[0] ??
+      sortSessions(allSessions).find((session) => session.status !== "closed") ??
+      sortSessions(allSessions)[0] ??
       null;
 
     if (!nextSession) {
@@ -149,12 +276,12 @@ export function AppLayout() {
     }
 
     setSelectedSessionId(nextSession.sessionId);
-  }, [selectedSessionId, sessions]);
+  }, [selectedSessionId, allSessions]);
 
-  const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
+  const sortedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
   const selectedSessionInfo = useMemo(
-    () => sessions.find((session) => session.sessionId === selectedSessionId) ?? null,
-    [selectedSessionId, sessions],
+    () => allSessions.find((session) => session.sessionId === selectedSessionId) ?? null,
+    [selectedSessionId, allSessions],
   );
 
   const handleSessionInfoChange = (sessionId: string, patch: Partial<SessionInfo>) => {
@@ -386,8 +513,8 @@ export function AppLayout() {
     <Sidebar
       agents={agents}
       sessions={sortedSessions}
-      repositories={repositories}
-      worktrees={worktrees}
+      repositories={allRepositories}
+      worktrees={allWorktrees}
       cloningRepos={cloningRepos}
       connectionStatus={status}
       selectedSessionId={selectedSessionId}
@@ -400,7 +527,7 @@ export function AppLayout() {
       onOpenProject={() => setShowOpenProject(true)}
       onCloneFromUrl={() => setShowCloneFromUrl(true)}
       onCreateWorktree={(repoId) => {
-        const repo = repositories.find((r) => r.id === repoId);
+        const repo = allRepositories.find((r) => r.id === repoId);
         if (repo) setWorktreeDialogRepo(repo);
       }}
       onDeleteWorktree={handleDeleteWorktree}
@@ -464,11 +591,11 @@ export function AppLayout() {
           onOpenSidebar={() => setMobileSidebarOpen(true)}
         />
 
-        {selectedSession && sessions.find(s => s.sessionId === selectedSession.sessionId) ? (
+        {selectedSession && allSessions.find(s => s.sessionId === selectedSession.sessionId) ? (
           <SessionView
             key={selectedSession.sessionId}
             serverId={selectedSession.serverId}
-            sessionInfo={sessions.find(s => s.sessionId === selectedSession.sessionId)!}
+            sessionInfo={allSessions.find(s => s.sessionId === selectedSession.sessionId)!}
             agents={agents}
             onSessionInfoChange={handleSessionInfoChange}
           />

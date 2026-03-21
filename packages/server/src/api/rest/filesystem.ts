@@ -13,14 +13,28 @@ export function filesystemRoutes() {
       rawPath ? rawPath.replace(/^~/, browseRoot) : browseRoot,
     );
 
-    // Path containment: must be within browse root
-    if (!dirPath.startsWith(browseRoot + path.sep) && dirPath !== browseRoot) {
+    // Resolve symlinks before containment check to prevent symlink escape
+    let realDirPath: string;
+    let realBrowseRoot: string;
+    try {
+      realBrowseRoot = await fs.realpath(browseRoot);
+    } catch {
+      return c.json({ error: "Browse root does not exist" }, 500);
+    }
+    try {
+      realDirPath = await fs.realpath(dirPath);
+    } catch {
+      return c.json({ error: "Path does not exist" }, 404);
+    }
+
+    // Path containment: must be within browse root (using resolved paths)
+    if (!realDirPath.startsWith(realBrowseRoot + path.sep) && realDirPath !== realBrowseRoot) {
       return c.json({ error: `Path must be within ${browseRoot}` }, 403);
     }
 
     let stat;
     try {
-      stat = await fs.stat(dirPath);
+      stat = await fs.stat(realDirPath);
     } catch {
       return c.json({ error: "Path does not exist" }, 404);
     }
@@ -31,7 +45,7 @@ export function filesystemRoutes() {
 
     let dirents;
     try {
-      dirents = await fs.readdir(dirPath, { withFileTypes: true });
+      dirents = await fs.readdir(realDirPath, { withFileTypes: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to read directory";
       return c.json({ error: message }, 403);

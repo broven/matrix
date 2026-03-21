@@ -440,6 +440,11 @@ app.post("/sessions", async (c) => {
   const sessionId = `sess_${nanoid()}`;
   store.createSession(sessionId, null, cwd, { worktreeId });
 
+  const sessionInfo = store.listSessions().find(s => s.sessionId === sessionId);
+  if (sessionInfo) {
+    connectionManager.broadcastToAll({ type: "server:session_created", session: sessionInfo });
+  }
+
   return c.json({ sessionId });
 });
 

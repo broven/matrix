@@ -12,7 +12,7 @@ interface SettingsNewServerTabProps {
 }
 
 export function SettingsNewServerTab({ onCreated }: SettingsNewServerTabProps) {
-  const { addServer, servers } = useServerStore();
+  const { addServer } = useServerStore();
   const { connect } = useMatrixClients();
 
   const [name, setName] = useState("");
@@ -42,25 +42,19 @@ export function SettingsNewServerTab({ onCreated }: SettingsNewServerTabProps) {
 
       // Save and connect
       const serverName = name || new URL(url).hostname;
-      addServer({ name: serverName, serverUrl: url, token });
+      const newId = addServer({ name: serverName, serverUrl: url, token });
 
-      // Find the newly added server (it's the last one with this URL)
-      // We need to wait for state update, so use a small delay
-      setTimeout(() => {
-        // The server was just added — find it by URL
-        const newServer = servers.find(s => s.serverUrl === url);
-        if (newServer) {
-          connect(newServer.id, { serverUrl: url, token });
-          onCreated({ kind: "server", serverId: newServer.id });
-        }
-      }, 100);
+      if (newId) {
+        connect(newId, { serverUrl: url, token });
+        onCreated({ kind: "server", serverId: newId });
+      }
     } catch (err) {
       setTestResult("error");
       setTestError(err instanceof Error ? err.message : "Connection failed");
     } finally {
       setTesting(false);
     }
-  }, [name, url, token, addServer, connect, onCreated, servers]);
+  }, [name, url, token, addServer, connect, onCreated]);
 
   return (
     <div className="space-y-6 p-4 md:p-6" data-testid="settings-new-server">
