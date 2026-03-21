@@ -15,6 +15,7 @@ import type {
   CloneRepositoryRequest,
   CloneRepositoryResponse,
   CloneJobInfo,
+  CloneValidationResult,
   ServerConfig,
   CustomAgent,
   AgentEnvProfile,
@@ -189,6 +190,19 @@ export class MatrixClient {
   }
 
   // ── Clone ─────────────────────────────────────────────────────
+
+  async validateCloneRepository(request: CloneRepositoryRequest): Promise<CloneValidationResult> {
+    const res = await this.fetch("/repositories/clone/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to validate clone" }));
+      throw new Error((err as any).error || `Failed: ${res.status}`);
+    }
+    return res.json();
+  }
 
   async cloneRepository(request: CloneRepositoryRequest): Promise<CloneRepositoryResponse> {
     const res = await this.fetch("/repositories/clone", {

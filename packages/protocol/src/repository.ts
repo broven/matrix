@@ -92,7 +92,55 @@ export interface CloneJobInfo {
   error?: string;
 }
 
+// ── Clone Validation ─────────────────────────────────────────────
+
+/** POST /repositories/clone/validate request — reuses CloneRepositoryRequest */
+
+/** Clone validation warning (soft — user can proceed) */
+export interface CloneWarning {
+  type: "remote_url_exists";
+  message: string;
+  existingRepository: RepositoryInfo;
+}
+
+/** Clone validation conflict (hard — cannot proceed with clone) */
+export interface CloneConflict {
+  type: "directory_exists";
+  targetDir: string;
+  isGitRepo: boolean;
+  alreadyAdded: boolean;
+  existingRepository?: RepositoryInfo;
+}
+
+/** POST /repositories/clone/validate response */
+export interface CloneValidationResult {
+  warnings: CloneWarning[];
+  conflicts: CloneConflict[];
+}
+
 // ── Utilities ────────────────────────────────────────────────────
+
+/**
+ * Normalize a git remote URL for comparison.
+ * Strips trailing .git, trailing slashes, and lowercases the host.
+ * Converts SSH URLs (git@host:user/repo) to a canonical form.
+ */
+export function normalizeRemoteUrl(url: string): string {
+  let normalized = url.trim().replace(/\.git$/, "").replace(/\/+$/, "");
+  // Convert SSH git@host:user/repo → host/user/repo
+  const sshMatch = normalized.match(/^git@([^:]+):(.+)$/);
+  if (sshMatch) {
+    normalized = `${sshMatch[1].toLowerCase()}/${sshMatch[2]}`;
+  } else {
+    try {
+      const parsed = new URL(normalized);
+      normalized = `${parsed.host.toLowerCase()}${parsed.pathname}`;
+    } catch {
+      // Not a valid URL, use as-is for comparison
+    }
+  }
+  return normalized;
+}
 
 /**
  * Parse a repository name from a git URL.
