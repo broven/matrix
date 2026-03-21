@@ -1,21 +1,21 @@
 import { Hono } from "hono";
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
+import { getDataDir } from "../../data-dir.js";
 
 export function filesystemRoutes() {
   const app = new Hono();
 
   app.get("/fs/list", async (c) => {
     const rawPath = c.req.query("path");
+    const browseRoot = getDataDir();
     const dirPath = path.resolve(
-      rawPath ? rawPath.replace(/^~/, os.homedir()) : os.homedir(),
+      rawPath ? rawPath.replace(/^~/, browseRoot) : browseRoot,
     );
 
-    // Path containment: must be within home directory
-    const home = os.homedir();
-    if (!dirPath.startsWith(home + path.sep) && dirPath !== home) {
-      return c.json({ error: "Path must be within the home directory" }, 403);
+    // Path containment: must be within browse root
+    if (!dirPath.startsWith(browseRoot + path.sep) && dirPath !== browseRoot) {
+      return c.json({ error: `Path must be within ${browseRoot}` }, 403);
     }
 
     let stat;

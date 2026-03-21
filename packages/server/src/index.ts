@@ -26,7 +26,10 @@ import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
 import { buildConnectionUri, getLocalIp } from "./connect-info.js";
 
+import { validateDataDir } from "./data-dir.js";
+
 const config = loadConfig();
+validateDataDir();
 const serverToken = process.env.MATRIX_TOKEN || getPersistedToken();
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);

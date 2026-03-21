@@ -147,6 +147,7 @@ configure() {
 MATRIX_PORT="${port}"
 MATRIX_TOKEN="${token}"
 MATRIX_HOST="0.0.0.0"
+MATRIX_DATA_DIR="${DATA_DIR}"
 MATRIX_DB_PATH="${DATA_DIR}/matrix.db"
 MATRIX_WEB_DIR="${DATA_DIR}/web"
 UPDATE_CHANNEL="${CHANNEL}"
@@ -266,6 +267,25 @@ main() {
       fi
       ok "Updated channel to ${CHANNEL}"
       config_changed=1
+    fi
+
+    # Backfill MATRIX_DATA_DIR for pre-v0.11 installations
+    if [ -f "$CONFIG_FILE" ] && ! grep -q '^MATRIX_DATA_DIR=' "$CONFIG_FILE" 2>/dev/null; then
+      echo "MATRIX_DATA_DIR=\"${DATA_DIR}\"" >> "$CONFIG_FILE"
+      ok "Added MATRIX_DATA_DIR=${DATA_DIR}"
+      config_changed=1
+    fi
+
+    # Ensure data directory is accessible
+    local data_dir
+    data_dir=$(grep -oP '^MATRIX_DATA_DIR="\K[^"]+' "$CONFIG_FILE" 2>/dev/null || echo "$DATA_DIR")
+    if [ ! -d "$data_dir" ]; then
+      mkdir -p "$data_dir"
+      chown matrix:matrix "$data_dir"
+      ok "Created data directory: ${data_dir}"
+    elif [ ! -w "$data_dir" ]; then
+      err "Data directory not writable: ${data_dir}"
+      info "Fix with: chown matrix:matrix ${data_dir}"
     fi
 
     systemctl restart "$SERVICE_NAME"

@@ -210,7 +210,7 @@ Per project conventions:
 ### Test setup
 
 ```typescript
-// tests/release/lib/setup.ts
+// tests/e2e/mac/lib/setup.ts
 await ws.send("custom-agent:create", {
   name: "Mock Agent",
   command: "node",

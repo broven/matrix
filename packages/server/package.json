@@ -5,15 +5,15 @@
   "main": "./src/index.ts",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "bun --watch --env-file=../../.env --env-file=../../.env.local src/index.ts",
+    "dev": "bun --watch --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts",
     "dev:mac": "wireit",
-    "start": "bun --env-file=../../.env --env-file=../../.env.local src/index.ts",
+    "start": "bun --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts",
     "test": "bun test",
     "download-wt": "bun run scripts/download-wt.ts"
   },
   "wireit": {
     "dev:mac": {
-      "command": "bun --watch --env-file=../../.env --env-file=../../.env.local src/index.ts -- --local true --db ./data/dev.db",
+      "command": "bun --watch --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts -- --local true --db ${MATRIX_DB:-./data/dev.db}",
       "service": true,
       "dependencies": [
         "../protocol:dev"

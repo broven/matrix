@@ -9,13 +9,13 @@ Create a suite of E2E flow tests that must pass before every release. These test
 - **Test runner**: Vitest (not Playwright — UI interaction goes through bridge HTTP API)
 - **UI driver**: Automation Bridge + custom UI interaction layer (`click`, `type`, `waitFor`)
 - **Agent strategy**: Mock agent by default; `@real-agent` tagged tests opt-in to real Claude Code
-- **Location**: `tests/release/` at project root
-- **Trigger**: `pnpm test:release` locally; GitHub Actions on tag push
+- **Location**: `tests/e2e/mac/` at project root
+- **Trigger**: `pnpm test:e2e:mac` locally; GitHub Actions on tag push
 
 ## Architecture
 
 ```
-tests/release/
+tests/e2e/mac/
 ├── lib/
 │   ├── bridge-client.ts       # Automation Bridge HTTP client
 │   ├── ui.ts                  # UI primitives (click, type, waitFor, getText, etc.)
@@ -141,13 +141,13 @@ Minimal ACP-compatible process for non-real-agent tests:
 ```bash
 # Local: start app first, then run tests
 pnpm --filter @matrix/client tauri:dev
-pnpm test:release
+pnpm test:e2e:mac
 
 # With real agent tests
-pnpm test:release:real-agent
+pnpm test:e2e:mac:real-agent
 
 # Single flow
-pnpm test:release --filter "add-repo-clone"
+pnpm test:e2e:mac --filter "add-repo-clone"
 ```
 
 ## CI (GitHub Actions)
@@ -168,8 +168,8 @@ jobs:
       - uses: actions/setup-node@v4
       - run: pnpm install
       - run: pnpm --filter @matrix/client tauri:dev &
-      - run: pnpm test:release:wait-for-bridge
-      - run: pnpm test:release
+      - run: pnpm test:e2e:mac:wait-for-bridge
+      - run: pnpm test:e2e:mac
 ```
 
 Notes:
@@ -181,8 +181,8 @@ Notes:
 
 ```json
 {
-  "test:release": "vitest run --config tests/release/vitest.config.ts",
-  "test:release:real-agent": "REAL_AGENT=1 vitest run --config tests/release/vitest.config.ts",
-  "test:release:wait-for-bridge": "node tests/release/scripts/wait-for-bridge.mjs"
+  "test:e2e:mac": "vitest run --config tests/e2e/mac/vitest.config.ts",
+  "test:e2e:mac:real-agent": "REAL_AGENT=1 vitest run --config tests/e2e/mac/vitest.config.ts",
+  "test:e2e:mac:wait-for-bridge": "node tests/e2e/mac/scripts/wait-for-bridge.mjs"
 }
 ```

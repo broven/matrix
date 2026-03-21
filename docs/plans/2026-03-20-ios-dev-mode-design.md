@@ -102,10 +102,10 @@ Wireit deduplicates `dev` (Vite) and `server:dev:mac` when running `dev:all`.
 | `packages/client/package.json` | Add `dev:ios` wireit task |
 | `packages/client/src-tauri/src/lib.rs` | Add mobile setup; remove discovery writes; read fixed port/token |
 | `packages/client/src-tauri/src/automation/state.rs` | Remove discovery file code; simplify to port+token holder |
-| `tests/release/global-setup.ts` | Env-based port+token instead of discovery file |
-| `tests/release/setup.ts` | Same |
-| `tests/release/lib/bridge-client.ts` | Remove discovery parsing, accept port+token |
-| `tests/release/scripts/wait-for-bridge.mjs` | Simplify to TCP check |
+| `tests/e2e/mac/global-setup.ts` | Env-based port+token instead of discovery file |
+| `tests/e2e/mac/setup.ts` | Same |
+| `tests/e2e/mac/lib/bridge-client.ts` | Remove discovery parsing, accept port+token |
+| `tests/e2e/mac/scripts/wait-for-bridge.mjs` | Simplify to TCP check |
 | `.env` | Add default automation port/token vars |
 
 ## What Does NOT Change

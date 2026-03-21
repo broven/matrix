@@ -1,31 +1,39 @@
 import { Hono } from "hono";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { ServerConfig } from "@matrix/protocol";
+import { getDataDir } from "../../data-dir.js";
 
-const CONFIG_DIR = path.join(os.homedir(), ".matrix");
-const SERVER_CONFIG_FILE = path.join(CONFIG_DIR, "server-config.json");
+function resolveConfigDir(): string {
+  return path.join(getDataDir(), ".matrix");
+}
 
-const DEFAULT_CONFIG: ServerConfig = {
-  reposPath: path.join(os.homedir(), "Projects", "repos"),
-  worktreesPath: path.join(os.homedir(), "Projects", "worktrees"),
-  defaultAgent: undefined,
-};
+function resolveDefaultConfig(): ServerConfig {
+  const dataDir = getDataDir();
+  return {
+    reposPath: path.join(dataDir, "MatrixProjects", "repos"),
+    worktreesPath: path.join(dataDir, "MatrixProjects", "worktrees"),
+    defaultAgent: undefined,
+  };
+}
 
 function readServerConfig(): ServerConfig {
+  const configFile = path.join(resolveConfigDir(), "server-config.json");
+  const defaults = resolveDefaultConfig();
   try {
-    const raw = fs.readFileSync(SERVER_CONFIG_FILE, "utf-8");
+    const raw = fs.readFileSync(configFile, "utf-8");
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_CONFIG, ...parsed };
+    return { ...defaults, ...parsed };
   } catch {
-    return { ...DEFAULT_CONFIG };
+    return { ...defaults };
   }
 }
 
 function writeServerConfig(config: ServerConfig): void {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(SERVER_CONFIG_FILE, JSON.stringify(config, null, 2) + "\n", {
+  const configDir = resolveConfigDir();
+  const configFile = path.join(configDir, "server-config.json");
+  fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + "\n", {
     encoding: "utf-8",
     mode: 0o600,
   });
@@ -53,8 +61,9 @@ export function serverConfigRoutes() {
     };
 
     // Expand ~ in paths
-    updated.reposPath = updated.reposPath.replace(/^~/, os.homedir());
-    updated.worktreesPath = updated.worktreesPath.replace(/^~/, os.homedir());
+    const dataDir = getDataDir();
+    updated.reposPath = updated.reposPath.replace(/^~/, dataDir);
+    updated.worktreesPath = updated.worktreesPath.replace(/^~/, dataDir);
 
     writeServerConfig(updated);
     return c.json(updated);

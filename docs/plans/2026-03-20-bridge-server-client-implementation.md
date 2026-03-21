@@ -91,13 +91,13 @@ Migrate the automation bridge from an embedded Rust HTTP server inside the app t
 
 ---
 
-## Batch 3: Test Runner Migration (tests/release)
+## Batch 3: Test Runner Migration (tests/e2e/mac)
 
 **Goal:** Update the test runner's bridge client to use the new HTTP endpoints on the matrix server.
 
 ### Files to Modify
 
-1. **`tests/release/lib/bridge-client.ts`** — Rewrite
+1. **`tests/e2e/mac/lib/bridge-client.ts`** — Rewrite
    - Remove `loadDiscovery()` and discovery file parsing
    - `createBridgeClient()` reads `MATRIX_PORT` and `MATRIX_TOKEN` from env
    - Remap all methods to new `/bridge/*` endpoints:
@@ -108,15 +108,15 @@ Migrate the automation bridge from an embedded Rust HTTP server inside the app t
      - `health()` → `GET /bridge/health`
      - `mockFileDialog(path)` → `POST /bridge/eval` with `invoke('mock_file_dialog', { path })`
 
-2. **`tests/release/setup.ts`** — Update health check
+2. **`tests/e2e/mac/setup.ts`** — Update health check
    - Check for `bridge.health()` with `clientCount > 0` instead of `webviewReady`
 
-3. **`tests/release/global-setup.ts`** — Simplify
+3. **`tests/e2e/mac/global-setup.ts`** — Simplify
    - Remove discovery file reading
    - Server URL from env `MATRIX_PORT`, token from `MATRIX_TOKEN`
    - Reload webview via `POST /bridge/eval` with `window.location.reload()`
 
-4. **`tests/release/lib/ui.ts`** — Minimal changes (only if `bridge.eval()` signature changes)
+4. **`tests/e2e/mac/lib/ui.ts`** — Minimal changes (only if `bridge.eval()` signature changes)
 
 ### Verification
 
@@ -165,13 +165,13 @@ Migrate the automation bridge from an embedded Rust HTTP server inside the app t
 ### Files to Delete
 
 6. **`scripts/ios-autoconnect.mjs`** — No longer needed (JS bridge auto-connects)
-7. **`tests/release/scripts/wait-for-bridge.mjs`** — Replace with simple `/bridge/health` check
+7. **`tests/e2e/mac/scripts/wait-for-bridge.mjs`** — Replace with simple `/bridge/health` check
 
 ### Verification
 
 - `pnpm dev:mac` starts cleanly
 - `pnpm dev:ios` starts, app connects to bridge
-- `pnpm test:release` passes all flows
+- `pnpm test:e2e:mac` passes all flows
 
 ---
 
