@@ -3,6 +3,7 @@ import type { AgentListItem, AvailableCommand, HistoryEntry, SessionInfo, Sessio
 import type { MatrixSession, PromptCallbacks } from "@matrix/sdk";
 import { nanoid } from "nanoid";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
+import { useServerClient } from "@/hooks/useMatrixClients";
 import { MessageList, type SessionEvent } from "@/components/MessageList";
 import { PromptInput } from "@/components/PromptInput";
 import { StatusBar } from "@/components/chat/StatusBar";
@@ -10,6 +11,7 @@ import { ChatHeader } from "@/components/layout/ChatHeader";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface SessionViewProps {
+  serverId: string;
   sessionInfo: SessionInfo;
   agents: AgentListItem[];
   onSessionInfoChange?: (sessionId: string, patch: Partial<SessionInfo>) => void;
@@ -33,8 +35,11 @@ function getStatusMessage(status: ViewStatus, errorMessage: string | null) {
   return null;
 }
 
-export function SessionView({ sessionInfo, agents, onSessionInfoChange }: SessionViewProps) {
-  const { client } = useMatrixClient();
+export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange }: SessionViewProps) {
+  const { client: sidecarClient } = useMatrixClient();
+  const { client: serverClient } = useServerClient(serverId);
+  // Use the server-specific client if available, otherwise fall back to sidecar
+  const client = serverClient ?? sidecarClient;
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [session, setSession] = useState<MatrixSession | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);

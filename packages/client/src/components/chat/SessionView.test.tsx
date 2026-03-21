@@ -87,6 +87,7 @@ describe("SessionView", () => {
 
     render(
       <SessionView
+        serverId="__sidecar__"
         sessionInfo={baseSessionInfo}
         agents={testAgents}
       />,
@@ -101,7 +102,7 @@ describe("SessionView", () => {
     const attached = createAttachedSession();
     attachSession.mockReturnValue(attached.session);
 
-    render(<SessionView sessionInfo={baseSessionInfo} agents={testAgents} />);
+    render(<SessionView serverId="__sidecar__" sessionInfo={baseSessionInfo} agents={testAgents} />);
 
     await waitFor(() => {
       expect(attached.session.subscribeToUpdates).toHaveBeenCalled();
