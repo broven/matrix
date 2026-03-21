@@ -70,16 +70,19 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
   useEffect(() => {
     if (selectedAgentId || !client) return;
     client.getServerConfig().then((config: ServerConfig) => {
+      // Only use defaultAgent if it actually exists and is available
       if (config.defaultAgent) {
-        // Trust the server's defaultAgent — custom agents may not be in
-        // the local agents list yet (async discovery). Ghost detection
-        // will reset it later if the agent is truly gone.
-        setSelectedAgentId(config.defaultAgent);
-      } else {
-        // Fall back to first available agent
-        const firstAvailable = agentsRef.current.find((a) => a.available);
-        if (firstAvailable) setSelectedAgentId(firstAvailable.id);
+        const defaultExists = agentsRef.current.some(
+          (a) => a.id === config.defaultAgent && a.available,
+        );
+        if (defaultExists) {
+          setSelectedAgentId(config.defaultAgent);
+          return;
+        }
       }
+      // Fall back to first available agent
+      const firstAvailable = agentsRef.current.find((a) => a.available);
+      if (firstAvailable) setSelectedAgentId(firstAvailable.id);
     }).catch(() => {
       const firstAvailable = agentsRef.current.find((a) => a.available);
       if (firstAvailable) setSelectedAgentId(firstAvailable.id);
@@ -390,7 +393,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         onAgentChange={setSelectedAgentId}
         onProfileChange={setSelectedProfileId}
         availableCommands={availableCommands}
-        agentLocked={Boolean(sessionInfo.agentId)}
+        agentLocked={Boolean(sessionInfo.agentId && agents.some((a) => a.id === sessionInfo.agentId && a.available))}
         noAgentAvailable={noAgentAvailable}
       />
     </div>
