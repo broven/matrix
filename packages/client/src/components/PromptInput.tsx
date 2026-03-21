@@ -240,6 +240,7 @@ export function PromptInput({
                           ? "bg-accent text-accent-foreground"
                           : "hover:bg-accent/50",
                       )}
+                      data-testid={`agent-option-${agent.id}`}
                     >
                       <span className="size-1.5 shrink-0 rounded-full bg-primary" />
                       <span className="truncate">{agent.name}</span>
@@ -301,6 +302,7 @@ export function PromptInput({
                     agentLocked ? "opacity-60 cursor-default" : "hover:bg-secondary/80",
                   )}
                   disabled={agentLocked}
+                  data-testid="agent-selector-btn"
                 >
                   <span className="size-1.5 rounded-full bg-primary" />
                   {selectedAgent?.name ?? "Select agent"}

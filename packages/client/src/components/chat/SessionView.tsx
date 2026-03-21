@@ -66,18 +66,31 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
   // Load default agent from server config if no agent selected
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
+  // Track the server's defaultAgent so ghost detection doesn't reset it
+  const serverDefaultAgentRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (selectedAgentId || !client) return;
-    client.getServerConfig().then((config: ServerConfig) => {
-      // Only use defaultAgent if it actually exists and is available
+    client.getServerConfig().then(async (config: ServerConfig) => {
       if (config.defaultAgent) {
+        serverDefaultAgentRef.current = config.defaultAgent;
+        // Check local agents list first
         const defaultExists = agentsRef.current.some(
           (a) => a.id === config.defaultAgent && a.available,
         );
         if (defaultExists) {
           setSelectedAgentId(config.defaultAgent);
           return;
+        }
+        // Custom agents may not be in the local list yet — refetch from server
+        try {
+          const freshAgents = await client.getAgents();
+          if (freshAgents.some((a) => a.id === config.defaultAgent && a.available)) {
+            setSelectedAgentId(config.defaultAgent);
+            return;
+          }
+        } catch {
+          // Fall through to fallback
         }
       }
       // Fall back to first available agent
@@ -92,8 +105,11 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
   // Ghost agent detection: reset if selected agent was uninstalled.
   // Only check once the agents list has been populated — an empty list
   // means agents are still loading, not that the selected one is gone.
+  // Skip if the selected agent is the server's defaultAgent — it may be a
+  // custom agent not yet in the local list (it was verified via server refetch).
   useEffect(() => {
     if (!selectedAgentId || agents.length === 0) return;
+    if (selectedAgentId === serverDefaultAgentRef.current) return;
     const stillExists = agents.some((a) => a.id === selectedAgentId && a.available);
     if (!stillExists) {
       setSelectedAgentId(null);

@@ -135,8 +135,36 @@ export function AppLayout() {
 
     void load();
 
+    // Subscribe to sidecar server events for incremental updates
+    const unsub = client.onServerEvent((event) => {
+      if (cancelled) return;
+      switch (event.type) {
+        case "server:agents_changed":
+          setAgents(event.agents);
+          break;
+        case "server:session_created":
+          setSessions((prev) => [...prev, event.session]);
+          break;
+        case "server:session_closed":
+          setSessions((prev) => prev.filter((s) => s.sessionId !== event.sessionId));
+          break;
+        case "server:repository_added":
+          setRepositories((prev) => [...prev, event.repository]);
+          break;
+        case "server:repository_removed":
+          setRepositories((prev) => prev.filter((r) => r.id !== event.repositoryId));
+          setWorktrees((prev) => {
+            const next = new Map(prev);
+            next.delete(event.repositoryId);
+            return next;
+          });
+          break;
+      }
+    });
+
     return () => {
       cancelled = true;
+      unsub();
     };
   }, [client, status]);
 
