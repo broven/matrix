@@ -29,14 +29,14 @@ export function SettingsNewServerTab({ onCreated }: SettingsNewServerTabProps) {
     setTestResult(null);
     setTestError(null);
 
-    // Test connection by fetching auth info
+    // Test connection via auth-protected ping endpoint
     try {
       const testUrl = url.replace(/\/$/, "");
-      const res = await fetch(`${testUrl}/api/auth-info`, {
+      const res = await fetch(`${testUrl}/api/ping`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
+        throw new Error(res.status === 401 ? "Invalid token" : `Server returned ${res.status}`);
       }
       setTestResult("success");
 

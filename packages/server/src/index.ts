@@ -377,6 +377,11 @@ function isLoopbackRequest(c: any): boolean {
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }
 
+// Ping endpoint — auth-protected, externally accessible, for connection testing
+app.get("/api/ping", authMiddleware(serverToken), (c) => {
+  return c.json({ ok: true });
+});
+
 // Auth info endpoint — loopback only, lets desktop app fetch its token
 app.get("/api/auth-info", (c) => {
   if (!isLoopbackRequest(c)) {
