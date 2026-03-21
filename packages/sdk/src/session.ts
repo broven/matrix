@@ -58,7 +58,7 @@ export class MatrixSession implements AsyncIterable<SessionUpdate> {
     this.transport.send({
       type: "session:prompt",
       sessionId: this.sessionId,
-      prompt: content as Array<{ type: string; text: string }>,
+      prompt: content,
     });
   }
 
