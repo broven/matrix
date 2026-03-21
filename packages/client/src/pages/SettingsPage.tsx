@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, X } from "lucide-react";
 import type { RepositoryInfo } from "@matrix/protocol";
 import { Button } from "@/components/ui/button";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
+import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { useServerStore } from "@/hooks/useServerStore";
 import { useMatrixClients } from "@/hooks/useMatrixClients";
 import { SettingsGeneralTab } from "@/pages/settings/SettingsGeneralTab";
@@ -10,6 +11,8 @@ import { SettingsRepositoryTab } from "@/pages/settings/SettingsRepositoryTab";
 import { SettingsServerTab } from "@/pages/settings/SettingsServerTab";
 import { SettingsNewServerTab } from "@/pages/settings/SettingsNewServerTab";
 import { SettingsSidebar, type SettingsTab } from "@/pages/settings/SettingsSidebar";
+
+const SIDECAR_SERVER_ID = "__sidecar__";
 
 interface SettingsPageProps {
   onBack: () => void;
@@ -20,6 +23,19 @@ interface SettingsPageProps {
 export function SettingsPage({ onBack, repositories, onDeleteRepository }: SettingsPageProps) {
   const { servers } = useServerStore();
   const { statuses } = useMatrixClients();
+  const { status: sidecarStatus, connectionInfo } = useMatrixClient();
+
+  // Prepend sidecar as "Local" server entry
+  const allSettingsServers = useMemo(() => {
+    const sidecarEntry = {
+      id: SIDECAR_SERVER_ID,
+      name: "Local",
+      serverUrl: connectionInfo?.serverUrl ?? "",
+      token: connectionInfo?.token ?? "",
+      lastConnected: null as number | null,
+    };
+    return [sidecarEntry, ...servers];
+  }, [servers, connectionInfo]);
   const {
     state: updateState,
     updateInfo,
@@ -36,8 +52,15 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
     : null;
 
   const selectedServer = selectedTab.kind === "server"
-    ? servers.find((s) => s.id === selectedTab.serverId)
+    ? allSettingsServers.find((s) => s.id === selectedTab.serverId)
     : null;
+
+  // Merge sidecar status into the statuses map for the sidebar
+  const allStatuses = useMemo(() => {
+    const merged = new Map(statuses);
+    merged.set(SIDECAR_SERVER_ID, sidecarStatus);
+    return merged;
+  }, [statuses, sidecarStatus]);
 
   // If the selected repo/server was deleted, fall back to general
   useEffect(() => {
@@ -72,8 +95,8 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <SettingsSidebar
             repositories={repositories}
-            servers={servers}
-            serverStatuses={statuses}
+            servers={allSettingsServers}
+            serverStatuses={allStatuses}
             selectedTab={selectedTab}
             onSelectTab={setSelectedTab}
           />

@@ -3,6 +3,7 @@ import type { SavedServer } from "../../hooks/useServerStore";
 import type { AgentListItem, ServerConfig } from "@matrix/protocol";
 import { useServerClient } from "../../hooks/useMatrixClients";
 import { useMatrixClients } from "../../hooks/useMatrixClients";
+import { useMatrixClient } from "../../hooks/useMatrixClient";
 import { useServerStore } from "../../hooks/useServerStore";
 import { SettingsAgentsTab } from "./SettingsAgentsTab";
 import { Button } from "../../components/ui/button";
@@ -10,12 +11,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Input } from "../../components/ui/input";
 import { AlertCircle, CheckCircle2, Loader2, Trash2, Unplug, Plug } from "lucide-react";
 
+const SIDECAR_SERVER_ID = "__sidecar__";
+
 interface SettingsServerTabProps {
   server: SavedServer;
 }
 
 export function SettingsServerTab({ server }: SettingsServerTabProps) {
-  const { client, status, error } = useServerClient(server.id);
+  const isSidecar = server.id === SIDECAR_SERVER_ID;
+
+  // For sidecar: use the single-client context. For remote: use multi-client.
+  const sidecar = useMatrixClient();
+  const remote = useServerClient(isSidecar ? "" : server.id);
+
+  const client = isSidecar ? sidecar.client : remote.client;
+  const status = isSidecar ? sidecar.status : remote.status;
+  const error = isSidecar ? sidecar.error : remote.error;
+
   const { connect, disconnect } = useMatrixClients();
   const { updateServer, removeServer } = useServerStore();
 
@@ -56,9 +68,9 @@ export function SettingsServerTab({ server }: SettingsServerTabProps) {
     load();
   }, [status, client]);
 
-  // Auto-connect on mount if not connected
+  // Auto-connect on mount if not connected (remote servers only)
   useEffect(() => {
-    if (status === "offline" || !status) {
+    if (!isSidecar && (status === "offline" || !status)) {
       connect(server.id, { serverUrl: server.serverUrl, token: server.token });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,36 +144,42 @@ export function SettingsServerTab({ server }: SettingsServerTabProps) {
               <AlertCircle className="size-4 text-muted-foreground" />
             )}
             <span className="text-sm capitalize">{status ?? "offline"}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleToggleConnection}
-              className="ml-auto"
-              data-testid="server-toggle-connection-btn"
-            >
-              {isConnected ? <><Unplug className="mr-1 size-3.5" /> Disconnect</> : <><Plug className="mr-1 size-3.5" /> Connect</>}
-            </Button>
+            {!isSidecar && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleToggleConnection}
+                className="ml-auto"
+                data-testid="server-toggle-connection-btn"
+              >
+                {isConnected ? <><Unplug className="mr-1 size-3.5" /> Disconnect</> : <><Plug className="mr-1 size-3.5" /> Connect</>}
+              </Button>
+            )}
           </div>
           {error && (
             <p className="text-sm text-destructive">{error}</p>
           )}
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} data-testid="server-name-input" />
+          {isSidecar ? (
+            <p className="text-xs text-muted-foreground">{server.serverUrl || "Built-in server"}</p>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-muted-foreground">Name</label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} data-testid="server-name-input" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">URL</label>
+                <Input value={url} onChange={(e) => setUrl(e.target.value)} data-testid="server-url-input" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Token</label>
+                <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} data-testid="server-token-input" />
+              </div>
+              <Button size="sm" onClick={handleSaveConnection} data-testid="server-save-connection-btn">
+                Save
+              </Button>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground">URL</label>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} data-testid="server-url-input" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Token</label>
-              <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} data-testid="server-token-input" />
-            </div>
-            <Button size="sm" onClick={handleSaveConnection} data-testid="server-save-connection-btn">
-              Save
-            </Button>
-          </div>
+          )}
         </CardContent>
       </Card>
 
@@ -206,35 +224,37 @@ export function SettingsServerTab({ server }: SettingsServerTabProps) {
         </Card>
       )}
 
-      {/* Danger Zone */}
-      <Card className="border-destructive/50">
-        <CardHeader>
-          <CardTitle className="text-base text-destructive">Danger Zone</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Remove this server?</span>
-              <Button size="sm" variant="destructive" onClick={handleDelete} data-testid="server-confirm-delete-btn">
-                Confirm
+      {/* Danger Zone — remote servers only */}
+      {!isSidecar && (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-base text-destructive">Danger Zone</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Remove this server?</span>
+                <Button size="sm" variant="destructive" onClick={handleDelete} data-testid="server-confirm-delete-btn">
+                  Confirm
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setConfirmDelete(true)}
+                data-testid="server-delete-btn"
+              >
+                <Trash2 className="mr-1 size-3.5" />
+                Remove Server
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setConfirmDelete(true)}
-              data-testid="server-delete-btn"
-            >
-              <Trash2 className="mr-1 size-3.5" />
-              Remove Server
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
