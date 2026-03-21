@@ -30,11 +30,30 @@ vi.mock("@/hooks/useMatrixClient", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useMatrixClients", () => ({
+  useMatrixClients: () => ({
+    clients: new Map(),
+    statuses: new Map(),
+    errors: new Map(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    getClient: () => null,
+  }),
+  useServerClient: () => ({
+    client: null,
+    status: "offline",
+    error: null,
+  }),
+}));
+
 vi.mock("@/hooks/useServerStore", () => ({
   useServerStore: () => ({
     servers: [],
     addServer: mockAddServer,
     removeServer: mockRemoveServer,
+    updateServer: vi.fn(),
+    touchServer: vi.fn(),
+    getServer: () => undefined,
   }),
 }));
 
@@ -104,11 +123,15 @@ describe("SettingsPage", () => {
     expect(container.firstElementChild).toHaveClass("flex", "h-full", "flex-1", "bg-background");
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /close settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
+    // General tab
+    expect(screen.getByTestId("settings-general-tab")).toBeInTheDocument();
+    // Servers section
+    expect(screen.getByText("Servers")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-add-server-btn")).toBeInTheDocument();
+    // Repositories section
     expect(screen.getByText("Repositories")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /claude/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /fundi/i })).toBeInTheDocument();
-    expect(screen.getByText("Current Connection")).toBeInTheDocument();
   });
 
   it("shows repository details and deletes a repository after confirmation", async () => {
@@ -133,6 +156,7 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(mockDeleteRepository).toHaveBeenCalledWith("repo-2", false);
     });
-    expect(screen.getByText("Current Connection")).toBeInTheDocument();
+    // After deletion, should fall back to General tab
+    expect(screen.getByTestId("settings-general-tab")).toBeInTheDocument();
   });
 });
