@@ -168,6 +168,22 @@ export function useAllServersData(sidecar: {
                   return next;
                 });
                 break;
+              case "server:session_resumed":
+                setServerDataMap((prev) => {
+                  const data = prev.get(sid);
+                  if (!data) return prev;
+                  const next = new Map(prev);
+                  next.set(sid, {
+                    ...data,
+                    sessions: data.sessions.map((s) =>
+                      s.sessionId === event.sessionId
+                        ? { ...s, status: "active" as const, closeReason: null, suspendedAt: null }
+                        : s
+                    ),
+                  });
+                  return next;
+                });
+                break;
               case "server:repository_added":
                 setServerDataMap((prev) => {
                   const data = prev.get(sid);
