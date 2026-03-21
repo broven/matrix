@@ -51,11 +51,10 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([]);
-  const [sessionFiles, setSessionFiles] = useState<string[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(sessionInfo.agentId);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(sessionInfo.profileId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [messageQueue, setMessageQueue] = useState<{ text: string; agentId: string; profileId: string | null }[]>([]);
+  const [messageQueue, setMessageQueue] = useState<{ content: PromptContent[]; agentId: string; profileId: string | null }[]>([]);
   const messageQueueRef = useRef<typeof messageQueue>([]);
   messageQueueRef.current = messageQueue;
   const sessionRef = useRef<MatrixSession | null>(null);
@@ -122,13 +121,14 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     }
   }, [agents, selectedAgentId, sessionInfo.agentId, sessionInfo.sessionId, onSessionInfoChange]);
 
-  // Fetch files for @ mention
-  useEffect(() => {
-    if (!client || !sessionInfo.sessionId) return;
-    client.getSessionFiles(sessionInfo.sessionId)
-      .then(setSessionFiles)
-      .catch(() => {}); // silently fail
-  }, [client, sessionInfo.sessionId]);
+  // Search files for @ mention (on-demand, server-side filtered)
+  const fetchFiles = useCallback(
+    (query: string) => {
+      if (!client || !sessionInfo.sessionId) return Promise.resolve([]);
+      return client.getSessionFiles(sessionInfo.sessionId, query);
+    },
+    [client, sessionInfo.sessionId],
+  );
 
   const addEvent = useCallback((type: string, data: SessionUpdate) => {
     setEvents((previous) => [
@@ -182,7 +182,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     // Remove from queue
     setMessageQueue((q) => q.slice(1));
 
-    // Send the queued message using its captured agent/profile
+    // Send the queued message using its captured content and agent/profile
     setIsProcessing(true);
     setErrorMessage(null);
 
@@ -190,10 +190,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       onComplete: () => setIsProcessing(false),
     };
 
-    currentSession.promptWithContent(
-      [{ type: "text", text: next.text, agentId: next.agentId, profileId: next.profileId ?? undefined }],
-      callbacks,
-    );
+    currentSession.promptWithContent(next.content, callbacks);
   }, []);
 
   useEffect(() => {
@@ -311,7 +308,8 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
 
       if (isProcessing) {
         // Queue the message with its current agent/profile — it will be sent when current processing completes
-        setMessageQueue((q) => [...q, { text, agentId: selectedAgentId, profileId: selectedProfileId }]);
+        const queuedContent: PromptContent[] = [{ type: "text", text, agentId: selectedAgentId, profileId: selectedProfileId ?? undefined }];
+        setMessageQueue((q) => [...q, { content: queuedContent, agentId: selectedAgentId, profileId: selectedProfileId }]);
         return;
       }
 
@@ -348,16 +346,18 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         content: { type: "text", text: `> ${displayText}` },
       });
 
-      // Tag the first text block with agentId/profileId
-      const taggedContent = content.map((block, i) => {
-        if (block.type === "text" && i === 0) {
+      // Tag the first text block with agentId/profileId (regardless of position)
+      let tagged = false;
+      const taggedContent = content.map((block) => {
+        if (!tagged && block.type === "text") {
+          tagged = true;
           return { ...block, agentId: selectedAgentId, profileId: selectedProfileId ?? undefined };
         }
         return block;
       });
 
       if (isProcessing) {
-        setMessageQueue((q) => [...q, { text: displayText, agentId: selectedAgentId, profileId: selectedProfileId }]);
+        setMessageQueue((q) => [...q, { content: taggedContent, agentId: selectedAgentId, profileId: selectedProfileId }]);
         return;
       }
 
@@ -406,7 +406,9 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       : isProcessing
         ? "working"
         : "idle";
-  const queuedTexts = useMemo(() => new Set(messageQueue.map((m) => m.text)), [messageQueue]);
+  const queuedTexts = useMemo(() => new Set(messageQueue.map((m) =>
+    m.content.map((b) => (b.type === "text" ? b.text : `@${b.type === "resource_link" ? b.name : ""}`)).join("")
+  )), [messageQueue]);
   const inputDisabled = viewStatus === "closed";
 
   return (
@@ -453,7 +455,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       <PromptInput
         onSend={handleSend}
         onSendContent={handleSendContent}
-        files={sessionFiles}
+        fetchFiles={fetchFiles}
         sessionCwd={sessionInfo.cwd}
         disabled={inputDisabled}
         placeholder={getInputPlaceholder(viewStatus, hasAgent, noAgentAvailable)}

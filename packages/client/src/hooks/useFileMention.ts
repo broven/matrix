@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export interface FileMention {
   /** Unique ID for this mention instance */
@@ -12,8 +12,8 @@ export interface FileMention {
 }
 
 interface UseFileMentionOptions {
-  /** All files available for mention */
-  files: string[];
+  /** Fetch files matching a query from the server */
+  fetchFiles: (query: string) => Promise<string[]>;
   /** Current text in the input */
   text: string;
   /** Current cursor position */
@@ -34,8 +34,10 @@ interface UseFileMentionResult {
   setSelectedIndex: (index: number | ((prev: number) => number)) => void;
 }
 
-export function useFileMention({ files, text, cursorPos }: UseFileMentionOptions): UseFileMentionResult {
+export function useFileMention({ fetchFiles, text, cursorPos }: UseFileMentionOptions): UseFileMentionResult {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [filtered, setFiltered] = useState<string[]>([]);
+  const fetchIdRef = useRef(0);
 
   // Find the @ query: look backwards from cursor for "@"
   const textBeforeCursor = text.slice(0, cursorPos);
@@ -44,7 +46,7 @@ export function useFileMention({ files, text, cursorPos }: UseFileMentionOptions
   let query = "";
   let isActive = false;
 
-  if (atIndex !== -1 && files.length > 0) {
+  if (atIndex !== -1) {
     // Only activate if "@" is at start or preceded by whitespace
     if (atIndex === 0 || /\s/.test(textBeforeCursor[atIndex - 1])) {
       const afterAt = textBeforeCursor.slice(atIndex + 1);
@@ -56,13 +58,26 @@ export function useFileMention({ files, text, cursorPos }: UseFileMentionOptions
     }
   }
 
-  const filtered = useMemo(() => {
-    if (!isActive) return [];
-    if (!query) return files.slice(0, 50); // Show first 50 when no query
-    return files
-      .filter((f) => f.toLowerCase().includes(query))
-      .slice(0, 50);
-  }, [isActive, query, files]);
+  // Fetch files from server when query changes
+  useEffect(() => {
+    if (!isActive) {
+      setFiltered([]);
+      return;
+    }
+
+    const id = ++fetchIdRef.current;
+
+    fetchFiles(query).then((files) => {
+      // Only apply if this is still the latest request
+      if (id === fetchIdRef.current) {
+        setFiltered(files);
+      }
+    }).catch(() => {
+      if (id === fetchIdRef.current) {
+        setFiltered([]);
+      }
+    });
+  }, [isActive, query, fetchFiles]);
 
   const isOpen = filtered.length > 0;
 

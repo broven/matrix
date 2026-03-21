@@ -32,12 +32,27 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager, conn
       return c.json([]);
     }
 
+    const query = (c.req.query("q") ?? "").toLowerCase();
+    const limit = 50;
+
     try {
       const proc = Bun.spawn(["git", "ls-files"], { cwd, stdout: "pipe", stderr: "pipe" });
       const text = await new Response(proc.stdout).text();
       await proc.exited;
-      const files = text.trim().split("\n").filter(Boolean);
-      return c.json(files);
+      const allFiles = text.trim().split("\n").filter(Boolean);
+
+      // Server-side filtering and limiting
+      if (!query) {
+        return c.json(allFiles.slice(0, limit));
+      }
+      const filtered: string[] = [];
+      for (const f of allFiles) {
+        if (f.toLowerCase().includes(query)) {
+          filtered.push(f);
+          if (filtered.length >= limit) break;
+        }
+      }
+      return c.json(filtered);
     } catch {
       return c.json([]);
     }

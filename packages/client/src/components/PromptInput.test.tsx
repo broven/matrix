@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AvailableCommand } from "@matrix/protocol";
 import { PromptInput } from "@/components/PromptInput";
@@ -11,6 +11,13 @@ const defaultProps = {
     { id: "assistant", name: "Assistant", command: "assistant", available: true, source: "builtin" as const, profiles: [] },
   ],
 };
+
+function makeFetchFiles(files: string[]) {
+  return vi.fn((query: string) => {
+    if (!query) return Promise.resolve(files.slice(0, 50));
+    return Promise.resolve(files.filter((f) => f.toLowerCase().includes(query)));
+  });
+}
 
 describe("PromptInput", () => {
   afterEach(() => {
@@ -112,41 +119,50 @@ describe("PromptInput", () => {
     expect((input as HTMLTextAreaElement).value).toContain("/compact");
   });
 
-  it("shows file mention dropdown when typing @", () => {
-    const files = ["src/main.ts", "src/app.tsx"];
-    render(<PromptInput {...defaultProps} files={files} />);
+  it("shows file mention dropdown when typing @", async () => {
+    const fetchFiles = makeFetchFiles(["src/main.ts", "src/app.tsx"]);
+    render(<PromptInput {...defaultProps} fetchFiles={fetchFiles} />);
 
     const input = screen.getByTestId("chat-input");
     fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
 
-    expect(screen.getByTestId("file-mention-dropdown")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("file-mention-dropdown")).toBeInTheDocument();
+    });
   });
 
-  it("filters file mentions by query", () => {
-    const files = ["src/main.ts", "src/app.tsx"];
-    render(<PromptInput {...defaultProps} files={files} />);
+  it("filters file mentions by query", async () => {
+    const fetchFiles = makeFetchFiles(["src/main.ts", "src/app.tsx"]);
+    render(<PromptInput {...defaultProps} fetchFiles={fetchFiles} />);
 
     const input = screen.getByTestId("chat-input");
     fireEvent.change(input, { target: { value: "@main", selectionStart: 5 } });
 
-    expect(screen.getByTestId("file-mention-item-main.ts")).toBeInTheDocument();
-    expect(screen.queryByTestId("file-mention-item-app.tsx")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("file-mention-item-main.ts")).toBeInTheDocument();
+      expect(screen.queryByTestId("file-mention-item-app.tsx")).not.toBeInTheDocument();
+    });
   });
 
-  it("inserts file marker on Enter when file dropdown is open", () => {
+  it("inserts file marker on Enter when file dropdown is open", async () => {
     const onSend = vi.fn();
-    const files = ["src/main.ts"];
-    render(<PromptInput {...defaultProps} onSend={onSend} files={files} />);
+    const fetchFiles = makeFetchFiles(["src/main.ts"]);
+    render(<PromptInput {...defaultProps} onSend={onSend} fetchFiles={fetchFiles} />);
 
     const input = screen.getByTestId("chat-input");
     fireEvent.change(input, { target: { value: "@", selectionStart: 1 } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-mention-dropdown")).toBeInTheDocument();
+    });
+
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(onSend).not.toHaveBeenCalled();
     expect((input as HTMLTextAreaElement).value).toContain("@[src/main.ts]");
   });
 
-  it("does not show file dropdown when no files prop", () => {
+  it("does not show file dropdown when no fetchFiles prop", () => {
     render(<PromptInput {...defaultProps} />);
 
     const input = screen.getByTestId("chat-input");

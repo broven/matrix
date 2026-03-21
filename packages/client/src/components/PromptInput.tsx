@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AvailableCommand, PromptContent } from "@matrix/protocol";
 import type { AgentListItem } from "@matrix/protocol";
 import { ArrowUp, Plus, ChevronDown, File } from "lucide-react";
@@ -21,7 +21,7 @@ interface Props {
   /** When true, agent/profile selectors are locked (session already bound to an agent) */
   agentLocked?: boolean;
   noAgentAvailable?: boolean;
-  files?: string[];
+  fetchFiles?: (query: string) => Promise<string[]>;
   sessionCwd?: string;
 }
 
@@ -130,7 +130,7 @@ export function PromptInput({
   availableCommands = [],
   agentLocked = false,
   noAgentAvailable = false,
-  files,
+  fetchFiles,
   sessionCwd,
 }: Props) {
   const [text, setText] = useState("");
@@ -146,8 +146,9 @@ export function PromptInput({
   const { isOpen, filtered, selectedIndex, setSelectedIndex, slashIndex } =
     useSlashAutocomplete(text, availableCommands, cursorPos);
 
+  const noopFetch = useCallback(() => Promise.resolve([]) as Promise<string[]>, []);
   const fileMention = useFileMention({
-    files: files ?? [],
+    fetchFiles: fetchFiles ?? noopFetch,
     text,
     cursorPos,
   });
