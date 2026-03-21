@@ -9,6 +9,8 @@ interface MatrixClientsContextValue {
   statuses: Map<string, ConnectionStatus>;
   /** Connection error per server */
   errors: Map<string, string | null>;
+  /** Server IDs that were intentionally disconnected (should not auto-reconnect) */
+  manuallyDisconnected: Set<string>;
   /** Connect to a server */
   connect(serverId: string, config: { serverUrl: string; token: string }): Promise<void>;
   /** Disconnect from a server */
@@ -21,6 +23,7 @@ const MatrixClientsContext = createContext<MatrixClientsContextValue>({
   clients: new Map(),
   statuses: new Map(),
   errors: new Map(),
+  manuallyDisconnected: new Set(),
   connect: async () => {},
   disconnect: () => {},
   getClient: () => null,
@@ -45,6 +48,8 @@ export function MatrixClientsProvider({ children }: { children: ReactNode }) {
   const [clients, setClients] = useState<Map<string, MatrixClient>>(new Map());
   const [statuses, setStatuses] = useState<Map<string, ConnectionStatus>>(new Map());
   const [errors, setErrors] = useState<Map<string, string | null>>(new Map());
+  const manuallyDisconnectedRef = useRef(new Set<string>());
+  const [manuallyDisconnected, setManuallyDisconnected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const manager = managerRef.current;
@@ -63,6 +68,8 @@ export function MatrixClientsProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(async (serverId: string, config: { serverUrl: string; token: string }) => {
     const manager = managerRef.current;
+    manuallyDisconnectedRef.current.delete(serverId);
+    setManuallyDisconnected(new Set(manuallyDisconnectedRef.current));
     setStatuses((prev) => new Map(prev).set(serverId, "connecting"));
     setErrors((prev) => new Map(prev).set(serverId, null));
     try {
@@ -76,6 +83,8 @@ export function MatrixClientsProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback((serverId: string) => {
     managerRef.current.disconnect(serverId);
+    manuallyDisconnectedRef.current.add(serverId);
+    setManuallyDisconnected(new Set(manuallyDisconnectedRef.current));
     setClients(new Map(managerRef.current.getConnectedClients()));
     setStatuses((prev) => {
       const next = new Map(prev);
@@ -89,7 +98,7 @@ export function MatrixClientsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <MatrixClientsContext.Provider value={{ clients, statuses, errors, connect, disconnect, getClient }}>
+    <MatrixClientsContext.Provider value={{ clients, statuses, errors, manuallyDisconnected, connect, disconnect, getClient }}>
       {children}
     </MatrixClientsContext.Provider>
   );

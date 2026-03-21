@@ -91,7 +91,7 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
               />
             )}
             {selectedTab.kind === "server" && selectedServer && (
-              <SettingsServerTab server={selectedServer} />
+              <SettingsServerTab key={selectedServer.id} server={selectedServer} />
             )}
             {selectedTab.kind === "new-server" && (
               <SettingsNewServerTab onCreated={setSelectedTab} />

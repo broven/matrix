@@ -46,6 +46,7 @@ export function AppLayout() {
   const [multiSessions, setMultiSessions] = useState<Map<string, SessionInfo[]>>(new Map());
   const [multiRepositories, setMultiRepositories] = useState<Map<string, RepositoryInfo[]>>(new Map());
   const [multiWorktrees, setMultiWorktrees] = useState<Map<string, Map<string, WorktreeInfo[]>>>(new Map());
+  const [multiAgents, setMultiAgents] = useState<Map<string, AgentListItem[]>>(new Map());
   // Backward-compat alias
   const selectedSessionId = selectedSession?.sessionId ?? null;
   const setSelectedSessionId = (id: string | null, serverId?: string) => {
@@ -149,14 +150,16 @@ export function AppLayout() {
       // Load initial data for this server
       (async () => {
         try {
-          const [sessionItems, repoItems] = await Promise.all([
+          const [sessionItems, repoItems, agentItems] = await Promise.all([
             serverClient.getSessions(),
             serverClient.getRepositories(),
+            serverClient.getAgents(),
           ]);
           if (cancelled) return;
 
           setMultiSessions((prev) => new Map(prev).set(server.id, sessionItems));
           setMultiRepositories((prev) => new Map(prev).set(server.id, repoItems));
+          setMultiAgents((prev) => new Map(prev).set(server.id, agentItems));
 
           const wtMap = new Map<string, WorktreeInfo[]>();
           await Promise.all(
@@ -229,6 +232,20 @@ export function AppLayout() {
   }, [savedServers, multiStatuses, getMultiClient]);
 
   // Merge sidecar + multi-server data for display
+  // Build a sessionId → serverId lookup so we can route to the correct server
+  const sessionServerMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of sessions) {
+      map.set(s.sessionId, SIDECAR_SERVER_ID);
+    }
+    for (const [serverId, serverSessions] of multiSessions) {
+      for (const s of serverSessions) {
+        map.set(s.sessionId, serverId);
+      }
+    }
+    return map;
+  }, [sessions, multiSessions]);
+
   const allSessions = useMemo(() => {
     const merged = [...sessions];
     for (const [, serverSessions] of multiSessions) {
@@ -275,8 +292,8 @@ export function AppLayout() {
       return;
     }
 
-    setSelectedSessionId(nextSession.sessionId);
-  }, [selectedSessionId, allSessions]);
+    setSelectedSessionId(nextSession.sessionId, sessionServerMap.get(nextSession.sessionId));
+  }, [selectedSessionId, allSessions, sessionServerMap]);
 
   const sortedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
   const selectedSessionInfo = useMemo(
@@ -519,7 +536,7 @@ export function AppLayout() {
       connectionStatus={status}
       selectedSessionId={selectedSessionId}
       onSelectSession={(sessionId) => {
-        setSelectedSessionId(sessionId);
+        setSelectedSessionId(sessionId, sessionServerMap.get(sessionId));
         setMobileSidebarOpen(false);
       }}
       onCreateSession={handleCreateSession}
@@ -596,7 +613,7 @@ export function AppLayout() {
             key={selectedSession.sessionId}
             serverId={selectedSession.serverId}
             sessionInfo={allSessions.find(s => s.sessionId === selectedSession.sessionId)!}
-            agents={agents}
+            agents={selectedSession.serverId === SIDECAR_SERVER_ID ? agents : (multiAgents.get(selectedSession.serverId) ?? [])}
             onSessionInfoChange={handleSessionInfoChange}
           />
         ) : (
