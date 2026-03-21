@@ -1,7 +1,7 @@
 {
   "name": "Matrix (Beta)",
-  "subtitle": "Remote ACP Client \u2014 Beta Channel",
-  "description": "Matrix Beta \u2014 Pre-release builds. May contain bugs.",
+  "subtitle": "Remote ACP Client — Beta Channel",
+  "description": "Matrix Beta — Pre-release builds. May contain bugs.",
   "iconURL": "https://raw.githubusercontent.com/broven/matrix/main/packages/client/src-tauri/icons/32x32.png",
   "apps": [
     {
@@ -19,6 +19,14 @@
         }
       },
       "versions": [
+        {
+          "version": "0.10.4",
+          "buildVersion": "0.10.4",
+          "date": "2026-03-21",
+          "downloadURL": "https://github.com/broven/matrix/releases/download/v0.10.4/Matrix_v0.10.4.ipa",
+          "size": 3115733,
+          "minOSVersion": "16.0"
+        },
         {
           "version": "0.10.3",
           "buildVersion": "0.10.3",

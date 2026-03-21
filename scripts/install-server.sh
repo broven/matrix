@@ -7,6 +7,8 @@ BINARY_NAME="matrix-server"
 CONFIG_DIR="/etc/matrix"
 CONFIG_FILE="${CONFIG_DIR}/config.env"
 DATA_DIR="/var/lib/matrix"
+WEB_DIR="/usr/share/matrix/web"
+SRV_DIR="/srv/matrix"
 SERVICE_NAME="matrix-server"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
@@ -121,8 +123,8 @@ download_binary() {
 
   # Copy web assets if present
   if [ -d "${extracted_dir}/web" ]; then
-    mkdir -p "${DATA_DIR}/web"
-    cp -r "${extracted_dir}/web/"* "${DATA_DIR}/web/"
+    mkdir -p "${WEB_DIR}"
+    cp -r "${extracted_dir}/web/"* "${WEB_DIR}/"
   fi
 
   ok "Installed ${BINARY_NAME} ${version} to ${INSTALL_DIR}/${BINARY_NAME}"
@@ -133,7 +135,7 @@ download_binary() {
 configure() {
   local port=$1 token=$2
 
-  mkdir -p "$CONFIG_DIR" "$DATA_DIR"
+  mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$SRV_DIR/repos" "$SRV_DIR/worktrees"
 
   # Create dedicated system user
   if ! id -u matrix &>/dev/null; then
@@ -141,7 +143,7 @@ configure() {
     info "Created system user: matrix"
   fi
 
-  chown -R matrix:matrix "$DATA_DIR"
+  chown -R matrix:matrix "$DATA_DIR" "$SRV_DIR"
 
   cat > "$CONFIG_FILE" <<EOF
 MATRIX_PORT="${port}"
@@ -149,7 +151,8 @@ MATRIX_TOKEN="${token}"
 MATRIX_HOST="0.0.0.0"
 MATRIX_DATA_DIR="${DATA_DIR}"
 MATRIX_DB_PATH="${DATA_DIR}/matrix.db"
-MATRIX_WEB_DIR="${DATA_DIR}/web"
+MATRIX_WEB_DIR="${WEB_DIR}"
+MATRIX_SRV_DIR="${SRV_DIR}"
 UPDATE_CHANNEL="${CHANNEL}"
 EOF
 
@@ -175,8 +178,8 @@ Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
 ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/lib/matrix
+ProtectHome=no
+ReadWritePaths=/var/lib/matrix /srv/matrix
 
 [Install]
 WantedBy=multi-user.target
@@ -276,16 +279,58 @@ main() {
       config_changed=1
     fi
 
-    # Ensure data directory is accessible
-    local data_dir
-    data_dir=$(grep -oP '^MATRIX_DATA_DIR="\K[^"]+' "$CONFIG_FILE" 2>/dev/null || echo "$DATA_DIR")
-    if [ ! -d "$data_dir" ]; then
-      mkdir -p "$data_dir"
-      chown matrix:matrix "$data_dir"
-      ok "Created data directory: ${data_dir}"
-    elif [ ! -w "$data_dir" ]; then
-      err "Data directory not writable: ${data_dir}"
-      info "Fix with: chown matrix:matrix ${data_dir}"
+    # Migrate MATRIX_WEB_DIR from /var/lib/matrix/web to /usr/share/matrix/web
+    local current_web_dir
+    current_web_dir=$(grep -oP '^MATRIX_WEB_DIR="\K[^"]+' "$CONFIG_FILE" 2>/dev/null || true)
+    if [ "$current_web_dir" = "/var/lib/matrix/web" ]; then
+      sed -i "s|^MATRIX_WEB_DIR=.*|MATRIX_WEB_DIR=\"${WEB_DIR}\"|" "$CONFIG_FILE"
+      ok "Migrated MATRIX_WEB_DIR to ${WEB_DIR}"
+      # Move existing web assets
+      if [ -d "/var/lib/matrix/web" ]; then
+        mkdir -p "${WEB_DIR}"
+        cp -r /var/lib/matrix/web/* "${WEB_DIR}/" 2>/dev/null || true
+        rm -rf /var/lib/matrix/web
+        ok "Moved web assets to ${WEB_DIR}"
+      fi
+      config_changed=1
+    fi
+
+    # Backfill MATRIX_SRV_DIR for pre-v0.11 installations
+    if [ -f "$CONFIG_FILE" ] && ! grep -q '^MATRIX_SRV_DIR=' "$CONFIG_FILE" 2>/dev/null; then
+      mkdir -p "$SRV_DIR/repos" "$SRV_DIR/worktrees"
+      chown -R matrix:matrix "$SRV_DIR"
+      echo "MATRIX_SRV_DIR=\"${SRV_DIR}\"" >> "$CONFIG_FILE"
+      ok "Added MATRIX_SRV_DIR=${SRV_DIR}"
+      config_changed=1
+    fi
+
+    # Ensure data and srv directories are accessible
+    for dir_var in MATRIX_DATA_DIR MATRIX_SRV_DIR; do
+      local dir_path
+      dir_path=$(grep -oP "^${dir_var}=\"\\K[^\"]+" "$CONFIG_FILE" 2>/dev/null || true)
+      if [ -n "$dir_path" ]; then
+        if [ ! -d "$dir_path" ]; then
+          mkdir -p "$dir_path"
+          chown matrix:matrix "$dir_path"
+          ok "Created directory: ${dir_path}"
+        fi
+      fi
+    done
+
+    # Update systemd service file for pre-v0.11 installations
+    local service_changed=""
+    if grep -q 'ReadWritePaths=/var/lib/matrix$' "$SERVICE_FILE" 2>/dev/null; then
+      sed -i 's|ReadWritePaths=/var/lib/matrix$|ReadWritePaths=/var/lib/matrix /srv/matrix|' "$SERVICE_FILE"
+      ok "Updated systemd ReadWritePaths to include /srv/matrix"
+      service_changed=1
+    fi
+    if grep -qE 'ProtectHome=(yes|read-only)' "$SERVICE_FILE" 2>/dev/null; then
+      sed -i -E 's/ProtectHome=(yes|read-only)/ProtectHome=no/' "$SERVICE_FILE"
+      ok "Updated ProtectHome=no (allows ACP clients to modify repos in user home dirs)"
+      service_changed=1
+    fi
+    if [ -n "$service_changed" ]; then
+      systemctl daemon-reload
     fi
 
     systemctl restart "$SERVICE_NAME"

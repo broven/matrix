@@ -1,23 +1,23 @@
 import { Hono } from "hono";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getDataDir } from "../../data-dir.js";
+import { getSrvDir } from "../../data-dir.js";
 
 export function filesystemRoutes() {
   const app = new Hono();
 
   app.get("/fs/list", async (c) => {
     const rawPath = c.req.query("path");
-    const browseRoot = getDataDir();
+    const defaultRoot = getSrvDir();
     const dirPath = path.resolve(
-      rawPath ? rawPath.replace(/^~/, browseRoot) : browseRoot,
+      rawPath ? rawPath.replace(/^~/, defaultRoot) : defaultRoot,
     );
 
     // Resolve symlinks before containment check to prevent symlink escape
     let realDirPath: string;
-    let realBrowseRoot: string;
+    let realDefaultRoot: string;
     try {
-      realBrowseRoot = await fs.realpath(browseRoot);
+      realDefaultRoot = await fs.realpath(defaultRoot);
     } catch {
       return c.json({ error: "Browse root does not exist" }, 500);
     }
@@ -28,8 +28,8 @@ export function filesystemRoutes() {
     }
 
     // Path containment: must be within browse root (using resolved paths)
-    if (!realDirPath.startsWith(realBrowseRoot + path.sep) && realDirPath !== realBrowseRoot) {
-      return c.json({ error: `Path must be within ${browseRoot}` }, 403);
+    if (!realDirPath.startsWith(realDefaultRoot + path.sep) && realDirPath !== realDefaultRoot) {
+      return c.json({ error: `Path must be within ${defaultRoot}` }, 403);
     }
 
     let stat;
