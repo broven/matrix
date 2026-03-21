@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from "react";
-import type { AgentListItem, AvailableCommand } from "@matrix/protocol";
-import { ArrowUp, Plus, ChevronDown } from "lucide-react";
+import type { AvailableCommand, PromptContent } from "@matrix/protocol";
+import type { AgentListItem } from "@matrix/protocol";
+import { ArrowUp, Plus, ChevronDown, File } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useFileMention, type FileMention } from "@/hooks/useFileMention";
 
 interface Props {
   onSend: (text: string) => void;
+  onSendContent?: (content: PromptContent[]) => void;
   disabled?: boolean;
   placeholder?: string;
   isProcessing?: boolean;
@@ -18,6 +21,8 @@ interface Props {
   /** When true, agent/profile selectors are locked (session already bound to an agent) */
   agentLocked?: boolean;
   noAgentAvailable?: boolean;
+  files?: string[];
+  sessionCwd?: string;
 }
 
 function useSlashAutocomplete(
@@ -70,8 +75,50 @@ function useSlashAutocomplete(
   };
 }
 
+/** Serialize text with @[path] markers into PromptContent[] */
+function serializeContentBlocks(text: string, mentions: FileMention[], cwd?: string): PromptContent[] {
+  const blocks: PromptContent[] = [];
+  const mentionPaths = new Set(mentions.map((m) => m.path));
+  // Match @[filepath] markers
+  const regex = /@\[([^\]]+)\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const filePath = match[1];
+    if (!mentionPaths.has(filePath)) continue;
+
+    // Text before this mention
+    const before = text.slice(lastIndex, match.index);
+    if (before) {
+      blocks.push({ type: "text", text: before });
+    }
+
+    // The resource link
+    const name = filePath.split("/").pop() ?? filePath;
+    const uri = cwd ? `file://${cwd}/${filePath}` : `file:///${filePath}`;
+    blocks.push({ type: "resource_link", name, uri });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Remaining text after last mention
+  const remaining = text.slice(lastIndex);
+  if (remaining) {
+    blocks.push({ type: "text", text: remaining });
+  }
+
+  // Fallback: if no blocks were created, send as plain text
+  if (blocks.length === 0) {
+    blocks.push({ type: "text", text });
+  }
+
+  return blocks;
+}
+
 export function PromptInput({
   onSend,
+  onSendContent,
   disabled,
   placeholder = "Ask to make changes, @mention files, run /commands",
   isProcessing,
@@ -83,17 +130,27 @@ export function PromptInput({
   availableCommands = [],
   agentLocked = false,
   noAgentAvailable = false,
+  files,
+  sessionCwd,
 }: Props) {
   const [text, setText] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [mentions, setMentions] = useState<FileMention[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const fileDropdownRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const agentBtnRef = useRef<HTMLButtonElement>(null);
 
   const { isOpen, filtered, selectedIndex, setSelectedIndex, slashIndex } =
     useSlashAutocomplete(text, availableCommands, cursorPos);
+
+  const fileMention = useFileMention({
+    files: files ?? [],
+    text,
+    cursorPos,
+  });
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -103,12 +160,19 @@ export function PromptInput({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   }, [text]);
 
-  // Scroll selected item into view
+  // Scroll selected slash command item into view
   useEffect(() => {
     if (!isOpen || !dropdownRef.current) return;
     const item = dropdownRef.current.children[selectedIndex] as HTMLElement | undefined;
     item?.scrollIntoView({ block: "nearest" });
   }, [isOpen, selectedIndex]);
+
+  // Scroll selected file mention item into view
+  useEffect(() => {
+    if (!fileMention.isOpen || !fileDropdownRef.current) return;
+    const item = fileDropdownRef.current.children[fileMention.selectedIndex] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [fileMention.isOpen, fileMention.selectedIndex]);
 
   const selectCommand = useCallback(
     (cmd: AvailableCommand) => {
@@ -119,6 +183,25 @@ export function PromptInput({
       setCursorPos(before.length + cmd.name.length + 2); // after "/<name> "
     },
     [text, slashIndex, cursorPos],
+  );
+
+  const selectFile = useCallback(
+    (filePath: string) => {
+      const name = filePath.split("/").pop() ?? filePath;
+      const mentionId = `m_${Date.now()}`;
+      const before = text.slice(0, fileMention.atIndex);
+      const after = text.slice(cursorPos);
+      // Insert a placeholder marker that we'll render as a pill
+      const marker = `@[${filePath}]`;
+      const newText = `${before}${marker} ${after}`;
+      setText(newText);
+      setCursorPos(before.length + marker.length + 1);
+      setMentions((prev) => [
+        ...prev,
+        { id: mentionId, path: filePath, name, insertPosition: fileMention.atIndex },
+      ]);
+    },
+    [text, cursorPos, fileMention.atIndex],
   );
 
   // Close menu on outside click
@@ -139,11 +222,47 @@ export function PromptInput({
 
   const handleSend = () => {
     if (!text.trim()) return;
-    onSend(text);
+
+    if (onSendContent && mentions.length > 0) {
+      // Parse text into ContentBlock[] splitting on @[filepath] markers
+      const content = serializeContentBlocks(text, mentions, sessionCwd);
+      onSendContent(content);
+    } else {
+      onSend(text);
+    }
     setText("");
+    setMentions([]);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // File mention popover navigation
+    if (fileMention.isOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        fileMention.setSelectedIndex((i) => (i + 1) % fileMention.filtered.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        fileMention.setSelectedIndex((i) => (i - 1 + fileMention.filtered.length) % fileMention.filtered.length);
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        selectFile(fileMention.filtered[fileMention.selectedIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        const before = text.slice(0, fileMention.atIndex);
+        const after = text.slice(cursorPos);
+        setText(before + after);
+        setCursorPos(fileMention.atIndex);
+        return;
+      }
+    }
+
+    // Slash command popover navigation
     if (isOpen) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -186,6 +305,42 @@ export function PromptInput({
       <div className="mx-auto max-w-3xl">
         <div className="relative">
           {/* Popover menus rendered outside overflow-hidden card container */}
+          {fileMention.isOpen && (
+            <div
+              ref={fileDropdownRef}
+              data-testid="file-mention-dropdown"
+              className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-[240px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg"
+            >
+              {fileMention.filtered.map((filePath, index) => {
+                const name = filePath.split("/").pop() ?? filePath;
+                const dir = filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/") + 1) : "";
+                return (
+                  <button
+                    key={filePath}
+                    type="button"
+                    data-testid={`file-mention-item-${name}`}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors",
+                      index === fileMention.selectedIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent/50",
+                    )}
+                    onMouseEnter={() => fileMention.setSelectedIndex(index)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectFile(filePath);
+                    }}
+                  >
+                    <File className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate text-sm">
+                      {dir && <span className="text-muted-foreground">{dir}</span>}
+                      {name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {isOpen && (
             <div
               ref={dropdownRef}
