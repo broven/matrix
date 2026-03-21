@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
+import type { MatrixClient } from "@matrix/sdk";
 
 // ── Env Editor ──────────────────────────────────────────────────
 
@@ -354,10 +355,12 @@ function ConfirmDeleteDialog({ title, message, onConfirm, onClose }: ConfirmDele
 interface SettingsAgentsTabProps {
   agents: AgentListItem[];
   onRefreshAgents: () => void;
+  client?: MatrixClient | null;
 }
 
-export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTabProps) {
-  const { client } = useMatrixClient();
+export function SettingsAgentsTab({ agents, onRefreshAgents, client: injectedClient }: SettingsAgentsTabProps) {
+  const { client: contextClient } = useMatrixClient();
+  const client = injectedClient ?? contextClient;
   // All agents with profiles are expanded by default
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(() =>
     new Set(agents.filter((a) => a.profiles.length > 0).map((a) => a.id)),
