@@ -1,0 +1,1 @@
+{"fullyTracked":false,"platform":"darwin","arch":"arm64","nodeVersion":"v24.13.0","command":"vitest run --config tests/e2e/mac/vitest.config.ts","extraArgs":[],"clean":true,"files":{},"output":[],"dependencies":{"[\"/Users/metajs/.superset/worktrees/matrix/zycode277/met-18-b\",\"dev:mac\"]":"b382a89c46dc624b28518b9450498740687cde702c36bdd846655df4af67c816"},"env":{}}
