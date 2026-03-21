@@ -3,7 +3,8 @@ import { nanoid } from "nanoid";
 import type { Store } from "../../store/index.js";
 import type { SessionManager } from "../../session-manager/index.js";
 import type { WorktreeManager } from "../../worktree-manager/index.js";
-import type { AddRepositoryRequest, CloneRepositoryRequest, CreateWorktreeRequest } from "@matrix/protocol";
+import type { AddRepositoryRequest, CloneRepositoryRequest, CreateWorktreeRequest, CloneValidationResult } from "@matrix/protocol";
+import { normalizeRemoteUrl } from "@matrix/protocol";
 import type { CloneManager } from "../../clone-manager/index.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { getServerConfig } from "./server-config.js";
@@ -237,6 +238,64 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     // Clean up DB records only after successful git removal
     store.deleteWorktree(id);
     return c.json({ ok: true });
+  });
+
+  // ── Clone Validation ────────────────────────────────────────────
+
+  app.post("/repositories/clone/validate", async (c) => {
+    const body = await c.req.json<CloneRepositoryRequest>();
+    const { default: path } = await import("node:path");
+    const { existsSync } = await import("node:fs");
+
+    if (!body.url) {
+      return c.json({ error: "url is required" }, 400);
+    }
+
+    const config = getServerConfig();
+    const { CloneManager: CM } = await import("../../clone-manager/index.js");
+    const repoName = CM.parseRepoName(body.url);
+
+    // Resolve target directory (same logic as clone endpoint)
+    let targetDir: string;
+    if (body.targetDir && path.isAbsolute(body.targetDir)) {
+      targetDir = path.resolve(body.targetDir);
+    } else {
+      const dirName = body.targetDir || repoName;
+      targetDir = path.resolve(config.reposPath, dirName);
+    }
+
+    const warnings: CloneValidationResult["warnings"] = [];
+    const conflicts: CloneValidationResult["conflicts"] = [];
+
+    // Rule 1: Check if remote URL already exists in store
+    const normalizedInput = normalizeRemoteUrl(body.url);
+    const allRepos = store.listRepositories();
+    const urlMatch = allRepos.find(
+      (r) => r.remoteUrl && normalizeRemoteUrl(r.remoteUrl) === normalizedInput
+    );
+    if (urlMatch) {
+      warnings.push({
+        type: "remote_url_exists",
+        message: `Repository "${urlMatch.name}" already exists with this remote URL`,
+        existingRepository: urlMatch,
+      });
+    }
+
+    // Rule 2: Check if target directory already exists
+    if (existsSync(targetDir)) {
+      const isGitRepo = existsSync(path.join(targetDir, ".git"));
+      const pathMatch = store.getRepositoryByPath(targetDir);
+
+      conflicts.push({
+        type: "directory_exists",
+        targetDir,
+        isGitRepo,
+        alreadyAdded: !!pathMatch,
+        existingRepository: pathMatch || undefined,
+      });
+    }
+
+    return c.json({ warnings, conflicts } satisfies CloneValidationResult);
   });
 
   // ── Clone ──────────────────────────────────────────────────────

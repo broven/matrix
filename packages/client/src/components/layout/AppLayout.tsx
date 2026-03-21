@@ -453,6 +453,7 @@ export function AppLayout() {
       void handleRefreshSessions();
     } catch (error) {
       console.error("Failed to delete worktree:", error);
+      throw error;
     }
   };
 
@@ -668,6 +669,7 @@ export function AppLayout() {
         <CloneFromUrlDialog
           client={client}
           onCloneStarted={handleCloneStarted}
+          onOpenRepository={() => setShowCloneFromUrl(false)}
           onClose={() => setShowCloneFromUrl(false)}
         />
       )}

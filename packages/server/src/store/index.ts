@@ -297,6 +297,13 @@ export class Store {
     return row ? this.mapRepository(row) : null;
   }
 
+  getRepositoryByPath(repoPath: string): RepositoryInfo | null {
+    const row = this.db
+      .prepare("SELECT * FROM repositories WHERE path = ?")
+      .get(repoPath) as Record<string, unknown> | undefined;
+    return row ? this.mapRepository(row) : null;
+  }
+
   deleteRepository(id: string): void {
     this.db.transaction(() => {
       // Delete all sessions in worktrees of this repo

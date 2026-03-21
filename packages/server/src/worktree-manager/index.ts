@@ -59,7 +59,7 @@ export class WorktreeManager {
    * List worktrees for a repository.
    */
   async listWorktrees(repoPath: string): Promise<WorktreeListEntry[]> {
-    const result = await $`git -C ${repoPath} worktree list --porcelain`.quiet();
+    const result = await $`git -C ${repoPath} worktree list --porcelain`.quiet().nothrow();
     if (result.exitCode !== 0) {
       throw new Error(`Failed to list worktrees: ${result.stderr.toString()}`);
     }
@@ -162,9 +162,11 @@ export class WorktreeManager {
   }
 
   private async removeWithWt(wt: string, repoPath: string, branch: string): Promise<void> {
-    const result = await $`${wt} remove ${branch}`.cwd(repoPath).quiet();
+    const result = await $`${wt} remove ${branch} --yes`.cwd(repoPath).quiet().nothrow();
     if (result.exitCode !== 0) {
-      throw new Error(`wt remove failed: ${result.stderr.toString()}`);
+      const stderr = result.stderr.toString().trim();
+      console.error(`[worktree] wt remove failed (exit ${result.exitCode}): ${stderr}`);
+      throw new Error(`wt remove failed: ${stderr}`);
     }
   }
 
@@ -192,15 +194,17 @@ export class WorktreeManager {
     }
 
     // Use non-force removal so uncommitted changes are not silently discarded
-    const result = await $`git -C ${repoPath} worktree remove ${worktreePath}`.quiet();
+    const result = await $`git -C ${repoPath} worktree remove ${worktreePath}`.quiet().nothrow();
     if (result.exitCode !== 0) {
-      throw new Error(`git worktree remove failed: ${result.stderr.toString()}`);
+      const stderr = result.stderr.toString().trim();
+      console.error(`[worktree] git worktree remove failed (exit ${result.exitCode}): ${stderr}`);
+      throw new Error(`git worktree remove failed: ${stderr}`);
     }
 
     // Use -d (not -D) so unmerged branches are not silently deleted
-    const branchResult = await $`git -C ${repoPath} branch -d ${branch}`.quiet();
+    const branchResult = await $`git -C ${repoPath} branch -d ${branch}`.quiet().nothrow();
     if (branchResult.exitCode !== 0) {
-      console.warn(`[worktree] Branch deletion failed (branch may not be fully merged): ${branchResult.stderr.toString()}`);
+      console.warn(`[worktree] Branch deletion failed (branch may not be fully merged): ${branchResult.stderr.toString().trim()}`);
     }
   }
 
