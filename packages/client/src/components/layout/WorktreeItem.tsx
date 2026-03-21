@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SessionInfo, WorktreeInfo } from "@matrix/protocol";
-import { GitBranch, X } from "lucide-react";
+import { GitBranch, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function getWorktreeStatusColor(sessions: SessionInfo[]) {
@@ -13,12 +13,13 @@ export interface WorktreeItemProps {
   sessions: SessionInfo[];
   selected: boolean;
   onSelect: () => void;
-  onDelete: (worktreeId: string) => void;
+  onDelete: (worktreeId: string) => Promise<void> | void;
 }
 
 export function WorktreeItem({ worktree, sessions, selected, onSelect, onDelete }: WorktreeItemProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const itemRef = useRef<HTMLDivElement>(null);
   const activeSession = sessions.find((s) => s.status !== "closed");
@@ -45,36 +46,49 @@ export function WorktreeItem({ worktree, sessions, selected, onSelect, onDelete 
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [confirming]);
 
+  const handleConfirmDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleting(true);
+    try {
+      await onDelete(worktree.id);
+    } catch {
+      setDeleting(false);
+      setConfirming(false);
+    }
+  };
+
   if (confirming) {
     return (
       <div
         ref={itemRef}
         className="flex w-full items-center justify-between rounded-lg border border-destructive/30 bg-destructive/8 px-2.5 py-2"
       >
-        <span className="text-sm font-medium">Delete?</span>
+        <span className="text-sm font-medium">{deleting ? "Deleting..." : "Delete?"}</span>
         <div className="flex gap-1.5">
-          <button
-            type="button"
-            className="rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirming(false);
-              onDelete(worktree.id);
-            }}
-            data-testid="confirm-delete-btn"
-          >
-            Yes
-          </button>
-          <button
-            type="button"
-            className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirming(false);
-            }}
-          >
-            No
-          </button>
+          {deleting ? (
+            <Loader2 className="size-4 animate-spin text-destructive" />
+          ) : (
+            <>
+              <button
+                type="button"
+                className="rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
+                onClick={handleConfirmDelete}
+                data-testid="confirm-delete-btn"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirming(false);
+                }}
+              >
+                No
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
