@@ -1,11 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MatrixClient } from "@matrix/sdk";
 import type { FsEntry } from "@matrix/protocol";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, FolderGit2, Folder, ArrowUp, Loader2 } from "lucide-react";
+import { X, FolderGit2, Folder, ArrowUp, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 500;
+
+function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof TypeError)) return false;
+  const msg = err.message.toLowerCase();
+  return msg === "load failed" || msg === "failed to fetch" || msg === "networkerror when attempting to fetch resource.";
+}
 
 interface FileExplorerDialogProps {
   client: MatrixClient;
@@ -26,20 +35,38 @@ export function FileExplorerDialog({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<FsEntry | null>(null);
+  const loadIdRef = useRef(0);
 
   const loadDirectory = async (path: string) => {
+    const id = ++loadIdRef.current;
     setLoading(true);
     setError(null);
     setSelectedEntry(null);
-    try {
-      const res = await client.listDirectory(path);
-      setEntries(res.entries);
-      setCurrentPath(path);
-      setPathInput(path);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to list directory");
-    } finally {
-      setLoading(false);
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (id !== loadIdRef.current) return; // superseded by newer load
+      try {
+        const res = await client.listDirectory(path);
+        if (id !== loadIdRef.current) return;
+        setEntries(res.entries);
+        setCurrentPath(path);
+        setPathInput(path);
+        setLoading(false);
+        return;
+      } catch (err) {
+        if (id !== loadIdRef.current) return;
+        // Only retry on network errors, not server-side errors
+        if (isNetworkError(err) && attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+          continue;
+        }
+        const message = isNetworkError(err)
+          ? "Could not reach server"
+          : err instanceof Error ? err.message : "Failed to list directory";
+        setError(message);
+        setLoading(false);
+        return;
+      }
     }
   };
 
@@ -113,8 +140,18 @@ export function FileExplorerDialog({
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : error ? (
-            <div className="flex h-full items-center justify-center py-12">
+            <div className="flex h-full flex-col items-center justify-center gap-2 py-12">
               <p className="text-sm text-destructive">{error}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => loadDirectory(currentPath)}
+                data-testid="retry-btn"
+              >
+                <RefreshCw className="size-3" />
+                Retry
+              </Button>
             </div>
           ) : entries.length === 0 ? (
             <div className="flex h-full items-center justify-center py-12">
