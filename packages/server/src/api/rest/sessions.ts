@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import type { Store } from "../../store/index.js";
 import type { SessionManager } from "../../session-manager/index.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
 
-export function sessionRoutes(store: Store, sessionManager: SessionManager) {
+export function sessionRoutes(store: Store, sessionManager: SessionManager, connectionManager: ConnectionManager) {
   const app = new Hono();
 
   app.get("/sessions", (c) => {
@@ -29,6 +30,7 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager) {
     const sessionId = c.req.param("id");
     sessionManager.closeSession(sessionId, store);
     store.deleteSession(sessionId);
+    connectionManager.broadcastToAll({ type: "server:session_closed", sessionId });
     return c.json({ ok: true });
   });
 

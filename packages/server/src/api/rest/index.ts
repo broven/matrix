@@ -4,6 +4,7 @@ import type { Store } from "../../store/index.js";
 import type { SessionManager } from "../../session-manager/index.js";
 import type { WorktreeManager } from "../../worktree-manager/index.js";
 import type { CloneManager } from "../../clone-manager/index.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
 import { agentRoutes } from "./agents.js";
 import { sessionRoutes } from "./sessions.js";
 import { repositoryRoutes } from "./repositories.js";
@@ -17,18 +18,20 @@ interface RestRouteDeps {
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
   cloneManager: CloneManager;
+  connectionManager: ConnectionManager;
   onAgentConfigChange: () => void;
 }
 
 export function createRestRoutes(deps: RestRouteDeps) {
   const app = new Hono();
   app.route("/", agentRoutes(deps.agentManager));
-  app.route("/", sessionRoutes(deps.store, deps.sessionManager));
+  app.route("/", sessionRoutes(deps.store, deps.sessionManager, deps.connectionManager));
   app.route("/", repositoryRoutes({
     store: deps.store,
     sessionManager: deps.sessionManager,
     worktreeManager: deps.worktreeManager,
     cloneManager: deps.cloneManager,
+    connectionManager: deps.connectionManager,
   }));
   app.route("/", filesystemRoutes());
   app.route("/", serverConfigRoutes());

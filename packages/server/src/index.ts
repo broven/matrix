@@ -404,6 +404,7 @@ app.route("/", createRestRoutes({
   sessionManager,
   worktreeManager,
   cloneManager,
+  connectionManager,
   onAgentConfigChange: refreshAgentConfigs,
 }));
 app.route("/", createTransportRoutes({

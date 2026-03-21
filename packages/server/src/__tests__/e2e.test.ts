@@ -324,6 +324,7 @@ function createTestApp() {
     store,
     sessionManager,
     worktreeManager: new WorktreeManager(),
+    connectionManager,
     createSessionForWorktree: async () => ({ sessionId: "sess_test", modes: { currentModeId: "code", availableModes: [] } }),
   }));
   app.route(
