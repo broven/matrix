@@ -23,6 +23,13 @@ import type {
 import { createTransport, type Transport } from "./transport/index.js";
 import { MatrixSession } from "./session.js";
 
+/** Server-level events for multi-client sync */
+export type ServerEvent =
+  | { type: "server:session_created"; session: SessionInfo }
+  | { type: "server:session_closed"; sessionId: string }
+  | { type: "server:repository_added"; repository: RepositoryInfo }
+  | { type: "server:repository_removed"; repositoryId: string };
+
 export interface MatrixClientConfig {
   serverUrl: string;
   token: string;
@@ -37,6 +44,7 @@ export class MatrixClient {
   private sessions = new Map<string, MatrixSession>();
   private statusListeners: Array<(status: ConnectionStatus) => void> = [];
   private errorListeners: Array<(error: Error) => void> = [];
+  private serverEventListeners = new Set<(event: ServerEvent) => void>();
 
   constructor(config: MatrixClientConfig) {
     this.serverUrl = config.serverUrl;
@@ -90,6 +98,12 @@ export class MatrixClient {
     return () => {
       this.errorListeners = this.errorListeners.filter((l) => l !== listener);
     };
+  }
+
+  /** Subscribe to server-level events (session/repo changes from other clients). */
+  onServerEvent(callback: (event: ServerEvent) => void): () => void {
+    this.serverEventListeners.add(callback);
+    return () => { this.serverEventListeners.delete(callback); };
   }
 
   async getAgents(): Promise<AgentListItem[]> {
@@ -411,6 +425,15 @@ export class MatrixClient {
           session?.handleError({ code: msg.code, message: msg.message });
         }
         console.error("[MatrixClient] Server error:", msg.message);
+        break;
+      }
+      case "server:session_created":
+      case "server:session_closed":
+      case "server:repository_added":
+      case "server:repository_removed": {
+        for (const listener of this.serverEventListeners) {
+          listener(msg);
+        }
         break;
       }
     }
