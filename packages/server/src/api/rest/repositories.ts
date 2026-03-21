@@ -5,6 +5,7 @@ import type { SessionManager } from "../../session-manager/index.js";
 import type { WorktreeManager } from "../../worktree-manager/index.js";
 import type { AddRepositoryRequest, CloneRepositoryRequest, CreateWorktreeRequest } from "@matrix/protocol";
 import type { CloneManager } from "../../clone-manager/index.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
 import { getServerConfig } from "./server-config.js";
 
 interface RepositoryRouteDeps {
@@ -12,10 +13,11 @@ interface RepositoryRouteDeps {
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
   cloneManager: CloneManager;
+  connectionManager: ConnectionManager;
 }
 
 export function repositoryRoutes(deps: RepositoryRouteDeps) {
-  const { store, sessionManager, worktreeManager, cloneManager } = deps;
+  const { store, sessionManager, worktreeManager, cloneManager, connectionManager } = deps;
   const app = new Hono();
 
   // ── Repositories ────────────────────────────────────────────────
@@ -52,6 +54,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       defaultBranch,
     });
 
+    connectionManager.broadcastToAll({ type: "server:repository_added", repository: repo });
     return c.json(repo, 201);
   });
 
@@ -76,6 +79,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       for (const session of wtSessions) {
         if (session.status !== "closed") {
           sessionManager.closeSession(session.sessionId, store);
+          connectionManager.broadcastToAll({ type: "server:session_closed", sessionId: session.sessionId });
         }
       }
       // Remove the git worktree
@@ -121,6 +125,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     }
 
     store.deleteRepository(id);
+    connectionManager.broadcastToAll({ type: "server:repository_removed", repositoryId: id });
     return c.json({ ok: true });
   });
 
@@ -170,6 +175,11 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
         worktreeId: worktree.id,
       });
 
+      const sessionInfo = store.listSessions().find(s => s.sessionId === sessionId);
+      if (sessionInfo) {
+        connectionManager.broadcastToAll({ type: "server:session_created", session: sessionInfo });
+      }
+
       return c.json({ worktree, sessionId }, 201);
     } catch (error) {
       // Rollback: clean up DB record if it was created
@@ -209,6 +219,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     for (const session of wtSessions) {
       if (session.status !== "closed") {
         sessionManager.closeSession(session.sessionId, store);
+        connectionManager.broadcastToAll({ type: "server:session_closed", sessionId: session.sessionId });
       }
     }
 
@@ -289,6 +300,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
                 defaultBranch,
               });
               job.repositoryId = repo.id;
+              connectionManager.broadcastToAll({ type: "server:repository_added", repository: repo });
             }
           } catch (err) {
             console.error("[clone] Failed to auto-register repository:", err);

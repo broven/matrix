@@ -61,6 +61,14 @@ export class ConnectionManager {
     }
   }
 
+  /** Broadcast a server-level event to all connected clients (no eventId, no buffering). */
+  broadcastToAll(message: ServerMessage): void {
+    const data = JSON.stringify(message);
+    for (const [, conn] of this.connections) {
+      conn.sender.send(data);
+    }
+  }
+
   replayMissed(connectionId: string, sessionId: string, lastEventId: number): boolean {
     const conn = this.connections.get(connectionId);
     const buffer = this.messageBuffers.get(sessionId);

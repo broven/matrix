@@ -11,15 +11,17 @@ import {
   Pencil,
   Play,
   Plus,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
-import type { AgentListItem, AgentEnvProfileSummary, AgentTestResult, AgentTestStep, CustomAgent, AgentEnvProfile } from "@matrix/protocol";
+import type { AgentListItem, AgentEnvProfileSummary, AgentTestResult, AgentTestStep, CustomAgent, AgentEnvProfile, ServerConfig } from "@matrix/protocol";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
+import type { MatrixClient } from "@matrix/sdk";
 
 // ── Env Editor ──────────────────────────────────────────────────
 
@@ -354,14 +356,28 @@ function ConfirmDeleteDialog({ title, message, onConfirm, onClose }: ConfirmDele
 interface SettingsAgentsTabProps {
   agents: AgentListItem[];
   onRefreshAgents: () => void;
+  client?: MatrixClient | null;
+  /** When true, removes outer padding/max-width and title — for embedding inside another panel */
+  embedded?: boolean;
 }
 
-export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTabProps) {
-  const { client } = useMatrixClient();
+export function SettingsAgentsTab({ agents, onRefreshAgents, client: injectedClient, embedded }: SettingsAgentsTabProps) {
+  const { client: contextClient } = useMatrixClient();
+  const client = injectedClient ?? contextClient;
   // All agents with profiles are expanded by default
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(() =>
     new Set(agents.filter((a) => a.profiles.length > 0).map((a) => a.id)),
   );
+
+  // Default agent tracking
+  const [defaultAgentId, setDefaultAgentId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!client) return;
+    client.getServerConfig().then((config: ServerConfig) => {
+      setDefaultAgentId(config.defaultAgent ?? agents[0]?.id);
+    }).catch(() => {});
+  }, [client, agents]);
   const [dialog, setDialog] = useState<
     | null
     | { kind: "create-agent" }
@@ -467,12 +483,17 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
       return next;
     });
     try {
-      const full = await fetchFullAgent(agent.id);
-      const result = await client.testCustomAgent({
-        command: agent.command,
-        args: full?.args ?? [],
-        env: full?.env,
-      });
+      let result;
+      if (agent.source === "custom") {
+        const full = await fetchFullAgent(agent.id);
+        result = await client.testCustomAgent({
+          command: agent.command,
+          args: full?.args ?? [],
+          env: full?.env,
+        });
+      } else {
+        result = await client.testAgent(agent.id);
+      }
       setAgentTestResults((prev) => ({ ...prev, [agent.id]: result }));
       // Auto-expand the agent to show results
       setExpandedAgents((prev) => new Set(prev).add(agent.id));
@@ -488,6 +509,12 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
     } finally {
       setTestingAgentId(null);
     }
+  };
+
+  const handleMakeDefault = async (agentId: string) => {
+    if (!client) return;
+    await client.updateServerConfig({ defaultAgent: agentId });
+    setDefaultAgentId(agentId);
   };
 
   const fetchFullAgent = useCallback(async (agentId: string): Promise<CustomAgent | null> => {
@@ -559,6 +586,23 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
 
           {/* Actions */}
           <div className="flex items-center gap-1">
+            {defaultAgentId === agent.id ? (
+              <span className="flex h-7 items-center px-2 text-xs text-amber-500" data-testid={`default-agent-indicator-${agent.id}`}>
+                <Star className="mr-1 size-3 fill-current" />
+                Default
+              </span>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => handleMakeDefault(agent.id)}
+                data-testid={`make-default-btn-${agent.id}`}
+              >
+                <Star className="mr-1 size-3" />
+                Default
+              </Button>
+            )}
             {!isCustom && (
               <Button
                 variant="ghost"
@@ -581,22 +625,22 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
               <Plus className="mr-1 size-3" />
               Profile
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={() => handleTestAgentInline(agent)}
+              disabled={testingAgentId === agent.id}
+              data-testid={`test-agent-btn-${agent.id}`}
+            >
+              {testingAgentId === agent.id ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Play className="size-3.5" />
+              )}
+            </Button>
             {isCustom && (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  onClick={() => handleTestAgentInline(agent)}
-                  disabled={testingAgentId === agent.id}
-                  data-testid={`test-agent-btn-${agent.id}`}
-                >
-                  {testingAgentId === agent.id ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Play className="size-3.5" />
-                  )}
-                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -662,12 +706,12 @@ export function SettingsAgentsTab({ agents, onRefreshAgents }: SettingsAgentsTab
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6" data-testid="agents-tab">
+    <div className={embedded ? "space-y-4" : "mx-auto max-w-2xl space-y-6 p-6"} data-testid="agents-tab">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Agents</h3>
+        {!embedded && <h3 className="text-lg font-semibold">Agents</h3>}
         <Button
           size="sm"
-          className="rounded-lg"
+          className={embedded ? "ml-auto rounded-lg" : "rounded-lg"}
           onClick={() => setDialog({ kind: "create-agent" })}
           data-testid="add-custom-agent-btn"
         >

@@ -19,6 +19,7 @@ interface Props {
   events: SessionEvent[];
   onApprove: (toolCallId: string, optionId: string) => void;
   onReject: (toolCallId: string, optionId: string) => void;
+  queuedTexts?: Set<string>;
 }
 
 interface RenderableToolCall {
@@ -220,7 +221,7 @@ function ToolCallCluster({ items, allItems }: { items: RenderItem[]; allItems: R
   );
 }
 
-export function MessageList({ events, onApprove, onReject }: Props) {
+export function MessageList({ events, onApprove, onReject, queuedTexts }: Props) {
   const renderItems = buildRenderItems(events);
 
   // Group consecutive tool calls together
@@ -259,11 +260,18 @@ export function MessageList({ events, onApprove, onReject }: Props) {
             const isOwnMessage = isUserMessage(item.text);
 
             if (isOwnMessage) {
+              const messageText = item.text.slice(2);
+              const isQueued = queuedTexts?.has(messageText);
               return (
-                <div key={item.key} className="flex justify-end animate-message-in" data-testid="message-item">
+                <div key={item.key} className="flex flex-col items-end gap-1 animate-message-in" data-testid="message-item">
                   <div className="max-w-[80%] rounded-[1.25rem] rounded-br-md bg-user-bubble px-4 py-2.5 text-[0.9375rem] leading-relaxed text-user-bubble-foreground">
-                    <p className="whitespace-pre-wrap">{item.text.slice(2)}</p>
+                    <p className="whitespace-pre-wrap">{messageText}</p>
                   </div>
+                  {isQueued && (
+                    <span className="mr-1 text-xs text-muted-foreground" data-testid="queued-indicator">
+                      Queued
+                    </span>
+                  )}
                 </div>
               );
             }

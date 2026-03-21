@@ -11,7 +11,7 @@ export interface SavedServer {
 
 interface ServerStoreState {
   servers: SavedServer[];
-  addServer: (server: Omit<SavedServer, "id" | "lastConnected">) => void;
+  addServer: (server: Omit<SavedServer, "id" | "lastConnected">) => string | null;
   removeServer: (id: string) => void;
   updateServer: (id: string, updates: Partial<Pick<SavedServer, "name" | "serverUrl" | "token">>) => void;
   touchServer: (id: string) => void;
@@ -20,7 +20,7 @@ interface ServerStoreState {
 
 const ServerStoreContext = createContext<ServerStoreState>({
   servers: [],
-  addServer: () => {},
+  addServer: () => null,
   removeServer: () => {},
   updateServer: () => {},
   touchServer: () => {},
@@ -86,13 +86,17 @@ export function ServerStoreProvider({ children }: { children: ReactNode }) {
     persistServers(updated);
   }, []);
 
-  const addServer = useCallback((server: Omit<SavedServer, "id" | "lastConnected">) => {
+  const addServer = useCallback((server: Omit<SavedServer, "id" | "lastConnected">): string | null => {
+    const id = generateId();
+    let added = false;
     setServers((prev) => {
       if (prev.some((s) => s.serverUrl === server.serverUrl)) return prev;
-      const updated = [...prev, { ...server, id: generateId(), lastConnected: null }];
+      added = true;
+      const updated = [...prev, { ...server, id, lastConnected: null }];
       persistServers(updated);
       return updated;
     });
+    return added ? id : null;
   }, []);
 
   const removeServer = useCallback((id: string) => {

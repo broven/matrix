@@ -17,6 +17,7 @@ interface Props {
   availableCommands?: AvailableCommand[];
   /** When true, agent/profile selectors are locked (session already bound to an agent) */
   agentLocked?: boolean;
+  noAgentAvailable?: boolean;
 }
 
 function useSlashAutocomplete(
@@ -81,6 +82,7 @@ export function PromptInput({
   onProfileChange,
   availableCommands = [],
   agentLocked = false,
+  noAgentAvailable = false,
 }: Props) {
   const [text, setText] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
@@ -238,6 +240,7 @@ export function PromptInput({
                           ? "bg-accent text-accent-foreground"
                           : "hover:bg-accent/50",
                       )}
+                      data-testid={`agent-option-${agent.id}`}
                     >
                       <span className="size-1.5 shrink-0 rounded-full bg-primary" />
                       <span className="truncate">{agent.name}</span>
@@ -283,7 +286,7 @@ export function PromptInput({
               }}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              disabled={disabled}
+              disabled={disabled || noAgentAvailable}
               rows={1}
               className="max-h-[200px] min-h-[52px] resize-none border-0 bg-transparent px-4 py-3.5 text-[0.9375rem] leading-relaxed placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
               data-testid="chat-input"
@@ -299,6 +302,7 @@ export function PromptInput({
                     agentLocked ? "opacity-60 cursor-default" : "hover:bg-secondary/80",
                   )}
                   disabled={agentLocked}
+                  data-testid="agent-selector-btn"
                 >
                   <span className="size-1.5 rounded-full bg-primary" />
                   {selectedAgent?.name ?? "Select agent"}
@@ -319,10 +323,10 @@ export function PromptInput({
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={disabled || !text.trim()}
+                  disabled={disabled || !text.trim() || noAgentAvailable || (!selectedAgentId && !agentLocked)}
                   className={cn(
                     "flex size-8 items-center justify-center rounded-full transition-all",
-                    text.trim() && !disabled
+                    text.trim() && !disabled && !noAgentAvailable && (!!selectedAgentId || agentLocked)
                       ? "bg-foreground text-background hover:opacity-80"
                       : "bg-muted text-muted-foreground/40",
                   )}

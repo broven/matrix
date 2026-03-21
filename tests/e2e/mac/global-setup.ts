@@ -140,6 +140,35 @@ export async function setup() {
 
       // Set as default agent
       await serverRequest("PUT", "/server/config", { defaultAgent: res.id });
+
+      // Reload webview so it picks up the new agent list and default
+      try {
+        await fetch(`${baseUrl}/bridge/eval`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ script: "window.location.reload()" }),
+        });
+      } catch {
+        // Client may disconnect during reload
+      }
+
+      // Wait for webview to come back with the mock agent visible
+      for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          const evalRes = await fetch(`${baseUrl}/bridge/eval`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ script: `!!document.querySelector('[data-testid="add-repo-btn"]')` }),
+          });
+          if (evalRes.ok) {
+            const data = (await evalRes.json()) as { ok: boolean; result: unknown };
+            if (data.ok && data.result === true) break;
+          }
+        } catch {
+          // Not ready yet
+        }
+      }
     } catch (err) {
       console.error("[global-setup] Mock agent registration failed:", err);
     }

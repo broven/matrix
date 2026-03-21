@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PathInput } from "@/components/ui/path-input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { X, ChevronRight, ChevronDown, FolderOpen, Loader2 } from "lucide-react";
+import { X, ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FileExplorerDialog } from "@/components/repository/FileExplorerDialog";
 import type { MatrixClient } from "@matrix/sdk";
 import { parseRepoName } from "@matrix/protocol";
 
@@ -21,7 +21,6 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
   const [cloning, setCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [dirManuallyEdited, setDirManuallyEdited] = useState(false);
 
   const handleUrlChange = (value: string) => {
@@ -98,25 +97,14 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
                   <label className="mb-1.5 block text-sm font-medium">
                     Target directory
                   </label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={targetDir}
-                      onChange={(e) => {
-                        setTargetDir(e.target.value);
-                        setDirManuallyEdited(true);
-                      }}
-                      placeholder="repo"
-                      className="rounded-lg"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0 rounded-lg"
-                      onClick={() => setShowFileBrowser(true)}
-                    >
-                      <FolderOpen className="size-4" />
-                    </Button>
-                  </div>
+                  <PathInput
+                    value={targetDir}
+                    onChange={(v) => { setTargetDir(v); setDirManuallyEdited(true); }}
+                    onBrowseSelect={() => { setDirManuallyEdited(true); }}
+                    client={client}
+                    placeholder="repo"
+                    data-testid="clone-target-dir-input"
+                  />
                 </div>
 
                 <div>
@@ -161,18 +149,6 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onClose }: CloneFro
           </div>
         </div>
       </div>
-
-      {showFileBrowser && (
-        <FileExplorerDialog
-          client={client}
-          onSelect={(dir) => {
-            setTargetDir(dir);
-            setDirManuallyEdited(true);
-            setShowFileBrowser(false);
-          }}
-          onClose={() => setShowFileBrowser(false)}
-        />
-      )}
     </div>
   );
 }

@@ -10,6 +10,25 @@ allowed-tools: Bash(curl *), Bash(cat *), Bash(ps *), Bash(pgrep *), Bash(kill *
 
 Interact with the running Matrix dev client through the WebSocket-based automation bridge on the Matrix server.
 
+## Environment Isolation — CRITICAL
+
+There are **two completely separate environments** that MUST NOT be confused:
+
+| | Dev (`pnpm dev:mac`) | E2E Test (`pnpm test:e2e:mac`) |
+|---|---|---|
+| Config file | `.env.local` | `.env.test.local` |
+| Ports | `CLIENT_PORT`, `MATRIX_PORT` from `.env.local` | Different ports from `.env.test.local` |
+| Database | `./data/matrix.db` (default) | `./data/test.db` |
+| Lifecycle | Long-running, manually started | Started/stopped automatically by wireit |
+| Bridge target | Your dev app window | A separate Tauri app instance |
+
+**Rules:**
+- **NEVER modify `.env.test.local` ports to match `.env.local`** — they must be different for isolation
+- **NEVER modify `.env.local` ports to match `.env.test.local`** — same reason
+- The bridge in this skill connects to the **dev app** (`.env.local` ports)
+- E2E tests run against their **own isolated server + Tauri app** with their own ports and database
+- If you need to debug an e2e test failure, reproduce it on the **dev app** by simulating the same steps via bridge — do NOT change port configs
+
 ## Prerequisites
 
 The dev app must be running:
@@ -190,22 +209,54 @@ curl --noproxy "*" -s -X POST \
 7. Use `/bridge/reset` before repeating scenarios
 8. Use `/bridge/wait` instead of `sleep` loops
 
-## Debugging Flaky E2E Tests
+## Debugging E2E Test Failures — Step by Step Mode
 
-When an e2e test (`tests/e2e/mac/flows/*.test.ts`) fails or is flaky, **DO NOT** repeatedly modify test code and rerun the full suite. Instead, manually replay the test steps via the bridge to find the exact step that breaks.
+When an e2e test (`tests/e2e/mac/flows/*.test.ts`) fails or is flaky or you are creating a fresh new one, **DO NOT** repeatedly modify test code and rerun the full suite. This is slow and gives you no visibility into what the UI actually looks like at each step.
+
+**Instead, always use Step by Step mode:** manually replay the test steps via the bridge on the **dev app** to find the exact step that breaks. This is the primary debugging workflow — use it aggressively.
+
+### When to use Step by Step mode
+
+- An e2e test fails or times out — **reproduce on dev app via bridge FIRST**
+- A test is flaky — replay steps manually to find the timing-sensitive step
+- Writing a new test — prototype each step via bridge before writing test code
+- Any UI behavior question — check it live via bridge instead of guessing
 
 ### Methodology
 
 1. **Read the failing test** to understand its step-by-step flow
-2. **Set up environment vars** for bridge access:
+2. **Connect to the dev app** (NOT the test app — they are separate environments):
    ```bash
    set -a; source .env.local; set +a
    export B="http://127.0.0.1:$MATRIX_PORT"
    export T="$MATRIX_TOKEN"
    ```
-3. **Replay each test step individually** via curl, checking the result after each one
-4. **Use DOM snapshot between steps** to see what the UI actually looks like
-5. **Once you find the broken step**, fix it, then verify the fix manually before updating test code
+3. **Reproduce the test's preconditions** on the dev app (register agents, create repos, etc. via server API)
+4. **Replay each test step individually** via curl, checking the result after each one
+5. **Use DOM snapshot between steps** to see what the UI actually looks like
+6. **Once you find the broken step**, fix it, then verify the fix manually via bridge
+7. **Only then** run `pnpm test:e2e:mac` to confirm
+
+### Reproducing E2E preconditions on dev app
+
+E2E tests have a `global-setup.ts` that registers a Mock Agent and sets it as default. To reproduce on dev:
+
+```bash
+# Register a mock agent (same as global-setup does)
+MOCK_PATH="$(pwd)/tests/e2e/mac/fixtures/mock-agent/index.mjs"
+curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+  -d "{\"name\":\"Mock Agent\",\"command\":\"node\",\"args\":[\"$MOCK_PATH\"]}" \
+  "$B/custom-agents"
+
+# Set it as default (use the id from the response above)
+curl -s -X PUT -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+  -d '{"defaultAgent":"<agent_id>"}' \
+  "$B/server/config"
+
+# Reload webview so it picks up the change
+curl -s -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+  -d '{"script":"window.location.reload()"}' "$B/bridge/eval"
+```
 
 ### Common UI Operations
 

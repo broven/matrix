@@ -1,197 +1,39 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import type { AgentListItem, ConnectionStatus, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
-import { Plus, Search, ChevronRight, ChevronDown, GitBranch, FolderGit2, Loader2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { SessionItem } from "@/components/layout/SessionItem";
 import { cn } from "@/lib/utils";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AddRepositoryMenu } from "@/components/repository/AddRepositoryMenu";
+import { ServerSection } from "@/components/layout/ServerSection";
 
-interface SidebarProps {
-  agents: AgentListItem[];
+export interface ServerInfo {
+  serverId: string;
+  name: string;
+  status: ConnectionStatus;
+  error: string | null;
   sessions: SessionInfo[];
   repositories: RepositoryInfo[];
   worktrees: Map<string, WorktreeInfo[]>;
+  agents: AgentListItem[];
   cloningRepos: Map<string, string>;
-  connectionStatus: ConnectionStatus;
+}
+
+export interface SidebarProps {
+  servers: ServerInfo[];
   selectedSessionId: string | null;
-  onSelectSession: (sessionId: string) => void;
+  onSelectSession: (sessionId: string, serverId: string) => void;
   onCreateSession: (agentId: string, cwd: string) => Promise<string | null>;
   onDeleteSession: (sessionId: string) => void;
   onOpenProject: () => void;
   onCloneFromUrl: () => void;
   onCreateWorktree: (repoId: string) => void;
   onDeleteWorktree: (worktreeId: string) => void;
-}
-
-function getWorktreeStatusColor(sessions: SessionInfo[]) {
-  if (sessions.some((s) => s.status === "active")) return "bg-success";
-  return "bg-muted-foreground/30";
-}
-
-interface WorktreeItemProps {
-  worktree: WorktreeInfo;
-  sessions: SessionInfo[];
-  selected: boolean;
-  onSelect: () => void;
-  onDelete: (worktreeId: string) => void;
-}
-
-function WorktreeItem({ worktree, sessions, selected, onSelect, onDelete }: WorktreeItemProps) {
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-  const itemRef = useRef<HTMLDivElement>(null);
-  const activeSession = sessions.find((s) => s.status !== "closed");
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
-        setContextMenu(null);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [contextMenu]);
-
-  useEffect(() => {
-    if (!confirming) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (itemRef.current && !itemRef.current.contains(event.target as Node)) {
-        setConfirming(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [confirming]);
-
-  if (confirming) {
-    return (
-      <div
-        ref={itemRef}
-        className="flex w-full items-center justify-between rounded-lg border border-destructive/30 bg-destructive/8 px-2.5 py-2"
-      >
-        <span className="text-sm font-medium">Delete?</span>
-        <div className="flex gap-1.5">
-          <button
-            type="button"
-            className="rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirming(false);
-              onDelete(worktree.id);
-            }}
-            data-testid="confirm-delete-btn"
-          >
-            Yes
-          </button>
-          <button
-            type="button"
-            className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirming(false);
-            }}
-          >
-            No
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div
-        className={cn(
-          "group flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-lg px-2.5 py-2 text-left transition-colors",
-          selected ? "bg-accent" : "hover:bg-accent/50",
-        )}
-        data-testid={`worktree-item-${worktree.branch}`}
-        role="button"
-        tabIndex={0}
-        onClick={() => {
-          if (activeSession) onSelect();
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setContextMenu({ x: e.clientX, y: e.clientY });
-        }}
-        onKeyDown={(e) => {
-          if ((e.key === "Enter" || e.key === " ") && activeSession) {
-            e.preventDefault();
-            onSelect();
-          }
-        }}
-      >
-        <div className={cn("size-2 shrink-0 rounded-full", getWorktreeStatusColor(sessions))} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <GitBranch className="size-3 text-muted-foreground" />
-            <p className="truncate text-sm font-medium">{worktree.branch}</p>
-          </div>
-          {activeSession && (
-            <p className="truncate text-xs text-muted-foreground">
-              {activeSession.agentId}
-            </p>
-          )}
-        </div>
-        <div
-          role="button"
-          tabIndex={0}
-          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            setConfirming(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              e.stopPropagation();
-              setConfirming(true);
-            }
-          }}
-          aria-label="Delete worktree"
-          data-testid="delete-worktree-btn"
-        >
-          <X className="size-3.5" />
-        </div>
-      </div>
-
-      {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className="fixed z-50 min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm text-destructive transition-colors hover:bg-destructive/10"
-            onClick={() => {
-              setContextMenu(null);
-              setConfirming(true);
-            }}
-            data-testid="delete-repo-option"
-          >
-            <X className="size-3.5" />
-            Delete
-          </button>
-        </div>
-      )}
-    </>
-  );
+  onReconnect: (serverId: string) => void;
 }
 
 export function Sidebar({
-  agents,
-  sessions,
-  repositories,
-  worktrees,
-  cloningRepos,
-  connectionStatus,
+  servers,
   selectedSessionId,
   onSelectSession,
   onCreateSession,
@@ -200,44 +42,22 @@ export function Sidebar({
   onCloneFromUrl,
   onCreateWorktree,
   onDeleteWorktree,
+  onReconnect,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
-  const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set());
 
-  // Sessions grouped by worktree
-  const sessionsByWorktree = useMemo(() => {
-    const map = new Map<string, SessionInfo[]>();
-    for (const session of sessions) {
-      if (session.worktreeId) {
-        const list = map.get(session.worktreeId) ?? [];
-        list.push(session);
-        map.set(session.worktreeId, list);
-      }
-    }
-    return map;
-  }, [sessions]);
+  // Compute total items across all servers for search threshold
+  const totalItems = servers.reduce((acc, s) => {
+    const legacySessions = s.sessions.filter((sess) => !sess.worktreeId).length;
+    return acc + s.repositories.length + legacySessions + s.cloningRepos.size;
+  }, 0);
 
-  // Legacy sessions (no worktreeId)
-  const legacySessions = useMemo(
-    () => sessions.filter((s) => !s.worktreeId),
-    [sessions],
-  );
-
-  const totalItems = repositories.length + legacySessions.length + cloningRepos.size;
-
-  const toggleRepo = (repoId: string) => {
-    setCollapsedRepos((prev) => {
-      const next = new Set(prev);
-      if (next.has(repoId)) {
-        next.delete(repoId);
-      } else {
-        next.add(repoId);
-      }
-      return next;
-    });
-  };
-
-  const isRepoExpanded = (repoId: string) => !collapsedRepos.has(repoId);
+  // Overall connection status: use best status across servers
+  const overallStatus: ConnectionStatus = servers.some((s) => s.status === "connected")
+    ? "connected"
+    : servers.some((s) => s.status === "connecting" || s.status === "reconnecting")
+      ? "connecting"
+      : "offline";
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -257,10 +77,10 @@ export function Sidebar({
           <div
             className={cn(
               "size-2 rounded-full",
-              connectionStatus === "connected" ? "bg-success" : "bg-muted-foreground/40",
+              overallStatus === "connected" ? "bg-success" : "bg-muted-foreground/40",
             )}
-            title={connectionStatus}
-            data-testid={connectionStatus === "connected" ? "connection-status-connected" : undefined}
+            title={overallStatus}
+            data-testid={overallStatus === "connected" ? "connection-status-connected" : undefined}
           />
         </div>
 
@@ -278,124 +98,33 @@ export function Sidebar({
       </div>
 
       <ScrollArea className="min-h-0 flex-1 px-2">
-        <div className="space-y-1 pb-4">
-          {/* Cloning repositories */}
-          {Array.from(cloningRepos.entries()).map(([jobId, repoName]) => (
-            <div key={jobId} className="flex items-center gap-2 rounded-lg px-3 py-2.5">
-              <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-              <FolderGit2 className="size-3.5 text-muted-foreground" />
-              <span className="truncate text-sm font-medium text-muted-foreground">{repoName}</span>
-              <span className="ml-auto text-xs text-muted-foreground/60">Cloning...</span>
-            </div>
+        <div className="space-y-3 pb-4">
+          {servers.map((server) => (
+            <ServerSection
+              key={server.serverId}
+              serverId={server.serverId}
+              serverName={server.name}
+              status={server.status}
+              error={server.error}
+              repositories={server.repositories}
+              worktrees={server.worktrees}
+              sessions={server.sessions}
+              agents={server.agents}
+              cloningRepos={server.cloningRepos}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={(sessionId) => onSelectSession(sessionId, server.serverId)}
+              onCreateSession={onCreateSession}
+              onDeleteSession={onDeleteSession}
+              onCreateWorktree={onCreateWorktree}
+              onDeleteWorktree={onDeleteWorktree}
+              onReconnect={() => onReconnect(server.serverId)}
+              query={query}
+            />
           ))}
 
-          {/* Repositories with worktrees */}
-          {repositories.map((repo) => {
-            const repoWorktrees = worktrees.get(repo.id) ?? [];
-            const isExpanded = isRepoExpanded(repo.id);
-
-            // Filter by query
-            if (query) {
-              const q = query.toLowerCase();
-              const matchesRepo = repo.name.toLowerCase().includes(q);
-              const matchesWorktree = repoWorktrees.some((wt) => wt.branch.toLowerCase().includes(q));
-              if (!matchesRepo && !matchesWorktree) return null;
-            }
-
-            return (
-              <Collapsible key={repo.id} open={isExpanded} onOpenChange={() => toggleRepo(repo.id)}>
-                <div className="group flex items-center gap-1 rounded-lg px-1 py-1" data-testid={`repo-item-${repo.name}`}>
-                  <CollapsibleTrigger className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium hover:bg-accent/50">
-                    {isExpanded ? (
-                      <ChevronDown className="size-3.5 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="size-3.5 text-muted-foreground" />
-                    )}
-                    <FolderGit2 className="size-3.5 text-muted-foreground" />
-                    <span className="truncate">{repo.name}</span>
-                  </CollapsibleTrigger>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="size-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-accent"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCreateWorktree(repo.id);
-                    }}
-                    title="New worktree"
-                    data-testid="new-session-btn"
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
-                </div>
-
-                <CollapsibleContent>
-                  <div className="ml-4 min-w-0 space-y-0.5 border-l border-border/40 pl-2">
-                    {repoWorktrees.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-muted-foreground/60">
-                        No worktrees
-                      </div>
-                    ) : (
-                      repoWorktrees.map((wt) => {
-                        const wtSessions = sessionsByWorktree.get(wt.id) ?? [];
-                        const activeSession = wtSessions.find((s) => s.status !== "closed");
-                        const isSelected = activeSession?.sessionId === selectedSessionId;
-
-                        return (
-                          <WorktreeItem
-                            key={wt.id}
-                            worktree={wt}
-                            sessions={wtSessions}
-                            selected={isSelected}
-                            onSelect={() => {
-                              if (activeSession) onSelectSession(activeSession.sessionId);
-                            }}
-                            onDelete={onDeleteWorktree}
-                          />
-                        );
-                      })
-                    )}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            );
-          })}
-
-          {/* Legacy sessions (no worktree) */}
-          {legacySessions.length > 0 && (
-            <>
-              {repositories.length > 0 && (
-                <div className="px-3 pb-1 pt-3 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                  Sessions
-                </div>
-              )}
-              {legacySessions
-                .filter((session) => {
-                  if (!query) return true;
-                  const q = query.toLowerCase();
-                  return (
-                    (session.agentId ?? "").toLowerCase().includes(q) ||
-                    session.cwd.toLowerCase().includes(q)
-                  );
-                })
-                .map((session) => (
-                  <SessionItem
-                    key={session.sessionId}
-                    session={session}
-                    selected={session.sessionId === selectedSessionId}
-                    onSelect={() => onSelectSession(session.sessionId)}
-                    onDelete={onDeleteSession}
-                  />
-                ))}
-            </>
-          )}
-
-          {repositories.length === 0 && legacySessions.length === 0 && cloningRepos.size === 0 && (
+          {servers.length === 0 && (
             <div className="px-3 py-8 text-center">
-              <p className="text-sm text-muted-foreground">No repositories</p>
-              <p className="mt-1 text-xs text-muted-foreground/60">
-                Add a repository to get started.
-              </p>
+              <p className="text-sm text-muted-foreground">No servers configured</p>
             </div>
           )}
         </div>

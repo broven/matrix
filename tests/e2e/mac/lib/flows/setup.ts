@@ -244,6 +244,30 @@ export async function spawnAgentViaMessage(
   bridge: BridgeClient,
   opts?: { timeoutMs?: number },
 ): Promise<void> {
+  // Wait for an agent to be selected (placeholder changes from "Select an agent...")
+  await bridge.wait(
+    {
+      kind: "webview.eval",
+      script: `!document.querySelector('[data-testid="chat-input"]')?.placeholder?.includes("Select an agent")`,
+    },
+    { timeoutMs: 10_000, intervalMs: 500 },
+  );
+
+  // Assert Mock Agent is selected (unless using real agents)
+  if (!process.env.REAL_AGENT) {
+    const selectedAgent = await bridge.eval(
+      `document.querySelector('[data-testid="agent-selector-btn"]')?.textContent ?? 'unknown'`,
+    );
+    if (selectedAgent !== "Mock Agent") {
+      const { url, token } = await getSidecarInfo(bridge);
+      const config = await (await fetch(`${url}/server/config`, { headers: { Authorization: `Bearer ${token}` } })).json() as { defaultAgent: string | null };
+      const agents = await (await fetch(`${url}/agents`, { headers: { Authorization: `Bearer ${token}` } })).json() as { id: string; name: string; available: boolean }[];
+      throw new Error(
+        `Expected Mock Agent but got "${selectedAgent}". defaultAgent=${config.defaultAgent}, agents=[${agents.map((a) => `${a.name}(${a.id})`).join(", ")}]`,
+      );
+    }
+  }
+
   await sendMessage(bridge, "hi");
 
   // Wait for agent to actually respond (assistant-message appears in DOM).

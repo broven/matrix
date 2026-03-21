@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
 import { Sidebar } from "@/components/layout/Sidebar";
+import type { ServerInfo } from "@/components/layout/Sidebar";
 
 vi.mock("@/components/ui/scroll-area", () => ({
   ScrollArea: ({ children, className }: { children: ReactNode; className?: string }) => (
@@ -56,13 +57,23 @@ const makeSession = (overrides?: Partial<SessionInfo>): SessionInfo => ({
   ...overrides,
 });
 
+function makeServer(overrides?: Partial<ServerInfo>): ServerInfo {
+  return {
+    serverId: "__sidecar__",
+    name: "Local",
+    status: "connected",
+    error: null,
+    sessions: [],
+    repositories: [],
+    worktrees: new Map<string, WorktreeInfo[]>(),
+    agents: testAgents,
+    cloningRepos: new Map<string, string>(),
+    ...overrides,
+  };
+}
+
 const defaultProps = {
-  agents: testAgents,
-  sessions: [] as SessionInfo[],
-  repositories: [] as RepositoryInfo[],
-  worktrees: new Map<string, WorktreeInfo[]>(),
-  cloningRepos: new Map<string, string>(),
-  connectionStatus: "connected" as const,
+  servers: [makeServer()],
   selectedSessionId: null,
   onSelectSession: vi.fn(),
   onCreateSession: vi.fn(async () => null),
@@ -71,6 +82,7 @@ const defaultProps = {
   onCloneFromUrl: vi.fn(),
   onCreateWorktree: vi.fn(),
   onDeleteWorktree: vi.fn(),
+  onReconnect: vi.fn(),
 };
 
 describe("Sidebar", () => {
@@ -84,15 +96,23 @@ describe("Sidebar", () => {
     expect(screen.getByText("No repositories")).toBeInTheDocument();
   });
 
+  it("renders server section with data-testid", () => {
+    render(<Sidebar {...defaultProps} />);
+    expect(screen.getByTestId("server-section-__sidecar__")).toBeInTheDocument();
+  });
+
+  it("renders server status dot", () => {
+    render(<Sidebar {...defaultProps} />);
+    expect(screen.getByTestId("server-status-dot")).toBeInTheDocument();
+  });
+
   it("renders repository with name", () => {
     const repo = makeRepo();
-    render(
-      <Sidebar
-        {...defaultProps}
-        repositories={[repo]}
-        worktrees={new Map([["repo-1", []]])}
-      />,
-    );
+    const server = makeServer({
+      repositories: [repo],
+      worktrees: new Map([["repo-1", []]]),
+    });
+    render(<Sidebar {...defaultProps} servers={[server]} />);
     expect(screen.getByTestId("repo-item-my-project")).toBeInTheDocument();
     expect(screen.getByText("my-project")).toBeInTheDocument();
   });
@@ -101,15 +121,13 @@ describe("Sidebar", () => {
     const repo = makeRepo();
     const wt = makeWorktree();
     const session = makeSession();
+    const server = makeServer({
+      repositories: [repo],
+      worktrees: new Map([["repo-1", [wt]]]),
+      sessions: [session],
+    });
 
-    render(
-      <Sidebar
-        {...defaultProps}
-        repositories={[repo]}
-        worktrees={new Map([["repo-1", [wt]]])}
-        sessions={[session]}
-      />,
-    );
+    render(<Sidebar {...defaultProps} servers={[server]} />);
 
     expect(screen.getByTestId("worktree-item-feat-login")).toBeInTheDocument();
     expect(screen.getByText("feat-login")).toBeInTheDocument();
@@ -120,35 +138,48 @@ describe("Sidebar", () => {
     const repo = makeRepo();
     const wt = makeWorktree();
     const session = makeSession();
+    const server = makeServer({
+      repositories: [repo],
+      worktrees: new Map([["repo-1", [wt]]]),
+      sessions: [session],
+    });
 
     render(
       <Sidebar
         {...defaultProps}
-        repositories={[repo]}
-        worktrees={new Map([["repo-1", [wt]]])}
-        sessions={[session]}
+        servers={[server]}
         onSelectSession={onSelectSession}
       />,
     );
 
     fireEvent.click(screen.getByTestId("worktree-item-feat-login"));
-    expect(onSelectSession).toHaveBeenCalledWith("sess-1");
+    expect(onSelectSession).toHaveBeenCalledWith("sess-1", "__sidecar__");
   });
 
   it("shows connected status indicator", () => {
-    render(<Sidebar {...defaultProps} connectionStatus="connected" />);
+    render(<Sidebar {...defaultProps} />);
     expect(screen.getByTestId("connection-status-connected")).toBeInTheDocument();
   });
 
   it("shows no connected indicator when offline", () => {
-    render(<Sidebar {...defaultProps} connectionStatus="offline" />);
+    const server = makeServer({ status: "offline" });
+    render(<Sidebar {...defaultProps} servers={[server]} />);
     expect(screen.queryByTestId("connection-status-connected")).not.toBeInTheDocument();
   });
 
   it("renders legacy sessions without worktreeId", () => {
     const session = makeSession({ worktreeId: null, sessionId: "legacy-1" });
-    render(<Sidebar {...defaultProps} sessions={[session]} />);
+    const server = makeServer({ sessions: [session] });
+    render(<Sidebar {...defaultProps} servers={[server]} />);
     // Legacy session should be rendered via SessionItem
     expect(screen.getByTestId("session-item-legacy-1")).toBeInTheDocument();
+  });
+
+  it("renders multiple server sections", () => {
+    const sidecar = makeServer({ serverId: "__sidecar__", name: "Local" });
+    const remote = makeServer({ serverId: "remote-1", name: "Remote Dev", status: "connected" });
+    render(<Sidebar {...defaultProps} servers={[sidecar, remote]} />);
+    expect(screen.getByTestId("server-section-__sidecar__")).toBeInTheDocument();
+    expect(screen.getByTestId("server-section-remote-1")).toBeInTheDocument();
   });
 });

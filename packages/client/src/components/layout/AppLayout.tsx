@@ -2,9 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
 import { MessageSquarePlus, AlertCircle, X } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
+import { useAllServersData } from "@/hooks/useAllServersData";
+import { useServerStore } from "@/hooks/useServerStore";
+import { useMatrixClients } from "@/hooks/useMatrixClients";
 import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
+import type { ServerInfo } from "@/components/layout/Sidebar";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { OpenProjectDialog } from "@/components/repository/OpenProjectDialog";
 import { CloneFromUrlDialog } from "@/components/repository/CloneFromUrlDialog";
@@ -27,13 +31,36 @@ function sortSessions(sessions: SessionInfo[]) {
   });
 }
 
+/** Default server ID for the local sidecar connection */
+const SIDECAR_SERVER_ID = "__sidecar__";
+
 export function AppLayout() {
   const { client, status } = useMatrixClient();
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [repositories, setRepositories] = useState<RepositoryInfo[]>([]);
   const [worktrees, setWorktrees] = useState<Map<string, WorktreeInfo[]>>(new Map());
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSession, setSelectedSession] = useState<{ serverId: string; sessionId: string } | null>(null);
+
+  // Aggregate sidecar + all remote server data
+  const { allSessions, allRepositories, allWorktrees, allAgents, sessionServerMap, repoServerMap, serverDataMap, refreshRemoteServer } = useAllServersData({
+    sessions,
+    repositories,
+    worktrees,
+    agents,
+  });
+  // Backward-compat alias
+  const selectedSessionId = selectedSession?.sessionId ?? null;
+  const setSelectedSessionId = (id: string | null, serverId?: string) => {
+    if (id) {
+      setSelectedSession({ serverId: serverId ?? SIDECAR_SERVER_ID, sessionId: id });
+    } else {
+      setSelectedSession(null);
+    }
+  };
+  // Track intentionally-selected sessions that may not yet appear in allSessions
+  // (e.g., after remote worktree creation, before server refresh lands)
+  const pendingSessionIdRef = useRef<string | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showOpenProject, setShowOpenProject] = useState(false);
@@ -108,38 +135,91 @@ export function AppLayout() {
 
     void load();
 
+    // Subscribe to sidecar server events for incremental updates
+    const unsub = client.onServerEvent((event) => {
+      if (cancelled) return;
+      switch (event.type) {
+        case "server:agents_changed":
+          setAgents(event.agents);
+          break;
+        case "server:session_created":
+          setSessions((prev) => [...prev, event.session]);
+          break;
+        case "server:session_closed":
+          setSessions((prev) => prev.filter((s) => s.sessionId !== event.sessionId));
+          break;
+        case "server:repository_added":
+          setRepositories((prev) => [...prev, event.repository]);
+          break;
+        case "server:repository_removed":
+          setRepositories((prev) => prev.filter((r) => r.id !== event.repositoryId));
+          setWorktrees((prev) => {
+            const next = new Map(prev);
+            next.delete(event.repositoryId);
+            return next;
+          });
+          break;
+      }
+    });
+
     return () => {
       cancelled = true;
+      unsub();
     };
   }, [client, status]);
 
-  // Auto-select session
+  // Auto-select session (with same-server priority on fallback)
   useEffect(() => {
-    if (sessions.length === 0) {
+    if (allSessions.length === 0) {
       setSelectedSessionId(null);
       return;
     }
 
-    if (selectedSessionId && sessions.some((session) => session.sessionId === selectedSessionId)) {
+    if (selectedSessionId && allSessions.some((session) => session.sessionId === selectedSessionId)) {
+      // Clear pending once the session appears in allSessions
+      if (pendingSessionIdRef.current === selectedSessionId) {
+        pendingSessionIdRef.current = null;
+      }
       return;
     }
 
-    const nextSession =
-      sortSessions(sessions).find((session) => session.status !== "closed") ??
-      sortSessions(sessions)[0] ??
-      null;
+    // Don't override a pending selection that hasn't landed in allSessions yet
+    if (pendingSessionIdRef.current && pendingSessionIdRef.current === selectedSessionId) {
+      return;
+    }
+
+    // When selected session is deleted, prefer a session from the same server
+    const sorted = sortSessions(allSessions);
+    let nextSession: SessionInfo | null = null;
+
+    if (selectedSession?.serverId) {
+      const sameServerSessions = sorted.filter(
+        (s) => sessionServerMap.get(s.sessionId) === selectedSession.serverId,
+      );
+      nextSession =
+        sameServerSessions.find((s) => s.status !== "closed") ??
+        sameServerSessions[0] ??
+        null;
+    }
+
+    if (!nextSession) {
+      nextSession =
+        sorted.find((session) => session.status !== "closed") ??
+        sorted[0] ??
+        null;
+    }
 
     if (!nextSession) {
       return;
     }
 
-    setSelectedSessionId(nextSession.sessionId);
-  }, [selectedSessionId, sessions]);
+    setSelectedSessionId(nextSession.sessionId, sessionServerMap.get(nextSession.sessionId));
+  }, [selectedSessionId, selectedSession?.serverId, allSessions, sessionServerMap]);
 
-  const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
-  const selectedSession = useMemo(
-    () => sessions.find((session) => session.sessionId === selectedSessionId) ?? null,
-    [selectedSessionId, sessions],
+  const sortedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
+  const selectedSessionInfo = useMemo(
+    () => allSessions.find((session) => session.sessionId === selectedSessionId) ?? null,
+    [selectedSessionId, allSessions],
   );
 
   const handleSessionInfoChange = (sessionId: string, patch: Partial<SessionInfo>) => {
@@ -338,20 +418,29 @@ export function AppLayout() {
     branch: string,
     baseBranch: string,
   ) => {
-    if (!client) return;
+    // Route to the server that owns this repo
+    const serverId = repoServerMap.get(repoId) ?? SIDECAR_SERVER_ID;
+    const targetClient = serverId === SIDECAR_SERVER_ID ? client : getRemoteClient(serverId);
+    if (!targetClient) return;
 
-    const result = await client.createWorktree(repoId, {
+    const result = await targetClient.createWorktree(repoId, {
       branch,
       baseBranch,
     });
 
-    // Refresh worktrees and sessions
-    void handleRefreshWorktrees();
-    void handleRefreshSessions();
+    // Refresh data on the owning server
+    if (serverId === SIDECAR_SERVER_ID) {
+      void handleRefreshWorktrees();
+      void handleRefreshSessions();
+    } else {
+      // Remote servers have no worktree events, so trigger a full refresh
+      void refreshRemoteServer(serverId);
+    }
 
-    // Select the new session
+    // Select the new session on the correct server
     if (result.sessionId) {
-      setSelectedSessionId(result.sessionId);
+      pendingSessionIdRef.current = result.sessionId;
+      setSelectedSessionId(result.sessionId, serverId);
       setMobileSidebarOpen(false);
     }
   };
@@ -367,17 +456,61 @@ export function AppLayout() {
     }
   };
 
+  // Build server-grouped data for Sidebar
+  const { servers: savedServers } = useServerStore();
+  const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect, getClient: getRemoteClient } = useMatrixClients();
+
+  const sidebarServers: ServerInfo[] = useMemo(() => {
+    const result: ServerInfo[] = [];
+
+    // Sidecar server is always first
+    result.push({
+      serverId: SIDECAR_SERVER_ID,
+      name: "Local",
+      status,
+      error: null,
+      sessions: sortedSessions.filter((s) => sessionServerMap.get(s.sessionId) === SIDECAR_SERVER_ID || !sessionServerMap.has(s.sessionId)),
+      repositories,
+      worktrees,
+      agents,
+      cloningRepos,
+    });
+
+    // Remote servers
+    for (const server of savedServers) {
+      const serverData = serverDataMap.get(server.id);
+      const serverStatus = multiStatuses.get(server.id) ?? "offline";
+      const serverError = multiErrors.get(server.id) ?? null;
+
+      result.push({
+        serverId: server.id,
+        name: server.name,
+        status: serverStatus,
+        error: serverError,
+        sessions: serverData?.sessions ?? [],
+        repositories: serverData?.repositories ?? [],
+        worktrees: serverData?.worktrees ?? new Map(),
+        agents: serverData?.agents ?? [],
+        cloningRepos: new Map(),
+      });
+    }
+
+    return result;
+  }, [status, sortedSessions, sessionServerMap, repositories, worktrees, agents, cloningRepos, savedServers, serverDataMap, multiStatuses, multiErrors]);
+
+  const handleReconnect = useCallback((serverId: string) => {
+    const server = savedServers.find((s) => s.id === serverId);
+    if (server) {
+      multiConnect(serverId, { serverUrl: server.serverUrl, token: server.token });
+    }
+  }, [savedServers, multiConnect]);
+
   const sidebarContent = (
     <Sidebar
-      agents={agents}
-      sessions={sortedSessions}
-      repositories={repositories}
-      worktrees={worktrees}
-      cloningRepos={cloningRepos}
-      connectionStatus={status}
+      servers={sidebarServers}
       selectedSessionId={selectedSessionId}
-      onSelectSession={(sessionId) => {
-        setSelectedSessionId(sessionId);
+      onSelectSession={(sessionId, serverId) => {
+        setSelectedSessionId(sessionId, serverId);
         setMobileSidebarOpen(false);
       }}
       onCreateSession={handleCreateSession}
@@ -385,30 +518,33 @@ export function AppLayout() {
       onOpenProject={() => setShowOpenProject(true)}
       onCloneFromUrl={() => setShowCloneFromUrl(true)}
       onCreateWorktree={(repoId) => {
-        const repo = repositories.find((r) => r.id === repoId);
+        const repo = allRepositories.find((r) => r.id === repoId);
         if (repo) setWorktreeDialogRepo(repo);
       }}
       onDeleteWorktree={handleDeleteWorktree}
+      onReconnect={handleReconnect}
     />
   );
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
-        {sidebarContent}
-        <div className="border-t border-sidebar-border p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start gap-2 rounded-lg text-xs"
-            onClick={() => setShowSettings(true)}
-            data-testid="settings-btn"
-          >
-            <Settings className="size-3.5" />
-            Settings
-          </Button>
-        </div>
-      </aside>
+      {!showSettings && (
+        <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+          {sidebarContent}
+          <div className="border-t border-sidebar-border p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 rounded-lg text-xs"
+              onClick={() => setShowSettings(true)}
+              data-testid="settings-btn"
+            >
+              <Settings className="size-3.5" />
+              Settings
+            </Button>
+          </div>
+        </aside>
+      )}
 
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar !gap-0 !p-0" showCloseButton={false}>
@@ -443,16 +579,18 @@ export function AppLayout() {
         ) : (
         <>
         <MobileHeader
-          selectedSession={selectedSession}
+          selectedSession={selectedSessionInfo}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
         />
 
-        {selectedSession ? (
+        {selectedSession && allSessions.find(s => s.sessionId === selectedSession.sessionId) ? (
           <SessionView
             key={selectedSession.sessionId}
-            sessionInfo={selectedSession}
-            agents={agents}
+            serverId={selectedSession.serverId}
+            sessionInfo={allSessions.find(s => s.sessionId === selectedSession.sessionId)!}
+            agents={allAgents.get(selectedSession.serverId) ?? []}
             onSessionInfoChange={handleSessionInfoChange}
+            onNavigateSettings={() => setShowSettings(true)}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">
