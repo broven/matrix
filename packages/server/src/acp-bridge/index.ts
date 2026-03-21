@@ -5,7 +5,7 @@ function debugLog(msg: string) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   appendFileSync("/tmp/matrix-bridge.log", line);
 }
-import type { AgentCapabilities, SessionUpdate, SessionId } from "@matrix/protocol";
+import type { AgentCapabilities, SessionUpdate, SessionId, PromptContent } from "@matrix/protocol";
 import { encodeJsonRpc, parseJsonRpcMessages, type JsonRpcMessage } from "./jsonrpc.js";
 
 export type BridgeEventHandler = {
@@ -126,7 +126,7 @@ export class AcpBridge {
     return result;
   }
 
-  async sendPrompt(sessionId: SessionId, prompt: Array<{ type: string; text: string }>): Promise<unknown> {
+  async sendPrompt(sessionId: SessionId, prompt: PromptContent[]): Promise<unknown> {
     // Use the agent's internal session ID, not Matrix's session ID
     const agentSid = this.agentSessionId || sessionId;
     const id = this.nextId++;
