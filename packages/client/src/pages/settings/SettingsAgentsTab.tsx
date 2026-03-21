@@ -356,9 +356,11 @@ interface SettingsAgentsTabProps {
   agents: AgentListItem[];
   onRefreshAgents: () => void;
   client?: MatrixClient | null;
+  /** When true, removes outer padding/max-width and title — for embedding inside another panel */
+  embedded?: boolean;
 }
 
-export function SettingsAgentsTab({ agents, onRefreshAgents, client: injectedClient }: SettingsAgentsTabProps) {
+export function SettingsAgentsTab({ agents, onRefreshAgents, client: injectedClient, embedded }: SettingsAgentsTabProps) {
   const { client: contextClient } = useMatrixClient();
   const client = injectedClient ?? contextClient;
   // All agents with profiles are expanded by default
@@ -665,12 +667,12 @@ export function SettingsAgentsTab({ agents, onRefreshAgents, client: injectedCli
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-6" data-testid="agents-tab">
+    <div className={embedded ? "space-y-4" : "mx-auto max-w-2xl space-y-6 p-6"} data-testid="agents-tab">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Agents</h3>
+        {!embedded && <h3 className="text-lg font-semibold">Agents</h3>}
         <Button
           size="sm"
-          className="rounded-lg"
+          className={embedded ? "ml-auto rounded-lg" : "rounded-lg"}
           onClick={() => setDialog({ kind: "create-agent" })}
           data-testid="add-custom-agent-btn"
         >

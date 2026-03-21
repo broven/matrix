@@ -214,7 +214,14 @@ export function SettingsServerTab({ server }: SettingsServerTabProps) {
 
       {/* Agents */}
       {isConnected && client && (
-        <SettingsAgentsTab agents={agents} onRefreshAgents={refreshAgents} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Agents</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SettingsAgentsTab agents={agents} onRefreshAgents={refreshAgents} embedded />
+          </CardContent>
+        </Card>
       )}
 
       {/* Danger Zone — remote servers only */}
