@@ -325,7 +325,7 @@ main() {
       service_changed=1
     fi
     if grep -qE 'ProtectHome=(yes|read-only)' "$SERVICE_FILE" 2>/dev/null; then
-      sed -i -E 's|ProtectHome=(yes|read-only)|ProtectHome=no|' "$SERVICE_FILE"
+      sed -i -E 's/ProtectHome=(yes|read-only)/ProtectHome=no/' "$SERVICE_FILE"
       ok "Updated ProtectHome=no (allows ACP clients to modify repos in user home dirs)"
       service_changed=1
     fi
