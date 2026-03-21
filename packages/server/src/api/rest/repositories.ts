@@ -174,6 +174,11 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
         worktreeId: worktree.id,
       });
 
+      const sessionInfo = store.listSessions().find(s => s.sessionId === sessionId);
+      if (sessionInfo) {
+        connectionManager.broadcastToAll({ type: "server:session_created", session: sessionInfo });
+      }
+
       return c.json({ worktree, sessionId }, 201);
     } catch (error) {
       // Rollback: clean up DB record if it was created
