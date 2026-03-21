@@ -1,22 +1,31 @@
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 
 /**
- * Return the data directory for config/state storage.
+ * Return the data directory for DB and config storage.
  *
- * - Server deployment: MATRIX_DATA_DIR env var (required, set by install script)
+ * - Server deployment: MATRIX_DATA_DIR env var (set by install script)
  * - Desktop (local mode): os.homedir()
- *
- * No fallback — if MATRIX_DATA_DIR is set but invalid, the server
- * should fail loudly at startup via `validateDataDir()`.
  */
 export function getDataDir(): string {
   return process.env.MATRIX_DATA_DIR || os.homedir();
 }
 
 /**
+ * Return the service directory for user content (repos, worktrees).
+ *
+ * - Server deployment: MATRIX_SRV_DIR env var (default /srv/matrix)
+ * - Desktop (local mode): ~/MatrixProjects
+ */
+export function getSrvDir(): string {
+  if (process.env.MATRIX_SRV_DIR) return process.env.MATRIX_SRV_DIR;
+  return path.join(os.homedir(), "MatrixProjects");
+}
+
+/**
  * Validate the data directory is accessible and writable.
- * Call at server startup — logs warnings so the operator can fix config.
+ * Call at server startup — exits with guidance if dir is inaccessible.
  */
 export function validateDataDir(): void {
   const dir = getDataDir();
