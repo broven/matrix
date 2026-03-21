@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { MatrixClientProvider, useMatrixClient } from "./hooks/useMatrixClient";
+import { MatrixClientsProvider } from "./hooks/useMatrixClients";
 import { ServerStoreProvider, useServerStore } from "./hooks/useServerStore";
+import { useConnectionRecovery } from "./hooks/useConnectionRecovery";
 import { AppLayout } from "./components/layout/AppLayout";
 import { ConnectPage } from "./pages/ConnectPage";
 import { UpdateToast } from "./components/UpdateToast";
@@ -82,6 +84,9 @@ function AppContent() {
   // Run auto-reconnect/deep-link on all platforms
   useAutoReconnect();
 
+  // Connect to all saved servers on mount and recover on visibility change
+  useConnectionRecovery();
+
   // Desktop with local server: skip ConnectPage, go straight to AppLayout
   // Auto-connect happens in the background via useMatrixClient
   if (!client && !hasLocalServer()) {
@@ -98,12 +103,14 @@ function AppContent() {
 
 export function App() {
   return (
-    <MatrixClientProvider>
-      <ServerStoreProvider>
-        <UpdateProvider>
-          <AppContent />
-        </UpdateProvider>
-      </ServerStoreProvider>
-    </MatrixClientProvider>
+    <MatrixClientsProvider>
+      <MatrixClientProvider>
+        <ServerStoreProvider>
+          <UpdateProvider>
+            <AppContent />
+          </UpdateProvider>
+        </ServerStoreProvider>
+      </MatrixClientProvider>
+    </MatrixClientsProvider>
   );
 }
