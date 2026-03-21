@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Check, ChevronsUpDown, GitBranch, Loader2 } from "lucide-react"
+import { Check, ChevronsUpDown, GitBranch, Loader2, PenLine } from "lucide-react"
 import type { BranchInfo } from "@matrix/protocol"
 import type { MatrixClient } from "@matrix/sdk"
 
@@ -38,6 +38,7 @@ export function BranchSelect({
   const [branches, setBranches] = useState<BranchInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
 
   useEffect(() => {
     if (!open) return
@@ -96,7 +97,7 @@ export function BranchSelect({
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search branches..." />
+          <CommandInput placeholder="Search branches or enter ref..." value={search} onValueChange={setSearch} />
           <CommandList>
             {loading && (
               <div className="flex items-center justify-center py-6">
@@ -108,7 +109,39 @@ export function BranchSelect({
             )}
             {!loading && !error && (
               <>
-                <CommandEmpty>No branches found.</CommandEmpty>
+                <CommandEmpty>
+                  {search.trim() ? (
+                    <CommandItem
+                      value={`__custom__${search.trim()}`}
+                      onSelect={() => {
+                        onChange(search.trim())
+                        setSearch("")
+                        setOpen(false)
+                      }}
+                      className="justify-center"
+                    >
+                      <PenLine className="size-3.5" />
+                      Use &ldquo;{search.trim()}&rdquo;
+                    </CommandItem>
+                  ) : (
+                    "No branches found."
+                  )}
+                </CommandEmpty>
+                {search.trim() && branches.length > 0 && !branches.some((b) => b.name === search.trim()) && (
+                  <CommandGroup heading="Custom">
+                    <CommandItem
+                      value={`__custom__${search.trim()}`}
+                      onSelect={() => {
+                        onChange(search.trim())
+                        setSearch("")
+                        setOpen(false)
+                      }}
+                    >
+                      <PenLine className="size-3.5" />
+                      Use &ldquo;{search.trim()}&rdquo;
+                    </CommandItem>
+                  </CommandGroup>
+                )}
                 {localBranches.length > 0 && (
                   <CommandGroup heading="Local">
                     {localBranches.map((branch) => (

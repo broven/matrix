@@ -221,10 +221,15 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     }
   });
 
+  const ALLOWED_URL = /^(https?:\/\/|git:\/\/|git@)/;
+
   app.post("/branches/remote", async (c) => {
     const body = await c.req.json<{ url: string }>();
     if (!body.url) {
       return c.json({ error: "url is required" }, 400);
+    }
+    if (!ALLOWED_URL.test(body.url)) {
+      return c.json({ error: "URL must use https://, http://, git://, or git@ protocol" }, 400);
     }
     try {
       const branches = await worktreeManager.listRemoteBranches(body.url);
