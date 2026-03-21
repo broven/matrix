@@ -12,7 +12,7 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ session, repositoryName, isProcessing, sessionStatus }: ChatHeaderProps) {
   return (
-    <header className="hidden items-center justify-between border-b border-border/50 bg-background px-6 py-3 md:flex">
+    <header data-tauri-drag-region className="hidden items-center justify-between border-b border-border/50 bg-background px-6 py-3 pt-10 md:flex">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <div
