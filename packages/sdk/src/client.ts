@@ -28,6 +28,7 @@ import { MatrixSession } from "./session.js";
 export type ServerEvent =
   | { type: "server:session_created"; session: SessionInfo }
   | { type: "server:session_closed"; sessionId: string }
+  | { type: "server:session_resumed"; sessionId: string }
   | { type: "server:repository_added"; repository: RepositoryInfo }
   | { type: "server:repository_removed"; repositoryId: string }
   | { type: "server:agents_changed"; agents: AgentListItem[] };
@@ -133,6 +134,17 @@ export class MatrixClient {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: "Failed to create session" }));
       throw new Error((err as any).error || `Failed to create session: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async resumeSession(sessionId: string): Promise<{ sessionId: string }> {
+    const res = await this.fetch(`/sessions/${sessionId}/resume`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as any).error || `Failed to resume session: ${res.status}`);
     }
     return res.json();
   }
@@ -455,6 +467,7 @@ export class MatrixClient {
       }
       case "server:session_created":
       case "server:session_closed":
+      case "server:session_resumed":
       case "server:repository_added":
       case "server:repository_removed":
       case "server:agents_changed": {
