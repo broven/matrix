@@ -346,7 +346,9 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         content: { type: "text", text: `> ${displayText}` },
       });
 
-      // Tag the first text block with agentId/profileId (regardless of position)
+      // Tag the first text block with agentId/profileId (regardless of position).
+      // If no text block exists (e.g. prompt is only file mentions), prepend one
+      // so the server can always find agentId for lazy init.
       let tagged = false;
       const taggedContent = content.map((block) => {
         if (!tagged && block.type === "text") {
@@ -355,6 +357,9 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         }
         return block;
       });
+      if (!tagged) {
+        taggedContent.unshift({ type: "text", text: "", agentId: selectedAgentId, profileId: selectedProfileId ?? undefined });
+      }
 
       if (isProcessing) {
         setMessageQueue((q) => [...q, { content: taggedContent, agentId: selectedAgentId, profileId: selectedProfileId }]);
