@@ -21,15 +21,23 @@ BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
 WORKSPACE_RAW="${WT_NAME:-${CONDUCTOR_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_NAME}}}"
 WORKSPACE="$(echo "$WORKSPACE_RAW" | tr ' ' '-')"
 
-# Derive 4 unique ports from base port:
+# Derive 8 unique ports from base port:
 #   CLIENT_PORT              = base      (Vite dev server)
 #   HMR_PORT                 = base + 1  (Tauri HMR WebSocket)
 #   MATRIX_PORT              = base + 2  (Matrix server)
 #   SIDECAR_PORT             = base + 3  (Tauri sidecar server, dev only)
+#   TEST_CLIENT_PORT         = base + 4  (test:release Vite)
+#   TEST_HMR_PORT            = base + 5  (test:release HMR)
+#   TEST_MATRIX_PORT         = base + 6  (test:release server)
+#   TEST_SIDECAR_PORT        = base + 7  (test:release sidecar)
 CLIENT_PORT=$((BASE_PORT))
 HMR_PORT=$((BASE_PORT + 1))
 MATRIX_PORT=$((BASE_PORT + 2))
 SIDECAR_PORT=$((BASE_PORT + 3))
+TEST_CLIENT_PORT=$((BASE_PORT + 4))
+TEST_HMR_PORT=$((BASE_PORT + 5))
+TEST_MATRIX_PORT=$((BASE_PORT + 6))
+TEST_SIDECAR_PORT=$((BASE_PORT + 7))
 
 MATRIX_TOKEN=$(head -c 36 /dev/urandom | base64 | tr -d '/+=' | head -c 48)
 
@@ -42,15 +50,32 @@ VITE_MATRIX_PORT=$MATRIX_PORT
 SIDECAR_PORT=$SIDECAR_PORT
 MATRIX_TOKEN=$MATRIX_TOKEN
 VITE_MATRIX_TOKEN=$MATRIX_TOKEN
+TEST_CLIENT_PORT=$TEST_CLIENT_PORT
+TEST_HMR_PORT=$TEST_HMR_PORT
+TEST_MATRIX_PORT=$TEST_MATRIX_PORT
+TEST_SIDECAR_PORT=$TEST_SIDECAR_PORT
 EOF
 
-echo "Ports assigned: client=$CLIENT_PORT hmr=$HMR_PORT server=$MATRIX_PORT sidecar=$SIDECAR_PORT"
+# .env.test.local — test:release server/client read this
+cat > .env.test.local << EOF
+WORKSPACE_NAME="$WORKSPACE"
+CLIENT_PORT=$TEST_CLIENT_PORT
+HMR_PORT=$TEST_HMR_PORT
+MATRIX_PORT=$TEST_MATRIX_PORT
+VITE_MATRIX_PORT=$TEST_MATRIX_PORT
+SIDECAR_PORT=$TEST_SIDECAR_PORT
+MATRIX_TOKEN=$MATRIX_TOKEN
+VITE_MATRIX_TOKEN=$MATRIX_TOKEN
+MATRIX_DB=./data/test.db
+EOF
+
+echo "Ports assigned: dev=$CLIENT_PORT-$SIDECAR_PORT test=$TEST_CLIENT_PORT-$TEST_SIDECAR_PORT"
 """
 
 [pre-remove]
 kill-ports = """
 BASE_PORT="${WT_PORT:-${CONDUCTOR_PORT:-{{ branch | hash_port }}}}"
-for offset in 0 1 2 3; do
+for offset in 0 1 2 3 4 5 6 7; do
   PORT=$((BASE_PORT + offset))
   lsof -ti :$PORT -sTCP:LISTEN | xargs kill 2>/dev/null || true
 done

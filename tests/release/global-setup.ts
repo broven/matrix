@@ -77,37 +77,58 @@ async function cleanAll() {
 }
 
 export async function setup() {
+  const { baseUrl, token } = getServerInfo();
+
+  // Wait for server to be reachable (wireit starts services in parallel with vitest)
+  for (let i = 0; i < 60; i++) {
+    try {
+      await serverRequest("GET", "/server/config");
+      break;
+    } catch {
+      if (i === 59) throw new Error("Server not reachable after 60s");
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
   // Pre-test cleanup
   try {
     await cleanAll();
-    // Wait for reload to settle, then poll until webview is ready via bridge
-    const { baseUrl, token } = getServerInfo();
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const res = await fetch(`${baseUrl}/bridge/eval`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ script: "!!document.querySelector('[data-testid=\"add-repo-btn\"]')" }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as { ok: boolean; result: unknown };
-          if (data.ok && data.result === true) break;
-        }
-      } catch {
-        // Not ready yet
+  } catch (err) {
+    console.error("[global-setup] cleanAll failed:", err);
+  }
+
+  // Wait for webview to be ready via bridge
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const res = await fetch(`${baseUrl}/bridge/eval`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ script: "!!document.querySelector('[data-testid=\"add-repo-btn\"]')" }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { ok: boolean; result: unknown };
+        if (data.ok && data.result === true) break;
       }
+    } catch {
+      // Not ready yet
     }
-  } catch {
-    // App might not be running yet, that's OK — setup.ts will catch it
   }
 
   // Register mock agent as default (skip when using real agents)
   if (!process.env.REAL_AGENT) {
     try {
+      // Clean up stale Mock Agents from previous runs (e.g. killed without teardown)
+      const existingAgents = (await serverRequest("GET", "/custom-agents")) as { id: string; name: string }[];
+      for (const agent of existingAgents) {
+        if (agent.name === "Mock Agent") {
+          await serverRequest("DELETE", `/custom-agents/${agent.id}`).catch(() => {});
+        }
+      }
+
       const mockAgentPath = resolve(__dirname, "fixtures/mock-agent/index.mjs");
 
       const res = (await serverRequest("POST", "/custom-agents", {
@@ -119,8 +140,8 @@ export async function setup() {
 
       // Set as default agent
       await serverRequest("PUT", "/server/config", { defaultAgent: res.id });
-    } catch {
-      // Mock agent registration failed — tests will use whatever agent is available
+    } catch (err) {
+      console.error("[global-setup] Mock agent registration failed:", err);
     }
   }
 }
