@@ -470,6 +470,13 @@ export function AppLayout() {
   const { servers: savedServers } = useServerStore();
   const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect, getClient: getRemoteClient } = useMatrixClients();
 
+  const handleResumeSession = async (sessionId: string) => {
+    if (!selectedSession) return;
+    const targetClient = selectedSession.serverId === SIDECAR_SERVER_ID ? client : getRemoteClient(selectedSession.serverId);
+    if (!targetClient) return;
+    await targetClient.resumeSession(sessionId);
+  };
+
   const sidebarServers: ServerInfo[] = useMemo(() => {
     const result: ServerInfo[] = [];
 
@@ -605,6 +612,7 @@ export function AppLayout() {
             agents={allAgents.get(selectedSession.serverId) ?? []}
             onSessionInfoChange={handleSessionInfoChange}
             onNavigateSettings={() => setShowSettings(true)}
+            onResumeSession={handleResumeSession}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">
