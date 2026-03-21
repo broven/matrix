@@ -146,6 +146,15 @@ export function AppLayout() {
           setSessions((prev) => [...prev, event.session]);
           break;
         case "server:session_closed":
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.sessionId === event.sessionId
+                ? { ...s, status: "closed" }
+                : s
+            )
+          );
+          break;
+        case "server:session_deleted":
           setSessions((prev) => prev.filter((s) => s.sessionId !== event.sessionId));
           break;
         case "server:session_resumed":
@@ -471,9 +480,13 @@ export function AppLayout() {
   const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect, getClient: getRemoteClient } = useMatrixClients();
 
   const handleResumeSession = async (sessionId: string) => {
-    if (!selectedSession) return;
+    if (!selectedSession) {
+      throw new Error("No session selected");
+    }
     const targetClient = selectedSession.serverId === SIDECAR_SERVER_ID ? client : getRemoteClient(selectedSession.serverId);
-    if (!targetClient) return;
+    if (!targetClient) {
+      throw new Error("Server is not connected");
+    }
     await targetClient.resumeSession(sessionId);
   };
 

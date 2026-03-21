@@ -25,6 +25,7 @@ export type ServerMessage =
   // Server-level events (incremental, best-effort delivery)
   | { type: "server:session_created"; session: SessionInfo }
   | { type: "server:session_closed"; sessionId: string }
+  | { type: "server:session_deleted"; sessionId: string }
   | { type: "server:session_resumed"; sessionId: string }
   | { type: "server:repository_added"; repository: RepositoryInfo }
   | { type: "server:repository_removed"; repositoryId: string }

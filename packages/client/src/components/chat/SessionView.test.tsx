@@ -113,7 +113,7 @@ describe("SessionView", () => {
     });
 
     await waitFor(() => {
-      expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(true);
+      expect(screen.queryByRole("textbox")).toBeNull();
     });
   });
 });

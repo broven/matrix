@@ -30,7 +30,7 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager, conn
     const sessionId = c.req.param("id");
     sessionManager.closeSession(sessionId, store);
     store.deleteSession(sessionId);
-    connectionManager.broadcastToAll({ type: "server:session_closed", sessionId });
+    connectionManager.broadcastToAll({ type: "server:session_deleted", sessionId });
     return c.json({ ok: true });
   });
 
@@ -45,6 +45,9 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager, conn
     }
     if (!session.agentSessionId) {
       return c.json({ error: "Session has no agent conversation to resume" }, 409);
+    }
+    if (!session.recoverable) {
+      return c.json({ error: "Session is not recoverable" }, 409);
     }
 
     store.reopenSession(sessionId);

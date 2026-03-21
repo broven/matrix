@@ -410,7 +410,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         )}
       </ScrollArea>
       <StatusBar status={statusBarStatus} message={statusMessage} onCancel={handleCancel} />
-      {viewStatus === "closed" && sessionInfo.agentSessionId && onResumeSession && (
+      {viewStatus === "closed" && sessionInfo.agentSessionId && sessionInfo.recoverable && onResumeSession && (
         <div className="flex justify-center border-t px-4 py-3">
           <button
             type="button"

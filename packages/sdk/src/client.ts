@@ -28,6 +28,7 @@ import { MatrixSession } from "./session.js";
 export type ServerEvent =
   | { type: "server:session_created"; session: SessionInfo }
   | { type: "server:session_closed"; sessionId: string }
+  | { type: "server:session_deleted"; sessionId: string }
   | { type: "server:session_resumed"; sessionId: string }
   | { type: "server:repository_added"; repository: RepositoryInfo }
   | { type: "server:repository_removed"; repositoryId: string }
@@ -467,6 +468,7 @@ export class MatrixClient {
       }
       case "server:session_created":
       case "server:session_closed":
+      case "server:session_deleted":
       case "server:session_resumed":
       case "server:repository_added":
       case "server:repository_removed":
