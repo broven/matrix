@@ -145,6 +145,14 @@ export class MatrixClient {
     this.sessions.delete(sessionId);
   }
 
+  async getSessionFiles(sessionId: string): Promise<string[]> {
+    const res = await this.fetch(`/sessions/${sessionId}/files`);
+    if (!res.ok) {
+      throw new Error(`Failed to get session files: ${res.status}`);
+    }
+    return res.json();
+  }
+
   // ── Repositories ──────────────────────────────────────────────────
 
   async getRepositories(): Promise<RepositoryInfo[]> {
