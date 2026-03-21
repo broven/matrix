@@ -134,7 +134,7 @@ export function normalizeRemoteUrl(url: string): string {
   } else {
     try {
       const parsed = new URL(normalized);
-      normalized = `${parsed.hostname.toLowerCase()}${parsed.pathname}`;
+      normalized = `${parsed.host.toLowerCase()}${parsed.pathname}`;
     } catch {
       // Not a valid URL, use as-is for comparison
     }

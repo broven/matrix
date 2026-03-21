@@ -265,7 +265,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
                   </label>
                   <Input
                     value={branch}
-                    onChange={(e) => setBranch(e.target.value)}
+                    onChange={(e) => { setBranch(e.target.value); setValidationState({ type: "idle" }); }}
                     placeholder="Default branch"
                     className="rounded-lg"
                   />

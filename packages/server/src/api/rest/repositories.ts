@@ -284,7 +284,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     // Rule 2: Check if target directory already exists
     if (existsSync(targetDir)) {
       const isGitRepo = existsSync(path.join(targetDir, ".git"));
-      const pathMatch = allRepos.find((r) => r.path === targetDir);
+      const pathMatch = store.getRepositoryByPath(targetDir);
 
       conflicts.push({
         type: "directory_exists",
