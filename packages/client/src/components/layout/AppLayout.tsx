@@ -578,6 +578,10 @@ export function AppLayout() {
           />
         ) : (
         <>
+        {/* Drag region for window dragging when no ChatHeader is visible (empty state) */}
+        {!(selectedSession && allSessions.find(s => s.sessionId === selectedSession.sessionId)) && (
+          <div data-tauri-drag-region className="hidden h-10 shrink-0 md:block" />
+        )}
         <MobileHeader
           selectedSession={selectedSessionInfo}
           onOpenSidebar={() => setMobileSidebarOpen(true)}

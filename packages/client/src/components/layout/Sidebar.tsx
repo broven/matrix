@@ -61,7 +61,7 @@ export function Sidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="space-y-4 px-4 pb-4 pt-5">
+      <div data-tauri-drag-region className="space-y-4 px-4 pb-4 pt-5 md:pt-10">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background">
