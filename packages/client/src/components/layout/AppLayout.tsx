@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
 import { MessageSquarePlus, AlertCircle, X } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
+import { useServerStore } from "@/hooks/useServerStore";
+import { useMatrixClients } from "@/hooks/useMatrixClients";
+import { useServerData } from "@/hooks/useServerData";
 import { SessionView } from "@/components/chat/SessionView";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -27,13 +30,25 @@ function sortSessions(sessions: SessionInfo[]) {
   });
 }
 
+/** Default server ID for the local sidecar connection */
+const SIDECAR_SERVER_ID = "__sidecar__";
+
 export function AppLayout() {
   const { client, status } = useMatrixClient();
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [repositories, setRepositories] = useState<RepositoryInfo[]>([]);
   const [worktrees, setWorktrees] = useState<Map<string, WorktreeInfo[]>>(new Map());
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSession, setSelectedSession] = useState<{ serverId: string; sessionId: string } | null>(null);
+  // Backward-compat alias
+  const selectedSessionId = selectedSession?.sessionId ?? null;
+  const setSelectedSessionId = (id: string | null) => {
+    if (id) {
+      setSelectedSession({ serverId: SIDECAR_SERVER_ID, sessionId: id });
+    } else {
+      setSelectedSession(null);
+    }
+  };
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showOpenProject, setShowOpenProject] = useState(false);
@@ -137,7 +152,7 @@ export function AppLayout() {
   }, [selectedSessionId, sessions]);
 
   const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
-  const selectedSession = useMemo(
+  const selectedSessionInfo = useMemo(
     () => sessions.find((session) => session.sessionId === selectedSessionId) ?? null,
     [selectedSessionId, sessions],
   );
@@ -445,14 +460,15 @@ export function AppLayout() {
         ) : (
         <>
         <MobileHeader
-          selectedSession={selectedSession}
+          selectedSession={selectedSessionInfo}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
         />
 
-        {selectedSession ? (
+        {selectedSession && sessions.find(s => s.sessionId === selectedSession.sessionId) ? (
           <SessionView
             key={selectedSession.sessionId}
-            sessionInfo={selectedSession}
+            serverId={selectedSession.serverId}
+            sessionInfo={sessions.find(s => s.sessionId === selectedSession.sessionId)!}
             agents={agents}
             onSessionInfoChange={handleSessionInfoChange}
           />
