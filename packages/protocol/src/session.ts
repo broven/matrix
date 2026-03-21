@@ -20,10 +20,11 @@ export interface SessionModes {
 /** Stop reason when a prompt turn ends */
 export type StopReason = "end_turn" | "cancelled";
 
-/** Prompt content can be text or a resource */
+/** Prompt content can be text, a resource, or a resource link */
 export type PromptContent =
   | { type: "text"; text: string; agentId?: string; profileId?: string }
-  | { type: "resource"; resource: PromptResource };
+  | { type: "resource"; resource: PromptResource }
+  | { type: "resource_link"; name: string; uri: string; mimeType?: string };
 
 export interface PromptResource {
   uri: string;
