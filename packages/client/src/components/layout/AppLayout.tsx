@@ -394,21 +394,23 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
-        {sidebarContent}
-        <div className="border-t border-sidebar-border p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start gap-2 rounded-lg text-xs"
-            onClick={() => setShowSettings(true)}
-            data-testid="settings-btn"
-          >
-            <Settings className="size-3.5" />
-            Settings
-          </Button>
-        </div>
-      </aside>
+      {!showSettings && (
+        <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
+          {sidebarContent}
+          <div className="border-t border-sidebar-border p-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 rounded-lg text-xs"
+              onClick={() => setShowSettings(true)}
+              data-testid="settings-btn"
+            >
+              <Settings className="size-3.5" />
+              Settings
+            </Button>
+          </div>
+        </aside>
+      )}
 
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetContent side="left" className="w-[86vw] max-w-[300px] border-sidebar-border bg-sidebar !gap-0 !p-0" showCloseButton={false}>
