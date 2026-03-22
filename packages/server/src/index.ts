@@ -185,14 +185,27 @@ async function handlePrompt(sessionId: string, prompt: PromptContent[]) {
     return;
   }
 
+  // Check if prompt contains images and agent supports them
+  const hasImages = prompt.some((item) => item.type === "image");
+  if (hasImages && !bridge.capabilities?.promptCapabilities?.image) {
+    emitSessionError(sessionId, "unsupported_content", "This agent does not support image input");
+    return;
+  }
+
   // Build a combined user message text including any file mentions
   const textParts: string[] = [];
+  let imageCount = 0;
   for (const item of prompt) {
     if (item.type === "text") {
       textParts.push(item.text);
     } else if (item.type === "resource_link") {
       textParts.push(`@${item.name}`);
+    } else if (item.type === "image") {
+      imageCount++;
     }
+  }
+  if (imageCount > 0) {
+    textParts.push(` [${imageCount} image${imageCount > 1 ? "s" : ""}]`);
   }
   if (textParts.length > 0) {
     store.appendHistory(sessionId, "user", textParts.join(""));

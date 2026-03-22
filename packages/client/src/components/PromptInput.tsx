@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent } from "@tiptap/react";
 import type { AvailableCommand, PromptContent } from "@matrix/protocol";
 import type { AgentListItem } from "@matrix/protocol";
-import { ArrowUp, Plus, ChevronDown } from "lucide-react";
+import { nanoid } from "nanoid";
+import { ArrowUp, Plus, ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { compressImage, isSupportedImageType, isTotalPayloadTooLarge } from "@/lib/image-compress";
 import { usePromptEditor } from "./prompt/usePromptEditor";
 import { serializeTiptapDoc } from "./prompt/serializeTiptap";
 
@@ -48,6 +50,10 @@ export function PromptInput({
   const menuRef = useRef<HTMLDivElement>(null);
   const agentBtnRef = useRef<HTMLButtonElement>(null);
   const popupContainerRef = useRef<HTMLDivElement>(null);
+  const [pendingImages, setPendingImages] = useState<
+    { id: string; data: string; mimeType: string; name: string; previewUrl: string; size: number }[]
+  >([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Store fetchFiles in a ref so the suggestion plugin always reads the latest
   const fetchFilesRef = useRef<((query: string) => Promise<string[]>) | null>(
@@ -55,16 +61,83 @@ export function PromptInput({
   );
   fetchFilesRef.current = fetchFiles ?? null;
 
+  const [imageError, setImageError] = useState<string | null>(null);
+
+  // Clean up preview URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      setPendingImages((prev) => {
+        for (const img of prev) URL.revokeObjectURL(img.previewUrl);
+        return [];
+      });
+    };
+  }, []);
+
+  const handleImageFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArr = Array.from(files);
+    for (const file of fileArr) {
+      if (!file.type.startsWith("image/")) continue;
+      if (!isSupportedImageType(file.type)) {
+        setImageError(`Unsupported format: ${file.type}. Use PNG, JPEG, GIF, or WebP.`);
+        continue;
+      }
+      try {
+        const compressed = await compressImage(file);
+        // Use blob directly for preview — avoids base64 round-trip
+        const previewUrl = URL.createObjectURL(compressed.blob);
+        setImageError(null); // Clear error on success
+        setPendingImages((prev) => {
+          const next = [...prev, { id: nanoid(), data: compressed.data, mimeType: compressed.mimeType, name: compressed.name, previewUrl, size: compressed.size }];
+          if (isTotalPayloadTooLarge(next)) {
+            URL.revokeObjectURL(previewUrl);
+            setImageError("Total image size too large (max ~50MB). Remove some images.");
+            return prev;
+          }
+          return next;
+        });
+      } catch (err) {
+        setImageError(err instanceof Error ? err.message : "Failed to process image");
+      }
+    }
+  }, []);
+
+  const removePendingImage = useCallback((id: string) => {
+    setPendingImages((prev) => {
+      const img = prev.find((i) => i.id === id);
+      if (img) URL.revokeObjectURL(img.previewUrl);
+      return prev.filter((i) => i.id !== id);
+    });
+  }, []);
+
   const isDisabled = disabled || noAgentAvailable;
 
   const handleSend = useCallback(() => {
-    if (!editor || editor.isEmpty) return;
+    if (!editor) return;
 
+    const hasImages = pendingImages.length > 0;
+    const editorEmpty = editor.isEmpty;
+
+    if (editorEmpty && !hasImages) return;
+
+    // Always use onSendContent when we have images or mentions
     const json = editor.getJSON();
     const hasMentions = JSON.stringify(json).includes('"fileMention"');
 
-    if (onSendContent && hasMentions) {
+    if (hasMentions || hasImages) {
+      if (!onSendContent) {
+        setImageError("Image sending is not available in this context.");
+        return;
+      }
       const content = serializeTiptapDoc(json, sessionCwd);
+      // Append pending images
+      for (const img of pendingImages) {
+        content.push({
+          type: "image" as const,
+          data: img.data,
+          mimeType: img.mimeType,
+          name: img.name,
+        });
+      }
       onSendContent(content);
     } else {
       const text = editor.getText().trim();
@@ -72,8 +145,14 @@ export function PromptInput({
     }
 
     editor.commands.clearContent();
+    // Clean up image previews
+    for (const img of pendingImages) {
+      URL.revokeObjectURL(img.previewUrl);
+    }
+    setPendingImages([]);
+    setImageError(null);
     setIsEmpty(true);
-  }, [onSend, onSendContent, sessionCwd]);
+  }, [onSend, onSendContent, sessionCwd, pendingImages]);
 
   const { editor, popup } = usePromptEditor({
     placeholder,
@@ -86,6 +165,7 @@ export function PromptInput({
         setIsEmpty(editor.isEmpty);
       }
     },
+    onImagePaste: (files) => handleImageFiles(files),
   });
 
   // Update handleSend's closure on editor
@@ -147,7 +227,7 @@ export function PromptInput({
   );
 
   const canSend =
-    !isEmpty &&
+    (!isEmpty || pendingImages.length > 0) &&
     !disabled &&
     !noAgentAvailable &&
     (!!selectedAgentId || agentLocked);
@@ -221,7 +301,50 @@ export function PromptInput({
               "overflow-hidden rounded-[1.25rem] border border-border/60 bg-card shadow-sm transition-shadow",
               "focus-within:border-border focus-within:shadow-md",
             )}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.dataTransfer.files.length > 0) {
+                handleImageFiles(e.dataTransfer.files);
+              }
+            }}
           >
+            {imageError && (
+              <div className="flex items-center justify-between gap-2 px-3 pt-2 text-xs text-destructive">
+                <span>{imageError}</span>
+                <button type="button" onClick={() => setImageError(null)} className="shrink-0 text-muted-foreground hover:text-foreground">
+                  <X className="size-3" />
+                </button>
+              </div>
+            )}
+            {pendingImages.length > 0 && (
+              <div
+                className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1"
+                data-testid="image-preview-bar"
+              >
+                {pendingImages.map((img) => (
+                  <div key={img.id} className="group relative shrink-0" data-testid={`image-preview-${img.id}`}>
+                    <img
+                      src={img.previewUrl}
+                      alt={img.name}
+                      className="h-16 w-16 rounded-lg object-cover border border-border/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePendingImage(img.id)}
+                      className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background opacity-0 transition-opacity group-hover:opacity-100"
+                      data-testid={`image-remove-${img.id}`}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className={cn(isDisabled && "cursor-not-allowed opacity-50")}>
               <EditorContent editor={editor} />
             </div>
@@ -253,22 +376,31 @@ export function PromptInput({
                 </button>
               </div>
               <div className="flex items-center gap-1.5">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) handleImageFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                  data-testid="image-file-input"
+                />
                 <button
                   type="button"
                   className="flex size-8 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground"
                   aria-label="Attach"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="image-attach-btn"
                 >
                   <Plus className="size-4.5" />
                 </button>
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={
-                    disabled ||
-                    isEmpty ||
-                    noAgentAvailable ||
-                    (!selectedAgentId && !agentLocked)
-                  }
+                  disabled={!canSend}
                   className={cn(
                     "flex size-8 items-center justify-center rounded-full transition-all",
                     canSend

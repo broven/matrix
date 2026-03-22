@@ -338,9 +338,15 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
       }
 
       // Build display text for the user message bubble
+      const imageCount = content.filter((b) => b.type === "image").length;
       const displayText = content
-        .map((b) => (b.type === "text" ? b.text : b.type === "resource_link" ? `@${b.name}` : ""))
-        .join("");
+        .map((b) =>
+          b.type === "text" ? b.text
+          : b.type === "resource_link" ? `@${b.name}`
+          : "",
+        )
+        .join("")
+        + (imageCount > 0 ? ` [${imageCount} image${imageCount > 1 ? "s" : ""}]` : "");
 
       addEvent("message", {
         sessionUpdate: "agent_message_chunk",

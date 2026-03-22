@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
-import { useEditor, ReactRenderer } from "@tiptap/react";
+import { useEditor, ReactRenderer, Extension } from "@tiptap/react";
 import type { Editor, Range } from "@tiptap/react";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Document from "@tiptap/extension-document";
 import Paragraph from "@tiptap/extension-paragraph";
 import Text from "@tiptap/extension-text";
@@ -20,6 +21,7 @@ interface UsePromptEditorOptions {
   commands: AvailableCommand[];
   onEnter: () => void;
   onUpdate?: () => void;
+  onImagePaste?: (files: FileList) => void;
 }
 
 interface PopupState {
@@ -34,6 +36,7 @@ export function usePromptEditor({
   commands,
   onEnter,
   onUpdate,
+  onImagePaste,
 }: UsePromptEditorOptions) {
   const [popup, setPopup] = useState<PopupState>({ type: null, component: null });
   const popupRef = useRef<PopupState>({ type: null, component: null });
@@ -193,6 +196,38 @@ export function usePromptEditor({
               },
             };
           },
+        },
+      }),
+      Extension.create({
+        name: "imagePaste",
+        addProseMirrorPlugins() {
+          const handler = onImagePaste;
+          return [
+            new Plugin({
+              key: new PluginKey("imagePaste"),
+              props: {
+                handlePaste(_view, event) {
+                  const clipData = event.clipboardData;
+                  if (!clipData || !handler) return false;
+                  // Only intercept image-only pastes. If clipboard also has
+                  // text/html content, let the default paste handle it so
+                  // users don't lose text when pasting rich content.
+                  const hasText = clipData.types.includes("text/plain") || clipData.types.includes("text/html");
+                  const files = clipData.files;
+                  if (files.length > 0 && !hasText) {
+                    const hasImage = Array.from(files).some((f) =>
+                      f.type.startsWith("image/"),
+                    );
+                    if (hasImage) {
+                      handler(files);
+                      return true;
+                    }
+                  }
+                  return false;
+                },
+              },
+            }),
+          ];
         },
       }),
     ],
