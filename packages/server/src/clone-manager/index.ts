@@ -118,7 +118,7 @@ export class CloneManager {
       try {
         await onComplete(job);
       } catch (e) {
-        console.error(`[clone] onComplete callback failed:`, e);
+        log.error({ err: e }, "onComplete callback failed");
       }
     }
   }
