@@ -3,6 +3,9 @@ import type { AcpBridge } from "../acp-bridge/index.js";
 import type { AgentManager } from "../agent-manager/index.js";
 import type { Store } from "../store/index.js";
 import type { ConnectionManager } from "../api/ws/connection-manager.js";
+import { logger } from "../logger.js";
+
+const log = logger.child({ target: "session-manager" });
 
 const MAX_RESTART_ATTEMPTS = 3;
 const BASE_RESTART_DELAY_MS = 1000;
@@ -102,9 +105,7 @@ export class SessionManager {
 
     // Check if we can still restart
     if (entry.restartAttempts >= MAX_RESTART_ATTEMPTS) {
-      console.log(
-        `[session ${sessionId}] Max restart attempts (${MAX_RESTART_ATTEMPTS}) reached, closing session`,
-      );
+      log.info({ sessionId }, "max restart attempts reached, closing session");
       connectionManager.broadcastToSession(sessionId, {
         type: "session:closed",
         sessionId,
@@ -119,9 +120,7 @@ export class SessionManager {
     const attempt = entry.restartAttempts + 1;
     const delayMs = BASE_RESTART_DELAY_MS * Math.pow(2, entry.restartAttempts);
 
-    console.log(
-      `[session ${sessionId}] Agent crashed, restarting (attempt ${attempt}/${MAX_RESTART_ATTEMPTS}) in ${delayMs}ms`,
-    );
+    log.info({ sessionId, attempt, maxAttempts: MAX_RESTART_ATTEMPTS, delayMs }, "agent crashed, restarting");
 
     connectionManager.broadcastToSession(sessionId, {
       type: "session:agent_restarting",
@@ -145,7 +144,7 @@ export class SessionManager {
     if (!entry || entry.explicitlyClosed) return;
 
     if (!this.bridgeFactory) {
-      console.error(`[session ${sessionId}] No bridge factory configured, cannot restart`);
+      log.error({ sessionId }, "no bridge factory configured, cannot restart");
       this.sessions.delete(sessionId);
       store.closeSession(sessionId);
       return;
@@ -156,9 +155,9 @@ export class SessionManager {
       entry.bridge = bridge;
       // Reset restart attempts on successful restart
       entry.restartAttempts = 0;
-      console.log(`[session ${sessionId}] Agent restarted successfully`);
+      log.info({ sessionId }, "agent restarted");
     } catch (err) {
-      console.error(`[session ${sessionId}] Failed to restart agent:`, err);
+      log.error({ sessionId, err }, "restart failed");
 
       // Recursively call handleAgentClose to retry or give up
       this.handleAgentClose(sessionId, store, connectionManager);

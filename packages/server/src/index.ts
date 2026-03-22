@@ -27,6 +27,9 @@ import qrcode from "qrcode-terminal";
 import { buildConnectionUri, getLocalIp } from "./connect-info.js";
 
 import { validateDataDir } from "./data-dir.js";
+import { logger } from "./logger.js";
+
+const log = logger.child({ target: "server" });
 
 const config = loadConfig();
 validateDataDir();
@@ -95,7 +98,7 @@ function emitSessionError(sessionId: string, code: string, message: string): voi
 }
 
 async function handlePrompt(sessionId: string, prompt: PromptContent[]) {
-  console.log(`[session ${sessionId}] handlePrompt:`, JSON.stringify(prompt).slice(0, 200));
+  log.info({ sessionId, prompt: JSON.stringify(prompt).slice(0, 200) }, "handlePrompt");
   const session = store.getSession(sessionId);
   if (!session) {
     emitSessionError(sessionId, "session_not_found", "Session not found");
@@ -185,14 +188,27 @@ async function handlePrompt(sessionId: string, prompt: PromptContent[]) {
     return;
   }
 
+  // Check if prompt contains images and agent supports them
+  const hasImages = prompt.some((item) => item.type === "image");
+  if (hasImages && !bridge.capabilities?.promptCapabilities?.image) {
+    emitSessionError(sessionId, "unsupported_content", "This agent does not support image input");
+    return;
+  }
+
   // Build a combined user message text including any file mentions
   const textParts: string[] = [];
+  let imageCount = 0;
   for (const item of prompt) {
     if (item.type === "text") {
       textParts.push(item.text);
     } else if (item.type === "resource_link") {
       textParts.push(`@${item.name}`);
+    } else if (item.type === "image") {
+      imageCount++;
     }
+  }
+  if (imageCount > 0) {
+    textParts.push(` [${imageCount} image${imageCount > 1 ? "s" : ""}]`);
   }
   if (textParts.length > 0) {
     store.appendHistory(sessionId, "user", textParts.join(""));
@@ -240,7 +256,7 @@ async function createBridge(
 
   const bridge = new AcpBridge(handle.process, {
     onSessionUpdate(sid, update) {
-      console.log(`[session ${sessionId}] update: ${update.sessionUpdate}`, JSON.stringify(update).slice(0, 200));
+      log.debug({ sessionId, update: update.sessionUpdate }, "session update");
       store.touchSession(sessionId);
       connectionManager.broadcastToSession(sessionId, {
         type: "session:update",
@@ -281,7 +297,7 @@ async function createBridge(
       }
     },
     onPermissionRequest(sid, request) {
-      console.log(`[session ${sessionId}] permission_request:`, JSON.stringify(request.params).slice(0, 300));
+      log.info({ sessionId }, "permission_request");
       store.touchSession(sessionId);
       const permUpdate = {
         sessionUpdate: "permission_request" as const,
@@ -298,7 +314,7 @@ async function createBridge(
       store.appendEvent(sessionId, "permission_request", permUpdate as unknown as Record<string, unknown>);
     },
     onError(error) {
-      console.error(`[session ${sessionId}] Agent error:`, error);
+      log.error({ sessionId, err: error }, "agent error");
       connectionManager.broadcastToSession(sessionId, {
         type: "error",
         code: "agent_error",
@@ -306,7 +322,7 @@ async function createBridge(
       });
     },
     onClose() {
-      console.log(`[session ${sessionId}] Agent process closed`);
+      log.info({ sessionId }, "agent process closed");
       // Flush any buffered agent message chunks before closing
       flushAgentMessageBuffer(sessionId);
       sessionManager.handleAgentClose(sessionId, store, connectionManager);
@@ -537,7 +553,7 @@ if (config.webDir) {
     return serveStatic({ root: resolvedWebDir, path: "index.html" })(c, next);
   });
 
-  console.log(`  Serving web UI from ${resolvedWebDir}`);
+  log.info({ webDir: resolvedWebDir }, "serving web UI");
 }
 
 // Start server
@@ -560,11 +576,13 @@ const idleSuspendSweepTimer = setInterval(() => {
 }, IDLE_SUSPEND_SWEEP_INTERVAL_MS);
 idleSuspendSweepTimer.unref();
 
-console.log(`\n  Matrix Server running on http://${config.host}:${config.port}`);
-console.log(`\n  Auth token: ${serverToken}`);
+log.info({ host: config.host, port: config.port }, "Matrix Server started");
 const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
 const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
+log.info({ agents: discoveredAgents.map(a => a.name) }, "discovered agents");
+
+// Startup info to stdout (not structured log) — contains secrets
+console.log(`\n  Auth token: ${serverToken}`);
 console.log(`\n  Connect URI: ${connectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
-console.log(`\n  Discovered agents: ${discoveredAgents.map((a) => a.name).join(", ")}\n`);

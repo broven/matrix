@@ -21,6 +21,8 @@ tauri-plugin-http = "2"
 tauri-plugin-localhost = "2"
 tauri-plugin-store = "2"
 tauri-plugin-barcode-scanner = "2"
+tauri-plugin-log = { version = "2", features = ["colored"] }
+log = "0.4"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 tokio = { version = "1", features = ["fs"] }
 futures-util = "0.3"
