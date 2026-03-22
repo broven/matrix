@@ -214,7 +214,7 @@ export function usePromptEditor({
         class:
           "tiptap max-h-[200px] min-h-[52px] w-full resize-none overflow-y-auto border-0 bg-transparent px-4 py-3.5 text-[0.9375rem] leading-relaxed outline-none",
       },
-      handleKeyDown(_view, event) {
+      handleKeyDown(view, event) {
         // Don't intercept when a suggestion popup is open
         if (popupRef.current.type !== null) return false;
 
@@ -227,9 +227,13 @@ export function usePromptEditor({
           return true;
         }
 
-        // If newline keys match, allow default tiptap behavior (insert newline)
+        // Actively insert a newline for the configured new-line shortcut
         if (keysMatch(pressed, newLineKeysRef.current)) {
-          return false;
+          event.preventDefault();
+          const { state, dispatch } = view;
+          const { tr } = state;
+          dispatch(tr.replaceSelectionWith(state.schema.nodes.paragraph.create()).scrollIntoView());
+          return true;
         }
 
         return false;
