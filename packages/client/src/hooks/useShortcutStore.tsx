@@ -15,6 +15,7 @@ export interface Shortcut {
 export interface ShortcutStoreState {
   shortcuts: Shortcut[];
   updateShortcut: (id: string, keys: string[]) => void;
+  bulkUpdate: (updates: Array<{ id: string; keys: string[] }>) => void;
   resetShortcut: (id: string) => void;
   resetAll: () => void;
   getConflicts: (id: string, keys: string[]) => Shortcut[];
@@ -34,6 +35,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
 const ShortcutStoreContext = createContext<ShortcutStoreState>({
   shortcuts: DEFAULT_SHORTCUTS,
   updateShortcut: () => {},
+  bulkUpdate: () => {},
   resetShortcut: () => {},
   resetAll: () => {},
   getConflicts: () => [],
@@ -120,6 +122,19 @@ export function ShortcutStoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const bulkUpdate = useCallback((updates: Array<{ id: string; keys: string[] }>) => {
+    setShortcuts((prev) => {
+      const updateMap = new Map(updates.map((u) => [u.id, u.keys]));
+      const updated = prev.map((s) =>
+        updateMap.has(s.id) ? { ...s, keys: updateMap.get(s.id)! } : s,
+      );
+      persistOverrides(computeOverrides(updated)).catch((err) =>
+        console.error("Failed to persist shortcut overrides:", err),
+      );
+      return updated;
+    });
+  }, []);
+
   const resetShortcut = useCallback((id: string) => {
     setShortcuts((prev) => {
       const updated = prev.map((s) =>
@@ -150,7 +165,7 @@ export function ShortcutStoreProvider({ children }: { children: ReactNode }) {
   }, [shortcuts]);
 
   return (
-    <ShortcutStoreContext.Provider value={{ shortcuts, updateShortcut, resetShortcut, resetAll, getConflicts, getShortcut }}>
+    <ShortcutStoreContext.Provider value={{ shortcuts, updateShortcut, bulkUpdate, resetShortcut, resetAll, getConflicts, getShortcut }}>
       {children}
     </ShortcutStoreContext.Provider>
   );

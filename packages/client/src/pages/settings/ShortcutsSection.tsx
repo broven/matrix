@@ -13,17 +13,16 @@ const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
 const CATEGORY_ORDER: ShortcutCategory[] = ["chat", "session", "navigation"];
 
 export function ShortcutsSection() {
-  const { shortcuts, updateShortcut, resetShortcut, resetAll, getConflicts } = useShortcutStore();
+  const { shortcuts, bulkUpdate, resetShortcut, resetAll, getConflicts } = useShortcutStore();
 
   const handleUpdate = (id: string, keys: string[]) => {
-    // Clear conflicts: unbind any shortcut that has the same keys
+    // Atomically unbind conflicts and assign new keys in a single update
     const conflicts = getConflicts(id, keys);
-    for (const c of conflicts) {
-      // Set conflicting shortcut to empty (unbound) rather than reset to default,
-      // because the default might be the same keys we're assigning
-      updateShortcut(c.id, []);
-    }
-    updateShortcut(id, keys);
+    const updates = [
+      ...conflicts.map((c) => ({ id: c.id, keys: [] as string[] })),
+      { id, keys },
+    ];
+    bulkUpdate(updates);
   };
 
   return (

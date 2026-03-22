@@ -2,9 +2,6 @@ import { useEffect } from "react";
 import { useShortcutStore } from "./useShortcutStore";
 import { eventToKeys, keysMatch } from "@/lib/keyboard";
 
-// Re-export for convenience
-export { eventToKeys, keysMatch } from "@/lib/keyboard";
-
 // IDs handled locally by tiptap, not by the global listener
 const LOCAL_SHORTCUT_IDS = new Set(["send-message", "new-line"]);
 
