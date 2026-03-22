@@ -4,6 +4,7 @@ import type { AvailableCommand, PromptContent } from "@matrix/protocol";
 import type { AgentListItem } from "@matrix/protocol";
 import { ArrowUp, Plus, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useShortcutStore } from "@/hooks/useShortcutStore";
 import { usePromptEditor } from "./prompt/usePromptEditor";
 import { serializeTiptapDoc } from "./prompt/serializeTiptap";
 
@@ -55,6 +56,10 @@ export function PromptInput({
   );
   fetchFilesRef.current = fetchFiles ?? null;
 
+  const { getShortcut } = useShortcutStore();
+  const sendShortcut = getShortcut("send-message");
+  const newLineShortcut = getShortcut("new-line");
+
   const isDisabled = disabled || noAgentAvailable;
 
   const handleSend = useCallback(() => {
@@ -86,6 +91,8 @@ export function PromptInput({
         setIsEmpty(editor.isEmpty);
       }
     },
+    sendKeys: sendShortcut?.keys,
+    newLineKeys: newLineShortcut?.keys,
   });
 
   // Update handleSend's closure on editor
