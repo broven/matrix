@@ -9,6 +9,7 @@ interface KeyRecorderProps {
 
 export function KeyRecorder({ onRecord, onCancel }: KeyRecorderProps) {
   const [recordedKeys, setRecordedKeys] = useState<string[] | null>(null);
+  const recordedKeysRef = useRef<string[] | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export function KeyRecorder({ onRecord, onCancel }: KeyRecorderProps) {
       const hasNonModifier = keys.some((k) => !modifierKeys.has(k));
       if (!hasNonModifier) return;
 
+      recordedKeysRef.current = keys;
       setRecordedKeys(keys);
     };
 
@@ -37,9 +39,9 @@ export function KeyRecorder({ onRecord, onCancel }: KeyRecorderProps) {
       e.preventDefault();
       e.stopPropagation();
 
-      // Confirm on keyup if we have recorded keys
-      if (recordedKeys) {
-        onRecord(recordedKeys);
+      // Confirm on keyup using ref to avoid stale closure
+      if (recordedKeysRef.current) {
+        onRecord(recordedKeysRef.current);
       }
     };
 
@@ -49,7 +51,7 @@ export function KeyRecorder({ onRecord, onCancel }: KeyRecorderProps) {
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp, true);
     };
-  }, [recordedKeys, onRecord, onCancel]);
+  }, [onRecord, onCancel]);
 
   return (
     <div

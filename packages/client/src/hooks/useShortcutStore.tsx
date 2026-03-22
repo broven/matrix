@@ -108,7 +108,9 @@ export function ShortcutStoreProvider({ children }: { children: ReactNode }) {
   const updateShortcut = useCallback((id: string, keys: string[]) => {
     setShortcuts((prev) => {
       const updated = prev.map((s) => (s.id === id ? { ...s, keys } : s));
-      persistOverrides(computeOverrides(updated));
+      persistOverrides(computeOverrides(updated)).catch((err) =>
+        console.error("Failed to persist shortcut overrides:", err),
+      );
       return updated;
     });
   }, []);
@@ -118,7 +120,9 @@ export function ShortcutStoreProvider({ children }: { children: ReactNode }) {
       const updated = prev.map((s) =>
         s.id === id ? { ...s, keys: [...s.defaultKeys] } : s,
       );
-      persistOverrides(computeOverrides(updated));
+      persistOverrides(computeOverrides(updated)).catch((err) =>
+        console.error("Failed to persist shortcut overrides:", err),
+      );
       return updated;
     });
   }, []);
@@ -126,7 +130,9 @@ export function ShortcutStoreProvider({ children }: { children: ReactNode }) {
   const resetAll = useCallback(() => {
     const reset = DEFAULT_SHORTCUTS.map((s) => ({ ...s, keys: [...s.defaultKeys] }));
     setShortcuts(reset);
-    persistOverrides({});
+    persistOverrides({}).catch((err) =>
+      console.error("Failed to persist shortcut overrides:", err),
+    );
   }, []);
 
   const getConflicts = useCallback((id: string, keys: string[]) => {

@@ -218,7 +218,7 @@ export function usePromptEditor({
         // Don't intercept when a suggestion popup is open
         if (popupRef.current.type !== null) return false;
 
-        const pressed = eventToKeys(event as unknown as KeyboardEvent);
+        const pressed = eventToKeys(event as KeyboardEvent);
         if (pressed.length === 0) return false;
 
         if (keysMatch(pressed, sendKeysRef.current)) {

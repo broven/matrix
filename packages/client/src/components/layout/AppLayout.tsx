@@ -476,16 +476,21 @@ export function AppLayout() {
     }
   };
 
+  const handleCreateSessionRef = useRef(handleCreateSession);
+  handleCreateSessionRef.current = handleCreateSession;
+  const handleDeleteSessionRef = useRef(handleDeleteSession);
+  handleDeleteSessionRef.current = handleDeleteSession;
+
   const shortcutHandlers = useMemo(() => ({
     "create-session": () => {
       const firstRepo = repositories[0];
       if (firstRepo && client) {
-        void handleCreateSession("", firstRepo.path);
+        void handleCreateSessionRef.current("", firstRepo.path);
       }
     },
     "close-session": () => {
       if (selectedSessionId) {
-        void handleDeleteSession(selectedSessionId);
+        void handleDeleteSessionRef.current(selectedSessionId);
       }
     },
     "open-settings": () => setShowSettings(true),

@@ -16,10 +16,12 @@ export function ShortcutsSection() {
   const { shortcuts, updateShortcut, resetShortcut, resetAll, getConflicts } = useShortcutStore();
 
   const handleUpdate = (id: string, keys: string[]) => {
-    // Clear conflicts: if another shortcut has the same keys, reset it
+    // Clear conflicts: unbind any shortcut that has the same keys
     const conflicts = getConflicts(id, keys);
     for (const c of conflicts) {
-      resetShortcut(c.id);
+      // Set conflicting shortcut to empty (unbound) rather than reset to default,
+      // because the default might be the same keys we're assigning
+      updateShortcut(c.id, []);
     }
     updateShortcut(id, keys);
   };

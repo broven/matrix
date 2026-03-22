@@ -89,10 +89,10 @@ export function ShortcutRow({ shortcut, onUpdate, onReset, onCheckConflicts }: S
           <span className="flex-1">
             Already assigned to <strong>{conflicts.map((c) => c.label).join(", ")}</strong>
           </span>
-          <Button size="sm" variant="outline" className="h-6 text-xs" onClick={handleOverride}>
+          <Button size="sm" variant="outline" className="h-6 text-xs" onClick={handleOverride} data-testid="shortcut-override-btn">
             Override
           </Button>
-          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={handleCancel}>
+          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={handleCancel} data-testid="shortcut-cancel-btn">
             Cancel
           </Button>
         </div>

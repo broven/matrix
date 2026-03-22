@@ -12,7 +12,9 @@ export function eventToKeys(e: KeyboardEvent): string[] {
   // Don't add modifier-only keys as the main key
   const modifierKeys = new Set(["Control", "Shift", "Alt", "Meta"]);
   if (!modifierKeys.has(e.key)) {
-    keys.push(e.key);
+    // Normalize single characters to lowercase for consistent matching
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    keys.push(key);
   }
 
   return keys;
