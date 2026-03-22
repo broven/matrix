@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { isTauri } from "@/lib/platform";
+import { keysMatch } from "@/lib/keyboard";
 
 export type ShortcutCategory = "chat" | "session" | "navigation";
 
@@ -136,8 +137,8 @@ export function ShortcutStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const getConflicts = useCallback((id: string, keys: string[]) => {
-    const keyStr = JSON.stringify(keys);
-    return shortcuts.filter((s) => s.id !== id && JSON.stringify(s.keys) === keyStr);
+    if (keys.length === 0) return [];
+    return shortcuts.filter((s) => s.id !== id && s.keys.length > 0 && keysMatch(s.keys, keys));
   }, [shortcuts]);
 
   const getShortcut = useCallback((id: string) => {

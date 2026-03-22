@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Pencil, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Shortcut } from "@/hooks/useShortcutStore";
+import { keysMatch } from "@/lib/keyboard";
 import { ShortcutBadge } from "./ShortcutBadge";
 import { KeyRecorder } from "./KeyRecorder";
 
@@ -17,7 +18,7 @@ export function ShortcutRow({ shortcut, onUpdate, onReset, onCheckConflicts }: S
   const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
   const [conflicts, setConflicts] = useState<Shortcut[]>([]);
 
-  const isModified = JSON.stringify(shortcut.keys) !== JSON.stringify(shortcut.defaultKeys);
+  const isModified = !keysMatch(shortcut.keys, shortcut.defaultKeys);
 
   const handleRecord = (keys: string[]) => {
     const found = onCheckConflicts(keys);

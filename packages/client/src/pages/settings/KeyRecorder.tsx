@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { eventToKeys } from "@/hooks/useGlobalShortcuts";
+import { eventToKeys } from "@/lib/keyboard";
 import { ShortcutBadge } from "./ShortcutBadge";
 
 interface KeyRecorderProps {
@@ -39,9 +39,11 @@ export function KeyRecorder({ onRecord, onCancel }: KeyRecorderProps) {
       e.preventDefault();
       e.stopPropagation();
 
-      // Confirm on keyup using ref to avoid stale closure
+      // Confirm on keyup using ref to avoid stale closure, then clear to prevent double-fire
       if (recordedKeysRef.current) {
-        onRecord(recordedKeysRef.current);
+        const keys = recordedKeysRef.current;
+        recordedKeysRef.current = null;
+        onRecord(keys);
       }
     };
 

@@ -24,6 +24,10 @@ interface ShortcutBadgeProps {
 }
 
 export function ShortcutBadge({ keys }: ShortcutBadgeProps) {
+  if (keys.length === 0) {
+    return <span className="text-xs italic text-muted-foreground/60">(unbound)</span>;
+  }
+
   return (
     <span className="inline-flex items-center gap-0.5">
       {keys.map((key, i) => (
