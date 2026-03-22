@@ -48,7 +48,7 @@ if (shouldInstallBridge()) {
       const platform = isMobilePlatform() ? "ios" : "macos";
       connectBridgeWebSocket(serverUrl, token, platform, "main");
     } catch (err) {
-      logger.error(`[bridge-ws] Failed to connect: ${err}`);
+      logger.error("[bridge-ws] Failed to connect", err);
     }
   })();
 }

@@ -564,10 +564,12 @@ const idleSuspendSweepTimer = setInterval(() => {
 idleSuspendSweepTimer.unref();
 
 log.info({ host: config.host, port: config.port }, "Matrix Server started");
-log.info({ token: serverToken }, "auth token");
 const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
 const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
-log.info({ uri: connectionUri }, "connect URI");
+log.info({ agents: discoveredAgents.map(a => a.name) }, "discovered agents");
+
+// Startup info to stdout (not structured log) — contains secrets
+console.log(`\n  Auth token: ${serverToken}`);
+console.log(`\n  Connect URI: ${connectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
-log.info({ agents: discoveredAgents.map(a => a.name) }, "discovered agents");

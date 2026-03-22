@@ -101,7 +101,7 @@ pub fn run() {
                     log::LevelFilter::Info
                 })
                 .max_file_size(10_000_000) // 10MB per file
-                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                 .build(),
         )
         .plugin(tauri_plugin_shell::init())
@@ -218,15 +218,14 @@ fn initialize_desktop_runtime(
                 match event {
                     CommandEvent::Stdout(line) => {
                         let text = String::from_utf8_lossy(&line);
-                        // Try to parse pino JSON and forward at correct level
+                        // Forward full JSON line to preserve structured context fields
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                            let msg = parsed.get("msg").and_then(|v| v.as_str()).unwrap_or("");
                             match parsed.get("level").and_then(|v| v.as_u64()) {
-                                Some(10) => log::trace!(target: "sidecar", "{}", msg),
-                                Some(20) => log::debug!(target: "sidecar", "{}", msg),
-                                Some(30) => log::info!(target: "sidecar", "{}", msg),
-                                Some(40) => log::warn!(target: "sidecar", "{}", msg),
-                                Some(50) | Some(60) => log::error!(target: "sidecar", "{}", msg),
+                                Some(10) => log::trace!(target: "sidecar", "{}", text),
+                                Some(20) => log::debug!(target: "sidecar", "{}", text),
+                                Some(30) => log::info!(target: "sidecar", "{}", text),
+                                Some(40) => log::warn!(target: "sidecar", "{}", text),
+                                Some(50) | Some(60) => log::error!(target: "sidecar", "{}", text),
                                 _ => log::info!(target: "sidecar", "{}", text),
                             }
                         } else {
