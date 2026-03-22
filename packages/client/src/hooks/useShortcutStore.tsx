@@ -77,6 +77,7 @@ async function persistOverrides(overrides: PersistedOverrides): Promise<void> {
   const store = await getTauriStore();
   if (store) {
     await store.set(STORAGE_KEY, overrides);
+    await store.save();
   }
 }
 
@@ -90,7 +91,7 @@ function mergeWithDefaults(overrides: PersistedOverrides): Shortcut[] {
 function computeOverrides(shortcuts: Shortcut[]): PersistedOverrides {
   const overrides: PersistedOverrides = {};
   for (const s of shortcuts) {
-    if (JSON.stringify(s.keys) !== JSON.stringify(s.defaultKeys)) {
+    if (!keysMatch(s.keys, s.defaultKeys)) {
       overrides[s.id] = s.keys;
     }
   }
@@ -101,9 +102,12 @@ export function ShortcutStoreProvider({ children }: { children: ReactNode }) {
   const [shortcuts, setShortcuts] = useState<Shortcut[]>(DEFAULT_SHORTCUTS);
 
   useEffect(() => {
-    loadOverrides().then((overrides) => {
-      setShortcuts(mergeWithDefaults(overrides));
-    });
+    void loadOverrides()
+      .then((overrides) => setShortcuts(mergeWithDefaults(overrides)))
+      .catch((err) => {
+        console.error("Failed to load shortcut overrides:", err);
+        setShortcuts(DEFAULT_SHORTCUTS);
+      });
   }, []);
 
   const updateShortcut = useCallback((id: string, keys: string[]) => {

@@ -21,9 +21,18 @@ export function useGlobalShortcuts(handlers: GlobalShortcutHandlers) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if focused in an input/textarea (except our tiptap editor)
+      // Ignore key repeats to prevent rapid-fire shortcut execution
+      if (e.repeat) return;
+
+      // Skip if focused in an input, textarea, select, or contenteditable element
       const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") {
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable ||
+        target.closest("[contenteditable='true']")
+      ) {
         return;
       }
 

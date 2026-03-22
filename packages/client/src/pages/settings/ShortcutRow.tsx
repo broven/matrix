@@ -88,7 +88,8 @@ export function ShortcutRow({ shortcut, onUpdate, onReset, onCheckConflicts }: S
           data-testid="shortcut-conflict-banner"
         >
           <span className="flex-1">
-            Already assigned to <strong>{conflicts.map((c) => c.label).join(", ")}</strong>
+            Already assigned to <strong>{conflicts.map((c) => c.label).join(", ")}</strong>.
+            Overriding will unbind {conflicts.length === 1 ? "that shortcut" : "those shortcuts"}.
           </span>
           <Button size="sm" variant="outline" className="h-6 text-xs" onClick={handleOverride} data-testid="shortcut-override-btn">
             Override

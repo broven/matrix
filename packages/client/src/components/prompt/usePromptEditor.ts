@@ -8,7 +8,7 @@ import History from "@tiptap/extension-history";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
 import type { AvailableCommand } from "@matrix/protocol";
-import { keysMatch, eventToKeys } from "@/hooks/useGlobalShortcuts";
+import { keysMatch, eventToKeys } from "@/lib/keyboard";
 import { FileMentionExtension, FileMentionPluginKey } from "./FileMentionExtension";
 import { FileMentionList, type FileMentionListRef } from "./FileMentionList";
 import { SlashCommandExtension, SlashCommandPluginKey } from "./SlashCommandExtension";
