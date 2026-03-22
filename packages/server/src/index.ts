@@ -481,6 +481,32 @@ setupWebSocket(app as any, {
     if (agentId) {
       pushCachedCommands(sessionId, sess.worktreeId, agentId);
     }
+
+    // Auto-resume suspended agent so slash commands are available without sending a message
+    if (sess.agentId && !sessionManager.getBridge(sessionId)) {
+      void (async () => {
+        connectionManager.broadcastToSession(sessionId, {
+          type: "session:restoring",
+          sessionId,
+        } as any);
+        let bridge: ReturnType<typeof sessionManager.getBridge> | undefined;
+        if (sess.recoverable && sess.agentSessionId) {
+          bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
+        }
+        if (!bridge) {
+          try {
+            const result = await createBridge(sessionId, sess.agentId!, sess.cwd, undefined, sess.profileId ?? undefined);
+            sessionManager.register(sessionId, result.bridge, sess.agentId!, sess.cwd);
+            store.updateSessionState(sessionId, {
+              recoverable: result.recoverable,
+              agentSessionId: result.agentSessionId,
+            });
+          } catch {
+            // Silent fail — user can still send a prompt to retry
+          }
+        }
+      })();
+    }
   },
 }, upgradeWebSocket);
 

@@ -113,7 +113,8 @@ describe("SessionView", () => {
     });
 
     await waitFor(() => {
-      expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(true);
+      // Tiptap editor uses contenteditable — when disabled, contenteditable is "false"
+      expect(screen.getByRole("textbox").getAttribute("contenteditable")).toBe("false");
     });
   });
 });
