@@ -266,6 +266,114 @@ describe("Integration: session lifecycle", () => {
     expect(store.getSession("sess_restore")?.suspendedAt).toBeNull();
   });
 
+  it("POST /sessions/:id/resume reopens a closed session", async () => {
+    // Create session with agent and agentSessionId, then close it
+    store.createSession("sess_resume", "test-agent", "/tmp", {
+      recoverable: true,
+      agentSessionId: "claude-xyz",
+    });
+    store.closeSession("sess_resume");
+    expect(store.getSession("sess_resume")?.status).toBe("closed");
+
+    // Resume
+    const resumeRes = await app.request("/sessions/sess_resume/resume", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(resumeRes.status).toBe(200);
+    const body = await resumeRes.json();
+    expect(body.sessionId).toBe("sess_resume");
+
+    const session = store.getSession("sess_resume");
+    expect(session?.status).toBe("active");
+    expect(session?.agentSessionId).toBe("claude-xyz");
+  });
+
+  it("POST /sessions/:id/resume returns 404 for unknown session", async () => {
+    const res = await app.request("/sessions/sess_unknown/resume", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /sessions/:id/resume returns 409 if session has no agentSessionId", async () => {
+    store.createSession("sess_no_agent", "test-agent", "/tmp");
+    store.closeSession("sess_no_agent");
+
+    const res = await app.request("/sessions/sess_no_agent/resume", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("POST /sessions/:id/close soft-closes a session (preserves history)", async () => {
+    store.createSession("sess_close", "test-agent", "/tmp");
+    store.appendHistory("sess_close", "user", "hello");
+    store.appendHistory("sess_close", "agent", "hi back");
+
+    const closeRes = await app.request("/sessions/sess_close/close", {
+      method: "POST",
+      headers: authHeaders,
+    });
+    expect(closeRes.status).toBe(200);
+
+    const session = store.getSession("sess_close");
+    expect(session?.status).toBe("closed");
+
+    // History is preserved
+    const history = store.getHistory("sess_close");
+    expect(history).toHaveLength(2);
+  });
+
+  it("POST /sessions/:id/close returns 404 for unknown session", async () => {
+    const res = await app.request("/sessions/sess_nope/close", {
+      method: "POST",
+      headers: authHeaders,
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /sessions/:id/close is idempotent for already-closed sessions", async () => {
+    store.createSession("sess_idem", "test-agent", "/tmp");
+    store.closeSession("sess_idem");
+
+    const res = await app.request("/sessions/sess_idem/close", {
+      method: "POST",
+      headers: authHeaders,
+    });
+    expect(res.status).toBe(200);
+    expect(store.getSession("sess_idem")?.status).toBe("closed");
+  });
+
+  it("full round-trip: close → resume → verify active", async () => {
+    store.createSession("sess_rt", "test-agent", "/tmp", {
+      recoverable: true,
+      agentSessionId: "claude-rt",
+    });
+
+    // Close
+    const closeRes = await app.request("/sessions/sess_rt/close", {
+      method: "POST",
+      headers: authHeaders,
+    });
+    expect(closeRes.status).toBe(200);
+    expect(store.getSession("sess_rt")?.status).toBe("closed");
+
+    // Resume
+    const resumeRes = await app.request("/sessions/sess_rt/resume", {
+      method: "POST",
+      headers: authHeaders,
+    });
+    expect(resumeRes.status).toBe(200);
+
+    const session = store.getSession("sess_rt");
+    expect(session?.status).toBe("active");
+    expect(session?.agentSessionId).toBe("claude-rt");
+    expect(session?.closeReason).toBeNull();
+  });
+
   it("broadcasts an explicit error when prompting a closed session", async () => {
     const agentManager = new AgentManager();
     agentManager.register({

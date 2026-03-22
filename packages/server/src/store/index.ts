@@ -486,6 +486,20 @@ export class Store {
     });
   }
 
+  reopenSession(sessionId: string): void {
+    const session = this.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+    if (session.status === "active") return;
+
+    this.updateSessionState(sessionId, {
+      status: "active",
+      suspendedAt: null,
+      closeReason: null,
+    });
+  }
+
   deleteSession(sessionId: string): void {
     this.db.prepare("DELETE FROM history WHERE session_id = ?").run(sessionId);
     this.db.prepare("DELETE FROM sessions WHERE session_id = ?").run(sessionId);

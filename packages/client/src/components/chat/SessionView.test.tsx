@@ -113,8 +113,7 @@ describe("SessionView", () => {
     });
 
     await waitFor(() => {
-      // Tiptap editor uses contenteditable — when disabled, contenteditable is "false"
-      expect(screen.getByRole("textbox").getAttribute("contenteditable")).toBe("false");
+      expect(screen.queryByRole("textbox")).toBeNull();
     });
   });
 });

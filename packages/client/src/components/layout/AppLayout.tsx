@@ -146,7 +146,25 @@ export function AppLayout() {
           setSessions((prev) => [...prev, event.session]);
           break;
         case "server:session_closed":
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.sessionId === event.session.sessionId
+                ? { ...s, ...event.session }
+                : s
+            )
+          );
+          break;
+        case "server:session_deleted":
           setSessions((prev) => prev.filter((s) => s.sessionId !== event.sessionId));
+          break;
+        case "server:session_resumed":
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.sessionId === event.sessionId
+                ? { ...s, status: "active", closeReason: null, suspendedAt: null }
+                : s
+            )
+          );
           break;
         case "server:repository_added":
           setRepositories((prev) => [...prev, event.repository]);
@@ -461,6 +479,17 @@ export function AppLayout() {
   const { servers: savedServers } = useServerStore();
   const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect, getClient: getRemoteClient } = useMatrixClients();
 
+  const handleResumeSession = async (sessionId: string) => {
+    if (!selectedSession) {
+      throw new Error("No session selected");
+    }
+    const targetClient = selectedSession.serverId === SIDECAR_SERVER_ID ? client : getRemoteClient(selectedSession.serverId);
+    if (!targetClient) {
+      throw new Error("Server is not connected");
+    }
+    await targetClient.resumeSession(sessionId);
+  };
+
   const sidebarServers: ServerInfo[] = useMemo(() => {
     const result: ServerInfo[] = [];
 
@@ -529,6 +558,8 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
+      {/* Global drag region for window dragging (replaces per-component drag regions) */}
+      <div data-tauri-drag-region className="fixed inset-x-0 top-0 z-50 hidden h-10 md:block" />
       {!showSettings && (
         <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
           {sidebarContent}
@@ -579,9 +610,9 @@ export function AppLayout() {
           />
         ) : (
         <>
-        {/* Drag region for window dragging when no ChatHeader is visible (empty state) */}
+        {/* Top padding when no ChatHeader is visible (empty state) — for traffic light buttons */}
         {!(selectedSession && allSessions.find(s => s.sessionId === selectedSession.sessionId)) && (
-          <div data-tauri-drag-region className="hidden h-10 shrink-0 md:block" />
+          <div className="hidden h-10 shrink-0 md:block" />
         )}
         <MobileHeader
           selectedSession={selectedSessionInfo}
@@ -596,6 +627,7 @@ export function AppLayout() {
             agents={allAgents.get(selectedSession.serverId) ?? []}
             onSessionInfoChange={handleSessionInfoChange}
             onNavigateSettings={() => setShowSettings(true)}
+            onResumeSession={handleResumeSession}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">
@@ -678,9 +710,10 @@ export function AppLayout() {
         />
       )}
 
-      {worktreeDialogRepo && (
+      {worktreeDialogRepo && client && (
         <NewWorktreeDialog
           repository={worktreeDialogRepo}
+          client={client}
           onCreateWorktree={handleCreateWorktree}
           onClose={() => setWorktreeDialogRepo(null)}
         />

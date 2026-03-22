@@ -1,13 +1,16 @@
 import { useState, useMemo } from "react";
 import type { RepositoryInfo } from "@matrix/protocol";
+import type { MatrixClient } from "@matrix/sdk";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { BranchSelect } from "@/components/ui/branch-select";
 import { X, ChevronDown, ChevronRight } from "lucide-react";
 
 interface NewWorktreeDialogProps {
   repository: RepositoryInfo;
+  client: MatrixClient;
   onCreateWorktree: (
     repoId: string,
     branch: string,
@@ -33,6 +36,7 @@ function validateBranchName(name: string): string | null {
 
 export function NewWorktreeDialog({
   repository,
+  client,
   onCreateWorktree,
   onClose,
 }: NewWorktreeDialogProps) {
@@ -113,11 +117,13 @@ export function NewWorktreeDialog({
             <CollapsibleContent>
               <div className="pt-1">
                 <label className="mb-1.5 block text-sm font-medium">Base branch</label>
-                <Input
+                <BranchSelect
+                  repositoryId={repository.id}
+                  client={client}
                   value={baseBranch}
-                  onChange={(e) => setBaseBranch(e.target.value)}
+                  onChange={setBaseBranch}
                   placeholder={repository.defaultBranch}
-                  className="rounded-lg"
+                  data-testid="worktree-base-branch-select"
                 />
               </div>
             </CollapsibleContent>

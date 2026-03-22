@@ -27,15 +27,6 @@ function formatRelativeTime(value: string) {
   return `${diffDays}d ago`;
 }
 
-function getStatusColor(status: SessionInfo["status"]) {
-  switch (status) {
-    case "active":
-      return "bg-success";
-    case "closed":
-      return "bg-muted-foreground/30";
-  }
-}
-
 export function SessionItem({ session, selected, onSelect, onDelete }: SessionItemProps) {
   const [confirming, setConfirming] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -166,7 +157,6 @@ export function SessionItem({ session, selected, onSelect, onDelete }: SessionIt
           }
         }}
       >
-        <div className={cn("size-2 shrink-0 rounded-full", getStatusColor(session.status))} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{session.branch ?? session.agentId ?? "New session"}</p>
           <p className="truncate text-xs text-muted-foreground">

@@ -163,7 +163,39 @@ export function useAllServersData(sidecar: {
                   const next = new Map(prev);
                   next.set(sid, {
                     ...data,
+                    sessions: data.sessions.map((s) =>
+                      s.sessionId === event.session.sessionId
+                        ? { ...s, ...event.session }
+                        : s
+                    ),
+                  });
+                  return next;
+                });
+                break;
+              case "server:session_deleted":
+                setServerDataMap((prev) => {
+                  const data = prev.get(sid);
+                  if (!data) return prev;
+                  const next = new Map(prev);
+                  next.set(sid, {
+                    ...data,
                     sessions: data.sessions.filter((s) => s.sessionId !== event.sessionId),
+                  });
+                  return next;
+                });
+                break;
+              case "server:session_resumed":
+                setServerDataMap((prev) => {
+                  const data = prev.get(sid);
+                  if (!data) return prev;
+                  const next = new Map(prev);
+                  next.set(sid, {
+                    ...data,
+                    sessions: data.sessions.map((s) =>
+                      s.sessionId === event.sessionId
+                        ? { ...s, status: "active" as const, closeReason: null, suspendedAt: null }
+                        : s
+                    ),
                   });
                   return next;
                 });

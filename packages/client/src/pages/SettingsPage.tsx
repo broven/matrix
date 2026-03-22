@@ -80,7 +80,7 @@ export function SettingsPage({ onBack, repositories, onDeleteRepository }: Setti
   return (
     <div className="flex h-full flex-1 bg-background" data-testid="settings-overlay">
       <div className="flex min-h-0 flex-1 flex-col">
-        <div data-tauri-drag-region className="flex items-center justify-between border-b px-4 py-3 pt-10 md:px-6">
+        <div className="flex items-center justify-between border-b px-4 py-3 pt-10 md:px-6">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back">
               <ArrowLeft className="size-4" />

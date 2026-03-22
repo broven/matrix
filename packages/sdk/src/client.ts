@@ -17,6 +17,7 @@ import type {
   CloneJobInfo,
   CloneValidationResult,
   ServerConfig,
+  BranchInfo,
   CustomAgent,
   AgentEnvProfile,
   AgentTestResult,
@@ -27,7 +28,9 @@ import { MatrixSession } from "./session.js";
 /** Server-level events for multi-client sync */
 export type ServerEvent =
   | { type: "server:session_created"; session: SessionInfo }
-  | { type: "server:session_closed"; sessionId: string }
+  | { type: "server:session_closed"; session: SessionInfo }
+  | { type: "server:session_deleted"; sessionId: string }
+  | { type: "server:session_resumed"; sessionId: string }
   | { type: "server:repository_added"; repository: RepositoryInfo }
   | { type: "server:repository_removed"; repositoryId: string }
   | { type: "server:agents_changed"; agents: AgentListItem[] };
@@ -135,6 +138,26 @@ export class MatrixClient {
       throw new Error((err as any).error || `Failed to create session: ${res.status}`);
     }
     return res.json();
+  }
+
+  async resumeSession(sessionId: string): Promise<{ sessionId: string }> {
+    const res = await this.fetch(`/sessions/${sessionId}/resume`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as any).error || `Failed to resume session: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    const res = await this.fetch(`/sessions/${sessionId}/close`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to close session ${sessionId}: ${res.status}`);
+    }
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -292,6 +315,28 @@ export class MatrixClient {
     if (!res.ok) {
       throw new Error(`Failed to delete worktree ${id}: ${res.status}`);
     }
+  }
+
+  // ── Branches ────────────────────────────────────────────────────
+
+  async getBranches(repositoryId: string): Promise<BranchInfo[]> {
+    const res = await this.fetch(`/repositories/${repositoryId}/branches`);
+    if (!res.ok) {
+      throw new Error(`Failed to get branches for ${repositoryId}: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async getRemoteBranches(url: string): Promise<BranchInfo[]> {
+    const res = await this.fetch("/branches/remote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to get remote branches: ${res.status}`);
+    }
+    return res.json();
   }
 
   // ── Custom Agents ──────────────────────────────────────────────
@@ -464,6 +509,8 @@ export class MatrixClient {
       }
       case "server:session_created":
       case "server:session_closed":
+      case "server:session_deleted":
+      case "server:session_resumed":
       case "server:repository_added":
       case "server:repository_removed":
       case "server:agents_changed": {

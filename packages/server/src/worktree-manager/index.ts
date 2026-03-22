@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import path from "node:path";
+import type { BranchInfo } from "@matrix/protocol";
 
 interface WorktreeListEntry {
   branch: string;
@@ -143,6 +144,83 @@ export class WorktreeManager {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * List all local and remote branches for a repository.
+   */
+  async listBranches(repoPath: string): Promise<BranchInfo[]> {
+    const defaultBranch = await this.detectDefaultBranch(repoPath);
+
+    const result = await $`git -C ${repoPath} branch -a --format=${"%(refname:short)"}`.quiet().nothrow();
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to list branches: ${result.stderr.toString()}`);
+    }
+
+    const output = result.stdout.toString().trim();
+    if (!output) return [];
+
+    const branches: BranchInfo[] = [];
+    const seen = new Set<string>();
+
+    for (const line of output.split("\n")) {
+      const name = line.trim();
+      if (!name || name.includes("->")) continue; // skip HEAD pointers like origin/HEAD -> origin/main
+
+      const isRemote = name.startsWith("origin/");
+      const displayName = isRemote ? name.slice("origin/".length) : name;
+
+      // Skip remote branches that have a local counterpart
+      if (isRemote && seen.has(displayName)) continue;
+
+      // If local branch, mark remote duplicate to skip
+      if (!isRemote) seen.add(name);
+
+      branches.push({
+        name,
+        isRemote,
+        isDefault: displayName === defaultBranch,
+      });
+    }
+
+    // Sort: default first, then local, then remote, alphabetical within each group
+    branches.sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      if (a.isRemote !== b.isRemote) return a.isRemote ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return branches;
+  }
+
+  /**
+   * List branches from a remote URL using git ls-remote.
+   */
+  async listRemoteBranches(url: string): Promise<BranchInfo[]> {
+    const result = await $`git ls-remote --heads ${url}`.quiet().nothrow();
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to list remote branches: ${result.stderr.toString()}`);
+    }
+
+    const output = result.stdout.toString().trim();
+    if (!output) return [];
+
+    const branches: BranchInfo[] = [];
+    for (const line of output.split("\n")) {
+      const parts = line.split("\t");
+      if (parts.length < 2) continue;
+      const ref = parts[1].trim();
+      // refs/heads/branch-name → branch-name
+      const name = ref.replace("refs/heads/", "");
+      branches.push({
+        name,
+        isRemote: true,
+        isDefault: false, // Can't reliably detect default from ls-remote
+      });
+    }
+
+    branches.sort((a, b) => a.name.localeCompare(b.name));
+    return branches;
   }
 
   // ── wt-based implementations ──────────────────────────────────────
