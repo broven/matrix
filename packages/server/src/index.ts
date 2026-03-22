@@ -185,6 +185,13 @@ async function handlePrompt(sessionId: string, prompt: PromptContent[]) {
     return;
   }
 
+  // Check if prompt contains images and agent supports them
+  const hasImages = prompt.some((item) => item.type === "image");
+  if (hasImages && !bridge.capabilities?.promptCapabilities?.image) {
+    emitSessionError(sessionId, "unsupported_content", "This agent does not support image input");
+    return;
+  }
+
   // Build a combined user message text including any file mentions
   const textParts: string[] = [];
   let imageCount = 0;
