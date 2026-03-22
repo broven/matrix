@@ -2,6 +2,9 @@ import { execSync } from "node:child_process";
 import { platform } from "node:os";
 import type { AgentConfig } from "@matrix/protocol";
 import { KNOWN_AGENTS, type KnownAgent } from "./known-agents.js";
+import { logger } from "../logger.js";
+
+const log = logger.child({ target: "discovery" });
 
 export interface RegistryAgent {
   id: string;
@@ -43,17 +46,17 @@ export async function fetchRegistry(): Promise<RegistryResponse | null> {
     const response = await fetch(REGISTRY_URL, { signal: controller.signal });
     clearTimeout(timer);
     if (!response.ok) {
-      console.warn(`[discovery] Registry fetch failed: HTTP ${response.status}`);
+      log.warn({ status: response.status }, "registry fetch failed");
       return null;
     }
     const data = await response.json();
     if (!data || !Array.isArray(data.agents)) {
-      console.warn("[discovery] Registry response has invalid shape");
+      log.warn("invalid registry shape");
       return null;
     }
     return data as RegistryResponse;
   } catch (error) {
-    console.warn(`[discovery] Registry fetch failed:`, error);
+    log.warn({ err: error }, "registry fetch failed");
     return null;
   }
 }
@@ -79,7 +82,7 @@ export interface DiscoveryDeps {
  */
 export async function discoverAgentsWithDeps(deps: DiscoveryDeps): Promise<AgentConfig[]> {
   if (!deps.checkCommand("npx")) {
-    console.warn("[discovery] npx not found on PATH, using fallback agents");
+    log.warn("npx not found, using fallback agents");
     return FALLBACK_AGENTS;
   }
 
@@ -87,7 +90,7 @@ export async function discoverAgentsWithDeps(deps: DiscoveryDeps): Promise<Agent
   try {
     registry = await deps.fetchRegistryData();
   } catch (error) {
-    console.warn("[discovery] Registry discovery failed:", error);
+    log.warn({ err: error }, "registry discovery failed");
   }
 
   const registryMap = new Map<string, RegistryAgent>();
@@ -119,13 +122,11 @@ export async function discoverAgentsWithDeps(deps: DiscoveryDeps): Promise<Agent
     };
 
     discovered.push(config);
-    console.log(
-      `[discovery] Found ${config.name} (${known.detectCommand} → npx ${known.npxPackage})`,
-    );
+    log.info({ agent: config.name, command: known.detectCommand, npxPackage: known.npxPackage }, "discovered agent");
   }
 
   if (discovered.length === 0) {
-    console.warn("[discovery] No agents discovered, using fallback");
+    log.warn("no agents discovered, using fallback");
     return FALLBACK_AGENTS;
   }
 

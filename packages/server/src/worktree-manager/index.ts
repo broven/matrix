@@ -1,6 +1,9 @@
 import { $ } from "bun";
 import path from "node:path";
 import type { BranchInfo } from "@matrix/protocol";
+import { logger } from "../logger.js";
+
+const log = logger.child({ target: "worktree" });
 
 interface WorktreeListEntry {
   branch: string;
@@ -243,7 +246,7 @@ export class WorktreeManager {
     const result = await $`${wt} remove ${branch} --yes`.cwd(repoPath).quiet().nothrow();
     if (result.exitCode !== 0) {
       const stderr = result.stderr.toString().trim();
-      console.error(`[worktree] wt remove failed (exit ${result.exitCode}): ${stderr}`);
+      log.error({ exitCode: result.exitCode, stderr }, "wt remove failed");
       throw new Error(`wt remove failed: ${stderr}`);
     }
   }
@@ -275,14 +278,14 @@ export class WorktreeManager {
     const result = await $`git -C ${repoPath} worktree remove ${worktreePath}`.quiet().nothrow();
     if (result.exitCode !== 0) {
       const stderr = result.stderr.toString().trim();
-      console.error(`[worktree] git worktree remove failed (exit ${result.exitCode}): ${stderr}`);
+      log.error({ exitCode: result.exitCode, stderr }, "git worktree remove failed");
       throw new Error(`git worktree remove failed: ${stderr}`);
     }
 
     // Use -d (not -D) so unmerged branches are not silently deleted
     const branchResult = await $`git -C ${repoPath} branch -d ${branch}`.quiet().nothrow();
     if (branchResult.exitCode !== 0) {
-      console.warn(`[worktree] Branch deletion failed (branch may not be fully merged): ${branchResult.stderr.toString().trim()}`);
+      log.warn({ stderr: branchResult.stderr.toString().trim() }, "branch deletion failed");
     }
   }
 
