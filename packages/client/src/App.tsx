@@ -8,6 +8,7 @@ import { ConnectPage } from "./pages/ConnectPage";
 import { UpdateToast } from "./components/UpdateToast";
 import { UpdateProvider, useAutoUpdate } from "./hooks/useAutoUpdate";
 import { hasLocalServer } from "./lib/platform";
+import { ShortcutStoreProvider } from "./hooks/useShortcutStore";
 
 function AutoUpdateToast() {
   const update = useAutoUpdate();
@@ -106,9 +107,11 @@ export function App() {
     <MatrixClientsProvider>
       <MatrixClientProvider>
         <ServerStoreProvider>
-          <UpdateProvider>
-            <AppContent />
-          </UpdateProvider>
+          <ShortcutStoreProvider>
+            <UpdateProvider>
+              <AppContent />
+            </UpdateProvider>
+          </ShortcutStoreProvider>
         </ServerStoreProvider>
       </MatrixClientProvider>
     </MatrixClientsProvider>
