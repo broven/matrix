@@ -16,6 +16,7 @@
     "store:default",
     "barcode-scanner:allow-scan",
     "barcode-scanner:allow-cancel",
+    "log:default",
     {
       "identifier": "http:default",
       "allow": [

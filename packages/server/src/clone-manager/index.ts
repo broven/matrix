@@ -3,6 +3,9 @@ import { nanoid } from "nanoid";
 import path from "node:path";
 import { parseRepoName } from "@matrix/protocol";
 import type { CloneJobInfo, CloneJobStatus } from "@matrix/protocol";
+import { logger } from "../logger.js";
+
+const log = logger.child({ target: "clone" });
 
 interface CloneJob {
   jobId: string;
@@ -98,7 +101,7 @@ export class CloneManager {
           try {
             await onComplete(job);
           } catch (e) {
-            console.error(`[clone] onComplete callback failed:`, e);
+            log.error({ err: e }, "onComplete callback failed");
           }
         }
         job.status = "completed";
@@ -115,7 +118,7 @@ export class CloneManager {
       try {
         await onComplete(job);
       } catch (e) {
-        console.error(`[clone] onComplete callback failed:`, e);
+        log.error({ err: e }, "onComplete callback failed");
       }
     }
   }

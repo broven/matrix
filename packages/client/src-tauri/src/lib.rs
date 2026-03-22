@@ -1,4 +1,5 @@
 use tauri::Manager;
+use tauri_plugin_log::{Target, TargetKind};
 
 #[cfg(target_os = "macos")]
 mod updater;
@@ -87,6 +88,22 @@ fn consume_mock_file_dialog(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: None }),
+                    Target::new(TargetKind::Webview),
+                ])
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
+                .max_file_size(10_000_000) // 10MB per file
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(MockFileDialogState(std::sync::Mutex::new(None)));
@@ -146,7 +163,7 @@ fn initialize_desktop_runtime(
         .unwrap_or(false);
 
     if skip_sidecar {
-        eprintln!("[matrix-client] SKIP_SIDECAR=true, skipping sidecar spawn (using external dev server on port {sidecar_port})");
+        log::info!("SKIP_SIDECAR=true, skipping sidecar spawn (using external dev server on port {sidecar_port})");
         app.manage(SidecarState(std::sync::Mutex::new(None)));
         app.manage(SidecarPortState(sidecar_port));
     } else {
@@ -163,10 +180,7 @@ fn initialize_desktop_runtime(
                 if pid_str.trim().is_empty() {
                     continue;
                 }
-                eprintln!(
-                    "[matrix-client] killing orphaned process on port {}: pid {}",
-                    sidecar_port, pid_str
-                );
+                log::warn!("killing orphaned process on port {}: pid {}", sidecar_port, pid_str);
                 let _ = std::process::Command::new("kill")
                     .args(["-TERM", pid_str.trim()])
                     .output();
@@ -203,16 +217,26 @@ fn initialize_desktop_runtime(
             while let Some(event) = rx.recv().await {
                 match event {
                     CommandEvent::Stdout(line) => {
-                        eprintln!("[matrix-server] {}", String::from_utf8_lossy(&line));
+                        let text = String::from_utf8_lossy(&line);
+                        // Forward full JSON line to preserve structured context fields
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                            match parsed.get("level").and_then(|v| v.as_u64()) {
+                                Some(10) => log::trace!(target: "sidecar", "{}", text),
+                                Some(20) => log::debug!(target: "sidecar", "{}", text),
+                                Some(30) => log::info!(target: "sidecar", "{}", text),
+                                Some(40) => log::warn!(target: "sidecar", "{}", text),
+                                Some(50) | Some(60) => log::error!(target: "sidecar", "{}", text),
+                                _ => log::info!(target: "sidecar", "{}", text),
+                            }
+                        } else {
+                            log::info!(target: "sidecar", "{}", text);
+                        }
                     }
                     CommandEvent::Stderr(line) => {
-                        eprintln!("[matrix-server:err] {}", String::from_utf8_lossy(&line));
+                        log::warn!(target: "sidecar", "{}", String::from_utf8_lossy(&line));
                     }
                     CommandEvent::Terminated(payload) => {
-                        eprintln!(
-                            "[matrix-server] terminated code={:?} signal={:?}",
-                            payload.code, payload.signal
-                        );
+                        log::info!(target: "sidecar", "terminated code={:?} signal={:?}", payload.code, payload.signal);
                         break;
                     }
                     _ => {}

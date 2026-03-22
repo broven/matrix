@@ -8,6 +8,9 @@ import { normalizeRemoteUrl } from "@matrix/protocol";
 import type { CloneManager } from "../../clone-manager/index.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import { getServerConfig } from "./server-config.js";
+import { logger } from "../../logger.js";
+
+const log = logger.child({ target: "repositories" });
 
 interface RepositoryRouteDeps {
   store: Store;
@@ -87,7 +90,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       try {
         await worktreeManager.removeWorktree(repo.path, wt.branch);
       } catch (error) {
-        console.error(`[repo] Failed to remove worktree ${wt.branch}:`, error);
+        log.error({ branch: wt.branch, err: error }, "failed to remove worktree");
         failedWorktrees.push(wt.branch);
       }
     }
@@ -118,9 +121,9 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
 
       try {
         await rm(resolved, { recursive: true });
-        console.log(`[repo] Deleted source files: ${resolved}`);
+        log.info({ path: resolved }, "deleted source files");
       } catch (error) {
-        console.error(`[repo] Failed to delete source files ${resolved}:`, error);
+        log.error({ path: resolved, err: error }, "failed to delete source files");
         return c.json({ error: `Failed to delete source files: ${resolved}` }, 500);
       }
     }
@@ -192,7 +195,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
         try { await worktreeManager.removeWorktree(repo.path, body.branch); } catch { /* best-effort */ }
       }
       const message = error instanceof Error ? error.message : "Failed to create worktree";
-      console.error(`[worktree] Creation failed:`, message);
+      log.error({ message }, "worktree creation failed");
       return c.json({ error: message }, 500);
     }
   });
@@ -264,7 +267,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
         await worktreeManager.removeWorktree(repo.path, worktree.branch);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Git worktree removal failed";
-        console.error(`[worktree] Git removal failed:`, message);
+        log.error({ message }, "git removal failed");
         return c.json({ error: message }, 500);
       }
     }
@@ -396,7 +399,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
               connectionManager.broadcastToAll({ type: "server:repository_added", repository: repo });
             }
           } catch (err) {
-            console.error("[clone] Failed to auto-register repository:", err);
+            log.error({ err }, "failed to auto-register repository");
           }
         }
       },

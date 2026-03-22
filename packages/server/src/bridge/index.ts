@@ -3,6 +3,9 @@ import type { ClientRegistry } from "./client-registry.js";
 import type { BridgeClientMessage } from "./protocol.js";
 import { validateToken } from "../auth/token.js";
 import { authMiddleware } from "../auth/middleware.js";
+import { logger } from "../logger.js";
+
+const log = logger.child({ target: "bridge" });
 
 export interface BridgeDeps {
   serverToken: string;
@@ -44,7 +47,7 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
               if (msg.type === "register") {
                 clientId = clientRegistry.register(ws, msg.platform, msg.label, msg.userAgent);
                 ws.send(JSON.stringify({ type: "registered", clientId }));
-                console.log(`[bridge] Client registered: ${clientId}`);
+                log.info({ clientId }, "client registered");
                 return;
               }
 
@@ -61,7 +64,7 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
                 }
                 clientId = clientRegistry.register(ws, msg.platform, msg.label, msg.userAgent);
                 ws.send(JSON.stringify({ type: "registered", clientId }));
-                console.log(`[bridge] Client registered: ${clientId}`);
+                log.info({ clientId }, "client registered");
                 break;
 
               case "response":
@@ -81,7 +84,7 @@ export function setupBridge(app: Hono, deps: BridgeDeps) {
 
         onClose() {
           if (clientId) {
-            console.log(`[bridge] Client disconnected: ${clientId}`);
+            log.info({ clientId }, "client disconnected");
             clientRegistry.unregister(clientId);
           }
         },
