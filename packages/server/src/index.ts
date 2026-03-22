@@ -21,7 +21,7 @@ import { WorktreeManager } from "./worktree-manager/index.js";
 import { CloneManager } from "./clone-manager/index.js";
 import { CommandCache } from "./command-cache.js";
 import { getServerConfig } from "./api/rest/server-config.js";
-import type { AgentCapabilities, CreateSessionRequest, SessionInfo } from "@matrix/protocol";
+import type { AgentCapabilities, CreateSessionRequest, SessionInfo, PromptContent } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import qrcode from "qrcode-terminal";
 import { buildConnectionUri, getLocalIp } from "./connect-info.js";
@@ -94,7 +94,7 @@ function emitSessionError(sessionId: string, code: string, message: string): voi
   });
 }
 
-async function handlePrompt(sessionId: string, prompt: Array<{ type: string; text: string; agentId?: string; profileId?: string }>) {
+async function handlePrompt(sessionId: string, prompt: PromptContent[]) {
   console.log(`[session ${sessionId}] handlePrompt:`, JSON.stringify(prompt).slice(0, 200));
   const session = store.getSession(sessionId);
   if (!session) {
@@ -111,8 +111,9 @@ async function handlePrompt(sessionId: string, prompt: Array<{ type: string; tex
 
   // Lazy agent initialization: spawn agent on first prompt
   if (!bridge && !session.agentId) {
-    const agentId = prompt[0]?.agentId;
-    const profileId = prompt[0]?.profileId ?? null;
+    const firstText = prompt.find((p): p is Extract<PromptContent, { type: "text" }> => p.type === "text");
+    const agentId = firstText?.agentId;
+    const profileId = firstText?.profileId ?? null;
     if (!agentId) {
       emitSessionError(sessionId, "agent_required", "No agent selected. Please select an agent before sending a message.");
       return;
@@ -184,10 +185,17 @@ async function handlePrompt(sessionId: string, prompt: Array<{ type: string; tex
     return;
   }
 
+  // Build a combined user message text including any file mentions
+  const textParts: string[] = [];
   for (const item of prompt) {
     if (item.type === "text") {
-      store.appendHistory(sessionId, "user", item.text);
+      textParts.push(item.text);
+    } else if (item.type === "resource_link") {
+      textParts.push(`@${item.name}`);
     }
+  }
+  if (textParts.length > 0) {
+    store.appendHistory(sessionId, "user", textParts.join(""));
   }
   store.touchSession(sessionId);
   sessionManager.markPromptStarted(sessionId);
@@ -472,6 +480,32 @@ setupWebSocket(app as any, {
     const agentId = sess.agentId || getServerConfig().defaultAgent;
     if (agentId) {
       pushCachedCommands(sessionId, sess.worktreeId, agentId);
+    }
+
+    // Auto-resume suspended agent so slash commands are available without sending a message
+    if (sess.agentId && !sessionManager.getBridge(sessionId)) {
+      void (async () => {
+        connectionManager.broadcastToSession(sessionId, {
+          type: "session:restoring",
+          sessionId,
+        } as any);
+        let bridge: ReturnType<typeof sessionManager.getBridge> | undefined;
+        if (sess.recoverable && sess.agentSessionId) {
+          bridge = await sessionManager.restoreSession(sessionId, store) ?? undefined;
+        }
+        if (!bridge) {
+          try {
+            const result = await createBridge(sessionId, sess.agentId!, sess.cwd, undefined, sess.profileId ?? undefined);
+            sessionManager.register(sessionId, result.bridge, sess.agentId!, sess.cwd);
+            store.updateSessionState(sessionId, {
+              recoverable: result.recoverable,
+              agentSessionId: result.agentSessionId,
+            });
+          } catch {
+            // Silent fail — user can still send a prompt to retry
+          }
+        }
+      })();
     }
   },
 }, upgradeWebSocket);

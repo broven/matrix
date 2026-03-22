@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { ClientMessage, PermissionOutcome, ServerMessage } from "@matrix/protocol";
+import type { ClientMessage, PermissionOutcome, ServerMessage, PromptContent } from "@matrix/protocol";
 import { authMiddleware } from "../../auth/middleware.js";
 import { validateToken } from "../../auth/token.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
@@ -15,7 +15,7 @@ export interface TransportRouteDeps {
   connectionManager: ConnectionManager;
   serverToken: string;
   snapshotProvider: (sessionId?: string) => SnapshotMessage[];
-  onPrompt: (sessionId: string, prompt: Array<{ type: string; text: string }>) => void;
+  onPrompt: (sessionId: string, prompt: PromptContent[]) => void;
   onCancel: (sessionId: string) => void;
   onPermissionResponse: (sessionId: string, toolCallId: string, outcome: PermissionOutcome) => void;
 }

@@ -393,3 +393,18 @@
 .animate-message-in {
   animation: message-in 0.3s ease-out;
 }
+
+/* Tiptap editor styles */
+.tiptap {
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--color-muted-foreground);
+  opacity: 0.5;
+  pointer-events: none;
+  height: 0;
+}

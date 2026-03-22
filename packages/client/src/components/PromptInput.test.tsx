@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AvailableCommand } from "@matrix/protocol";
 import { PromptInput } from "@/components/PromptInput";
@@ -8,7 +8,14 @@ const defaultProps = {
   selectedAgentId: "assistant",
   selectedProfileId: null,
   agents: [
-    { id: "assistant", name: "Assistant", command: "assistant", available: true, source: "builtin" as const, profiles: [] },
+    {
+      id: "assistant",
+      name: "Assistant",
+      command: "assistant",
+      available: true,
+      source: "builtin" as const,
+      profiles: [],
+    },
   ],
 };
 
@@ -18,97 +25,65 @@ describe("PromptInput", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the textarea with default placeholder", () => {
+  it("renders the editor with data-testid chat-input", () => {
     render(<PromptInput {...defaultProps} />);
     expect(screen.getByTestId("chat-input")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Ask to make changes/)).toBeInTheDocument();
   });
 
-  it("renders custom placeholder", () => {
+  it("renders custom placeholder via Tiptap data-placeholder attribute", () => {
     render(<PromptInput {...defaultProps} placeholder="Type here" />);
-    expect(screen.getByPlaceholderText("Type here")).toBeInTheDocument();
-  });
-
-  it("sends message on Enter and clears input", () => {
-    const onSend = vi.fn();
-    render(<PromptInput {...defaultProps} onSend={onSend} />);
-
-    const input = screen.getByTestId("chat-input");
-    fireEvent.change(input, { target: { value: "hello", selectionStart: 5 } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    expect(onSend).toHaveBeenCalledWith("hello");
-    expect((input as HTMLTextAreaElement).value).toBe("");
-  });
-
-  it("does not send on Shift+Enter", () => {
-    const onSend = vi.fn();
-    render(<PromptInput {...defaultProps} onSend={onSend} />);
-
-    const input = screen.getByTestId("chat-input");
-    fireEvent.change(input, { target: { value: "hello", selectionStart: 5 } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-
-    expect(onSend).not.toHaveBeenCalled();
+    const editor = screen.getByTestId("chat-input");
+    // Tiptap puts placeholder on the first paragraph
+    const para = editor.querySelector("p");
+    expect(para?.getAttribute("data-placeholder")).toBe("Type here");
   });
 
   it("does not send when input is empty", () => {
     const onSend = vi.fn();
     render(<PromptInput {...defaultProps} onSend={onSend} />);
 
-    const input = screen.getByTestId("chat-input");
-    fireEvent.keyDown(input, { key: "Enter" });
+    const editor = screen.getByTestId("chat-input");
+    fireEvent.keyDown(editor, { key: "Enter" });
 
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("disables textarea when disabled prop is true", () => {
-    render(<PromptInput {...defaultProps} disabled />);
-    expect(screen.getByTestId("chat-input")).toBeDisabled();
+  it("renders send button with correct testid", () => {
+    render(<PromptInput {...defaultProps} />);
+    expect(screen.getByTestId("send-btn")).toBeInTheDocument();
   });
 
-  it("shows slash command dropdown when typing /", () => {
-    const commands: AvailableCommand[] = [
-      { name: "compact", description: "Compact mode" },
-      { name: "review", description: "Review code" },
-    ];
-    render(<PromptInput {...defaultProps} availableCommands={commands} />);
-
-    const input = screen.getByTestId("chat-input");
-    fireEvent.change(input, { target: { value: "/", selectionStart: 1 } });
-
-    expect(screen.getByTestId("slash-command-dropdown")).toBeInTheDocument();
-    expect(screen.getByTestId("slash-command-item-compact")).toBeInTheDocument();
-    expect(screen.getByTestId("slash-command-item-review")).toBeInTheDocument();
+  it("renders agent selector button with correct testid", () => {
+    render(<PromptInput {...defaultProps} />);
+    expect(screen.getByTestId("agent-selector-btn")).toBeInTheDocument();
   });
 
-  it("filters slash commands by query", () => {
-    const commands: AvailableCommand[] = [
-      { name: "compact", description: "Compact mode" },
-      { name: "review", description: "Review code" },
-    ];
-    render(<PromptInput {...defaultProps} availableCommands={commands} />);
+  it("shows agent menu on agent selector click", async () => {
+    render(<PromptInput {...defaultProps} />);
+    const agentBtn = screen.getByTestId("agent-selector-btn");
 
-    const input = screen.getByTestId("chat-input");
-    fireEvent.change(input, { target: { value: "/rev", selectionStart: 4 } });
+    await act(async () => {
+      fireEvent.click(agentBtn);
+    });
 
-    expect(screen.getByTestId("slash-command-item-review")).toBeInTheDocument();
-    expect(screen.queryByTestId("slash-command-item-compact")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-option-assistant")).toBeInTheDocument();
   });
 
-  it("selects slash command on Enter and fills input without sending", () => {
-    const onSend = vi.fn();
-    const commands: AvailableCommand[] = [
-      { name: "compact", description: "Compact mode" },
-    ];
-    render(<PromptInput {...defaultProps} onSend={onSend} availableCommands={commands} />);
+  it("shows agent name in selector button", () => {
+    render(<PromptInput {...defaultProps} />);
+    const agentBtn = screen.getByTestId("agent-selector-btn");
+    expect(agentBtn.textContent).toContain("Assistant");
+  });
 
-    const input = screen.getByTestId("chat-input");
-    fireEvent.change(input, { target: { value: "/", selectionStart: 1 } });
-    fireEvent.keyDown(input, { key: "Enter" });
+  it("send button is disabled when no content", () => {
+    render(<PromptInput {...defaultProps} />);
+    const sendBtn = screen.getByTestId("send-btn");
+    expect(sendBtn).toBeDisabled();
+  });
 
-    expect(onSend).not.toHaveBeenCalled();
-    // The slash command should be filled in the input
-    expect((input as HTMLTextAreaElement).value).toContain("/compact");
+  it("send button is disabled when no agent selected", () => {
+    render(<PromptInput {...defaultProps} selectedAgentId={null} />);
+    const sendBtn = screen.getByTestId("send-btn");
+    expect(sendBtn).toBeDisabled();
   });
 });

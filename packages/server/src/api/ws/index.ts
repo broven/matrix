@@ -1,6 +1,6 @@
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { Hono } from "hono";
-import type { ClientMessage, PermissionOutcome } from "@matrix/protocol";
+import type { ClientMessage, PermissionOutcome, PromptContent } from "@matrix/protocol";
 import type { ConnectionManager } from "./connection-manager.js";
 import { nanoid } from "nanoid";
 import { validateToken } from "../../auth/token.js";
@@ -16,7 +16,7 @@ export interface WsHandlerDeps {
   connectionManager: ConnectionManager;
   serverToken: string;
   snapshotProvider: (sessionId?: string) => Array<Extract<ServerMessage, { type: "session:snapshot" }>>;
-  onPrompt: (sessionId: string, prompt: Array<{ type: string; text: string }>) => void;
+  onPrompt: (sessionId: string, prompt: PromptContent[]) => void;
   onCancel: (sessionId: string) => void;
   onPermissionResponse: (sessionId: string, toolCallId: string, outcome: PermissionOutcome) => void;
   onSubscribe?: (sessionId: string) => void;

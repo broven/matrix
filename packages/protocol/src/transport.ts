@@ -1,4 +1,4 @@
-import type { SessionUpdate, SessionModes, PermissionOutcome } from "./session.js";
+import type { SessionUpdate, SessionModes, PermissionOutcome, PromptContent } from "./session.js";
 import type { HistoryEntry, SessionInfo, AgentListItem } from "./api.js";
 import type { RepositoryInfo } from "./repository.js";
 
@@ -33,7 +33,7 @@ export type ServerMessage =
 
 /** WebSocket message envelope from client to server */
 export type ClientMessage =
-  | { type: "session:prompt"; sessionId: string; prompt: Array<{ type: string; text: string }> }
+  | { type: "session:prompt"; sessionId: string; prompt: PromptContent[] }
   | { type: "session:cancel"; sessionId: string }
   | { type: "session:subscribe"; sessionId: string; lastEventId?: string }
   | { type: "session:permission_response"; sessionId: string; toolCallId: string; outcome: PermissionOutcome }
