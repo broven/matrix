@@ -5,6 +5,7 @@ import type { AgentListItem } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import { ArrowUp, Plus, ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useShortcutStore } from "@/hooks/useShortcutStore";
 import { compressImage, isSupportedImageType, isTotalPayloadTooLarge } from "@/lib/image-compress";
 import { usePromptEditor } from "./prompt/usePromptEditor";
 import { serializeTiptapDoc } from "./prompt/serializeTiptap";
@@ -60,6 +61,10 @@ export function PromptInput({
     fetchFiles ?? null,
   );
   fetchFilesRef.current = fetchFiles ?? null;
+
+  const { getShortcut } = useShortcutStore();
+  const sendShortcut = getShortcut("send-message");
+  const newLineShortcut = getShortcut("new-line");
 
   const [imageError, setImageError] = useState<string | null>(null);
 
@@ -165,6 +170,8 @@ export function PromptInput({
         setIsEmpty(editor.isEmpty);
       }
     },
+    sendKeys: sendShortcut?.keys,
+    newLineKeys: newLineShortcut?.keys,
     onImagePaste: (files) => handleImageFiles(files),
   });
 

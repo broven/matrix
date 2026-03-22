@@ -16,6 +16,7 @@ import { NewWorktreeDialog } from "@/components/worktree/NewWorktreeDialog";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Settings } from "lucide-react";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 
 const SESSION_STATUS_ORDER: Record<SessionInfo["status"], number> = {
   active: 0,
@@ -62,6 +63,7 @@ export function AppLayout() {
   // (e.g., after remote worktree creation, before server refresh lands)
   const pendingSessionIdRef = useRef<string | null>(null);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showOpenProject, setShowOpenProject] = useState(false);
   const [showCloneFromUrl, setShowCloneFromUrl] = useState(false);
@@ -475,6 +477,40 @@ export function AppLayout() {
     }
   };
 
+  const handleCreateSessionRef = useRef(handleCreateSession);
+  handleCreateSessionRef.current = handleCreateSession;
+  const handleDeleteSessionRef = useRef(handleDeleteSession);
+  handleDeleteSessionRef.current = handleDeleteSession;
+
+  const shortcutHandlers = useMemo(() => ({
+    "create-session": () => {
+      const firstRepo = repositories[0];
+      if (firstRepo && client) {
+        void handleCreateSessionRef.current("", firstRepo.path);
+      }
+    },
+    "close-session": () => {
+      if (selectedSessionId) {
+        void handleDeleteSessionRef.current(selectedSessionId);
+      }
+    },
+    "open-settings": () => setShowSettings(true),
+    "toggle-sidebar": () => {
+      // Toggle desktop sidebar on md+ screens, mobile sheet on smaller screens
+      if (window.matchMedia("(min-width: 768px)").matches) {
+        setDesktopSidebarCollapsed((prev) => !prev);
+      } else {
+        setMobileSidebarOpen((prev) => !prev);
+      }
+    },
+    "focus-prompt": () => {
+      const el = document.querySelector('[data-testid="chat-input"]') as HTMLElement;
+      el?.focus();
+    },
+  }), [repositories, client, selectedSessionId]);
+
+  useGlobalShortcuts(shortcutHandlers);
+
   // Build server-grouped data for Sidebar
   const { servers: savedServers } = useServerStore();
   const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect, getClient: getRemoteClient } = useMatrixClients();
@@ -560,7 +596,7 @@ export function AppLayout() {
     <div className="flex h-full overflow-hidden bg-background">
       {/* Global drag region for window dragging (replaces per-component drag regions) */}
       <div data-tauri-drag-region className="fixed inset-x-0 top-0 z-50 hidden h-10 md:block" />
-      {!showSettings && (
+      {!showSettings && !desktopSidebarCollapsed && (
         <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
           {sidebarContent}
           <div className="border-t border-sidebar-border p-2">

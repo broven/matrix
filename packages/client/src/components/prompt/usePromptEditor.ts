@@ -9,6 +9,7 @@ import History from "@tiptap/extension-history";
 import Placeholder from "@tiptap/extension-placeholder";
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
 import type { AvailableCommand } from "@matrix/protocol";
+import { keysMatch, eventToKeys } from "@/lib/keyboard";
 import { FileMentionExtension, FileMentionPluginKey } from "./FileMentionExtension";
 import { FileMentionList, type FileMentionListRef } from "./FileMentionList";
 import { SlashCommandExtension, SlashCommandPluginKey } from "./SlashCommandExtension";
@@ -21,6 +22,8 @@ interface UsePromptEditorOptions {
   commands: AvailableCommand[];
   onEnter: () => void;
   onUpdate?: () => void;
+  sendKeys?: string[];    // e.g. ["Enter"] — from shortcut store
+  newLineKeys?: string[]; // e.g. ["Shift", "Enter"] — from shortcut store
   onImagePaste?: (files: FileList) => void;
 }
 
@@ -36,6 +39,8 @@ export function usePromptEditor({
   commands,
   onEnter,
   onUpdate,
+  sendKeys,
+  newLineKeys,
   onImagePaste,
 }: UsePromptEditorOptions) {
   const [popup, setPopup] = useState<PopupState>({ type: null, component: null });
@@ -44,6 +49,10 @@ export function usePromptEditor({
   commandsRef.current = commands;
   const onEnterRef = useRef(onEnter);
   onEnterRef.current = onEnter;
+  const sendKeysRef = useRef(sendKeys ?? ["Enter"]);
+  sendKeysRef.current = sendKeys ?? ["Enter"];
+  const newLineKeysRef = useRef(newLineKeys ?? ["Shift", "Enter"]);
+  newLineKeysRef.current = newLineKeys ?? ["Shift", "Enter"];
 
   const [fileSelectedIndex, setFileSelectedIndex] = useState(0);
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
@@ -240,15 +249,28 @@ export function usePromptEditor({
         class:
           "tiptap max-h-[200px] min-h-[52px] w-full resize-none overflow-y-auto border-0 bg-transparent px-4 py-3.5 text-[0.9375rem] leading-relaxed outline-none",
       },
-      handleKeyDown(_view, event) {
-        // Don't intercept Enter when a suggestion popup is open
+      handleKeyDown(view, event) {
+        // Don't intercept when a suggestion popup is open
         if (popupRef.current.type !== null) return false;
 
-        if (event.key === "Enter" && !event.shiftKey) {
+        const pressed = eventToKeys(event as KeyboardEvent);
+        if (pressed.length === 0) return false;
+
+        if (keysMatch(pressed, sendKeysRef.current)) {
           event.preventDefault();
           onEnterRef.current();
           return true;
         }
+
+        // Actively insert a newline for the configured new-line shortcut
+        if (keysMatch(pressed, newLineKeysRef.current)) {
+          event.preventDefault();
+          const { state, dispatch } = view;
+          const { tr } = state;
+          dispatch(tr.replaceSelectionWith(state.schema.nodes.paragraph.create()).scrollIntoView());
+          return true;
+        }
+
         return false;
       },
     },

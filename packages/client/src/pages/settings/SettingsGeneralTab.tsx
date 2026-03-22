@@ -2,6 +2,7 @@ import { Info, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isMobilePlatform, isTauri } from "@/lib/platform";
+import { ShortcutsSection } from "./ShortcutsSection";
 
 interface SettingsGeneralTabProps {
   updateState: "idle" | "checking" | "available" | "downloading" | "ready" | "installing" | "error";
@@ -74,6 +75,7 @@ export function SettingsGeneralTab({
           </CardContent>
         </Card>
       )}
+      <ShortcutsSection />
     </div>
   );
 }
