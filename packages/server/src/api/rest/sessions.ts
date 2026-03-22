@@ -36,7 +36,7 @@ export function sessionRoutes(store: Store, sessionManager: SessionManager, conn
       return c.json({ ok: true });
     }
     sessionManager.closeSession(sessionId, store);
-    const closedSession = store.getSession(sessionId);
+    const closedSession = store.getSession(sessionId)!;
     connectionManager.broadcastToAll({ type: "server:session_closed", session: closedSession });
     return c.json({ ok: true });
   });

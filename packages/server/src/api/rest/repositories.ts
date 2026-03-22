@@ -80,7 +80,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
       for (const session of wtSessions) {
         if (session.status !== "closed") {
           sessionManager.closeSession(session.sessionId, store);
-          connectionManager.broadcastToAll({ type: "server:session_closed", session: store.getSession(session.sessionId) });
+          connectionManager.broadcastToAll({ type: "server:session_closed", session: store.getSession(session.sessionId)! });
         }
       }
       // Remove the git worktree
@@ -254,7 +254,7 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     for (const session of wtSessions) {
       if (session.status !== "closed") {
         sessionManager.closeSession(session.sessionId, store);
-        connectionManager.broadcastToAll({ type: "server:session_closed", sessionId: session.sessionId });
+        connectionManager.broadcastToAll({ type: "server:session_closed", session: store.getSession(session.sessionId)! });
       }
     }
 
