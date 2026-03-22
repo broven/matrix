@@ -207,14 +207,20 @@ export function usePromptEditor({
               key: new PluginKey("imagePaste"),
               props: {
                 handlePaste(_view, event) {
-                  const files = event.clipboardData?.files;
-                  if (files && files.length > 0) {
+                  const clipData = event.clipboardData;
+                  if (!clipData || !handler) return false;
+                  // Only intercept image-only pastes. If clipboard also has
+                  // text/html content, let the default paste handle it so
+                  // users don't lose text when pasting rich content.
+                  const hasText = clipData.types.includes("text/plain") || clipData.types.includes("text/html");
+                  const files = clipData.files;
+                  if (files.length > 0 && !hasText) {
                     const hasImage = Array.from(files).some((f) =>
                       f.type.startsWith("image/"),
                     );
-                    if (hasImage && handler) {
+                    if (hasImage) {
                       handler(files);
-                      return true; // prevent default paste
+                      return true;
                     }
                   }
                   return false;

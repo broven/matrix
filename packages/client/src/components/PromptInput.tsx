@@ -150,6 +150,7 @@ export function PromptInput({
       URL.revokeObjectURL(img.previewUrl);
     }
     setPendingImages([]);
+    setImageError(null);
     setIsEmpty(true);
   }, [onSend, onSendContent, sessionCwd, pendingImages]);
 

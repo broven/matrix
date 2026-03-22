@@ -36,8 +36,22 @@ export async function compressImage(file: File): Promise<CompressedImage> {
     return { data: base64, blob: file, mimeType: "image/gif", name: file.name, size: file.size };
   }
 
-  const bitmap = await createImageBitmap(file);
-  const { width, height } = bitmap;
+  // Load image source — use createImageBitmap if available, fall back to HTMLImageElement
+  let imgSource: ImageBitmap | HTMLImageElement;
+  let width: number;
+  let height: number;
+
+  if (typeof createImageBitmap !== "undefined") {
+    const bitmap = await createImageBitmap(file);
+    imgSource = bitmap;
+    width = bitmap.width;
+    height = bitmap.height;
+  } else {
+    const img = await loadImageElement(file);
+    imgSource = img;
+    width = img.naturalWidth;
+    height = img.naturalHeight;
+  }
 
   let targetW = width;
   let targetH = height;
@@ -60,8 +74,8 @@ export async function compressImage(file: File): Promise<CompressedImage> {
     const canvas = new OffscreenCanvas(targetW, targetH);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Failed to create canvas context");
-    ctx.drawImage(bitmap, 0, 0, targetW, targetH);
-    bitmap.close();
+    ctx.drawImage(imgSource, 0, 0, targetW, targetH);
+    if ("close" in imgSource) imgSource.close();
     blob = await canvas.convertToBlob({ type: outputType, quality: QUALITY });
   } else {
     const canvas = document.createElement("canvas");
@@ -69,8 +83,8 @@ export async function compressImage(file: File): Promise<CompressedImage> {
     canvas.height = targetH;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Failed to create canvas context");
-    ctx.drawImage(bitmap, 0, 0, targetW, targetH);
-    bitmap.close();
+    ctx.drawImage(imgSource, 0, 0, targetW, targetH);
+    if ("close" in imgSource) imgSource.close();
     blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("Canvas toBlob failed"))),
@@ -97,6 +111,23 @@ export function estimateTotalPayload(images: { size: number }[]): number {
 
 export function isTotalPayloadTooLarge(images: { size: number }[]): boolean {
   return estimateTotalPayload(images) > MAX_TOTAL_SIZE_BYTES;
+}
+
+/** Load an image file via HTMLImageElement (fallback when createImageBitmap is unavailable) */
+function loadImageElement(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load image"));
+    };
+    img.src = url;
+  });
 }
 
 /** Convert a Blob to base64 string (without data: URI prefix) using FileReader */
