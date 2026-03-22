@@ -142,6 +142,7 @@ export function PromptInput({
         setIsEmpty(editor.isEmpty);
       }
     },
+    onImagePaste: (files) => handleImageFiles(files),
   });
 
   // Update handleSend's closure on editor
