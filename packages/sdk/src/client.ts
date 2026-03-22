@@ -27,7 +27,7 @@ import { MatrixSession } from "./session.js";
 /** Server-level events for multi-client sync */
 export type ServerEvent =
   | { type: "server:session_created"; session: SessionInfo }
-  | { type: "server:session_closed"; sessionId: string }
+  | { type: "server:session_closed"; session: SessionInfo }
   | { type: "server:session_deleted"; sessionId: string }
   | { type: "server:session_resumed"; sessionId: string }
   | { type: "server:repository_added"; repository: RepositoryInfo }
@@ -148,6 +148,15 @@ export class MatrixClient {
       throw new Error((body as any).error || `Failed to resume session: ${res.status}`);
     }
     return res.json();
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    const res = await this.fetch(`/sessions/${sessionId}/close`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to close session ${sessionId}: ${res.status}`);
+    }
   }
 
   async deleteSession(sessionId: string): Promise<void> {

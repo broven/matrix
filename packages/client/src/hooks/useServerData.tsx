@@ -93,8 +93,8 @@ export function useServerData(serverId: string): ServerData {
         case "server:session_closed":
           setSessions((prev) =>
             prev.map((s) =>
-              s.sessionId === event.sessionId
-                ? { ...s, status: "closed" }
+              s.sessionId === event.session.sessionId
+                ? { ...s, ...event.session }
                 : s
             )
           );

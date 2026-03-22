@@ -164,8 +164,8 @@ export function useAllServersData(sidecar: {
                   next.set(sid, {
                     ...data,
                     sessions: data.sessions.map((s) =>
-                      s.sessionId === event.sessionId
-                        ? { ...s, status: "closed" as const }
+                      s.sessionId === event.session.sessionId
+                        ? { ...s, ...event.session }
                         : s
                     ),
                   });

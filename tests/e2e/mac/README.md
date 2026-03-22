@@ -19,4 +19,5 @@
 | settings-repo-info | 验证 settings 页面全屏打开，仓库信息（名称、路径、remote URL、分支）正确展示 |
 | delete-repo-keep-files | 验证删除仓库时默认不勾选删除文件，执行后仓库从列表消失但物理文件保留 |
 | delete-repo-with-files | 验证删除仓库时勾选删除文件，执行后物理文件也被删除，不会误删 repo 外的文件 |
+| session-resume | 关闭 session 后点击 Resume 按钮恢复会话，验证 chat-input 重新可用 |
 | multi-server | 启动第二个 Matrix 服务器，通过 Settings 添加并连接，验证展示在 sidebar，在远程服务器上创建仓库和 session，验证能正常对话 |
