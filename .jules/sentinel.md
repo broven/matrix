@@ -1,0 +1,4 @@
+## 2025-05-15 - [Sensitive Loopback Endpoints Vulnerable to CSRF/Cross-Origin Theft]
+**Vulnerability:** Sensitive loopback endpoints (`/api/auth-info`, `/api/local-ip`) were accessible to any origin via standard browser `fetch` because of a wildcard CORS policy and no additional verification beyond the loopback IP check.
+**Learning:** A loopback IP check alone is insufficient to protect local services from malicious websites visited by the user in a browser. Browsers can make cross-origin requests to `localhost`.
+**Prevention:** Require a custom internal header (e.g., `X-Matrix-Internal: true`) for sensitive loopback-only endpoints. This forces a CORS preflight and prevents "simple" cross-origin requests from browsers. Ensure the server's CORS configuration explicitly allows this header. Mask sensitive tokens in all log outputs.
