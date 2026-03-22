@@ -146,7 +146,25 @@ export function AppLayout() {
           setSessions((prev) => [...prev, event.session]);
           break;
         case "server:session_closed":
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.sessionId === event.session.sessionId
+                ? { ...s, ...event.session }
+                : s
+            )
+          );
+          break;
+        case "server:session_deleted":
           setSessions((prev) => prev.filter((s) => s.sessionId !== event.sessionId));
+          break;
+        case "server:session_resumed":
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.sessionId === event.sessionId
+                ? { ...s, status: "active", closeReason: null, suspendedAt: null }
+                : s
+            )
+          );
           break;
         case "server:repository_added":
           setRepositories((prev) => [...prev, event.repository]);
@@ -461,6 +479,17 @@ export function AppLayout() {
   const { servers: savedServers } = useServerStore();
   const { statuses: multiStatuses, errors: multiErrors, connect: multiConnect, getClient: getRemoteClient } = useMatrixClients();
 
+  const handleResumeSession = async (sessionId: string) => {
+    if (!selectedSession) {
+      throw new Error("No session selected");
+    }
+    const targetClient = selectedSession.serverId === SIDECAR_SERVER_ID ? client : getRemoteClient(selectedSession.serverId);
+    if (!targetClient) {
+      throw new Error("Server is not connected");
+    }
+    await targetClient.resumeSession(sessionId);
+  };
+
   const sidebarServers: ServerInfo[] = useMemo(() => {
     const result: ServerInfo[] = [];
 
@@ -598,6 +627,7 @@ export function AppLayout() {
             agents={allAgents.get(selectedSession.serverId) ?? []}
             onSessionInfoChange={handleSessionInfoChange}
             onNavigateSettings={() => setShowSettings(true)}
+            onResumeSession={handleResumeSession}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">

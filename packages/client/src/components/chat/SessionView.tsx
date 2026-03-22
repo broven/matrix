@@ -17,6 +17,7 @@ interface SessionViewProps {
   agents: AgentListItem[];
   onSessionInfoChange?: (sessionId: string, patch: Partial<SessionInfo>) => void;
   onNavigateSettings?: () => void;
+  onResumeSession?: (sessionId: string) => Promise<void>;
 }
 
 type ViewStatus = "active" | "closed" | "restoring";
@@ -38,7 +39,7 @@ function getStatusMessage(status: ViewStatus, errorMessage: string | null) {
   return null;
 }
 
-export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange, onNavigateSettings }: SessionViewProps) {
+export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange, onNavigateSettings, onResumeSession }: SessionViewProps) {
   const { client: sidecarClient } = useMatrixClient();
   const { client: serverClient } = useServerClient(serverId);
   // Use the server-specific client if available, otherwise fall back to sidecar
@@ -339,6 +340,17 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
     [session],
   );
 
+  const handleResume = useCallback(async () => {
+    if (!onResumeSession) return;
+    try {
+      await onResumeSession(sessionInfo.sessionId);
+      setViewStatus("active");
+      setErrorMessage(null);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to resume session");
+    }
+  }, [onResumeSession, sessionInfo.sessionId]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
@@ -398,20 +410,34 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         )}
       </ScrollArea>
       <StatusBar status={statusBarStatus} message={statusMessage} onCancel={handleCancel} />
-      <PromptInput
-        onSend={handleSend}
-        disabled={inputDisabled}
-        placeholder={getInputPlaceholder(viewStatus, hasAgent, noAgentAvailable)}
-        isProcessing={isProcessing}
-        agents={agents}
-        selectedAgentId={selectedAgentId}
-        selectedProfileId={selectedProfileId}
-        onAgentChange={setSelectedAgentId}
-        onProfileChange={setSelectedProfileId}
-        availableCommands={availableCommands}
-        agentLocked={Boolean(sessionInfo.agentId && agents.some((a) => a.id === sessionInfo.agentId && a.available))}
-        noAgentAvailable={noAgentAvailable}
-      />
+      {viewStatus === "closed" && sessionInfo.agentSessionId && sessionInfo.recoverable && onResumeSession && (
+        <div className="flex justify-center border-t px-4 py-3">
+          <button
+            type="button"
+            onClick={handleResume}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            data-testid="resume-session-btn"
+          >
+            Resume conversation
+          </button>
+        </div>
+      )}
+      {viewStatus !== "closed" && (
+        <PromptInput
+          onSend={handleSend}
+          disabled={inputDisabled}
+          placeholder={getInputPlaceholder(viewStatus, hasAgent, noAgentAvailable)}
+          isProcessing={isProcessing}
+          agents={agents}
+          selectedAgentId={selectedAgentId}
+          selectedProfileId={selectedProfileId}
+          onAgentChange={setSelectedAgentId}
+          onProfileChange={setSelectedProfileId}
+          availableCommands={availableCommands}
+          agentLocked={Boolean(sessionInfo.agentId && agents.some((a) => a.id === sessionInfo.agentId && a.available))}
+          noAgentAvailable={noAgentAvailable}
+        />
+      )}
     </div>
   );
 }

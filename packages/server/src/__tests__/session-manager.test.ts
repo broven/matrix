@@ -212,6 +212,40 @@ describe("SessionManager", () => {
       vi.useRealTimers();
     });
 
+    it("restores a reopened session via bridge factory with agentSessionId", async () => {
+      const newBridge = createMockBridge();
+      const factory = vi.fn().mockResolvedValue({
+        bridge: newBridge,
+        modes: { currentModeId: "code", availableModes: [] },
+        recoverable: true,
+        agentSessionId: "claude-resumed",
+      });
+      sessionManager.setBridgeFactory(factory);
+
+      store.createSession("sess_r", "agent-1", "/tmp", {
+        recoverable: true,
+        agentSessionId: "claude-original",
+      });
+      store.closeSession("sess_r");
+      store.reopenSession("sess_r");
+
+      const bridge = await sessionManager.restoreSession("sess_r", store);
+      expect(bridge).toBe(newBridge);
+
+      // Factory should be called with the stored agentSessionId
+      expect(factory).toHaveBeenCalledWith(
+        "sess_r",
+        "agent-1",
+        "/tmp",
+        "claude-original",
+        undefined,
+      );
+
+      // Store should be updated
+      const session = store.getSession("sess_r");
+      expect(session?.status).toBe("active");
+    });
+
     it("resets restart attempts after successful restart", async () => {
       vi.useFakeTimers();
 
@@ -331,6 +365,37 @@ describe("SessionManager", () => {
       expect(bridge.destroy).not.toHaveBeenCalled();
       expect(sessionManager.has("sess_inflight")).toBe(true);
       expect(store.getSession("sess_inflight")?.status).toBe("active");
+    });
+  });
+
+  describe("store.reopenSession", () => {
+    it("transitions a closed session back to active", () => {
+      store.createSession("sess_reopen", "agent-1", "/tmp", {
+        recoverable: true,
+        agentSessionId: "claude-abc",
+      });
+      store.closeSession("sess_reopen");
+
+      const before = store.getSession("sess_reopen");
+      expect(before?.status).toBe("closed");
+
+      store.reopenSession("sess_reopen");
+
+      const after = store.getSession("sess_reopen");
+      expect(after?.status).toBe("active");
+      expect(after?.closeReason).toBeNull();
+      expect(after?.suspendedAt).toBeNull();
+      expect(after?.agentSessionId).toBe("claude-abc");
+    });
+
+    it("is a no-op for already active sessions", () => {
+      store.createSession("sess_active", "agent-1", "/tmp");
+      store.reopenSession("sess_active");
+      expect(store.getSession("sess_active")?.status).toBe("active");
+    });
+
+    it("throws for non-existent sessions", () => {
+      expect(() => store.reopenSession("sess_nope")).toThrow();
     });
   });
 
