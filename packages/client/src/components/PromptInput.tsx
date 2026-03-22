@@ -5,7 +5,7 @@ import type { AgentListItem } from "@matrix/protocol";
 import { nanoid } from "nanoid";
 import { ArrowUp, Plus, ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { compressImage, isSupportedImageType } from "@/lib/image-compress";
+import { compressImage, isSupportedImageType, isTotalPayloadTooLarge } from "@/lib/image-compress";
 import { usePromptEditor } from "./prompt/usePromptEditor";
 import { serializeTiptapDoc } from "./prompt/serializeTiptap";
 
@@ -51,7 +51,7 @@ export function PromptInput({
   const agentBtnRef = useRef<HTMLButtonElement>(null);
   const popupContainerRef = useRef<HTMLDivElement>(null);
   const [pendingImages, setPendingImages] = useState<
-    { id: string; data: string; mimeType: string; name: string; previewUrl: string }[]
+    { id: string; data: string; mimeType: string; name: string; previewUrl: string; size: number }[]
   >([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -63,6 +63,16 @@ export function PromptInput({
 
   const [imageError, setImageError] = useState<string | null>(null);
 
+  // Clean up preview URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      setPendingImages((prev) => {
+        for (const img of prev) URL.revokeObjectURL(img.previewUrl);
+        return [];
+      });
+    };
+  }, []);
+
   const handleImageFiles = useCallback(async (files: FileList | File[]) => {
     const fileArr = Array.from(files);
     for (const file of fileArr) {
@@ -73,16 +83,18 @@ export function PromptInput({
       }
       try {
         const compressed = await compressImage(file);
-        const previewUrl = URL.createObjectURL(
-          new Blob(
-            [Uint8Array.from(atob(compressed.data), (c) => c.charCodeAt(0))],
-            { type: compressed.mimeType },
-          ),
-        );
-        setPendingImages((prev) => [
-          ...prev,
-          { id: nanoid(), ...compressed, previewUrl },
-        ]);
+        // Use blob directly for preview — avoids base64 round-trip
+        const previewUrl = URL.createObjectURL(compressed.blob);
+        setImageError(null); // Clear error on success
+        setPendingImages((prev) => {
+          const next = [...prev, { id: nanoid(), data: compressed.data, mimeType: compressed.mimeType, name: compressed.name, previewUrl, size: compressed.size }];
+          if (isTotalPayloadTooLarge(next)) {
+            URL.revokeObjectURL(previewUrl);
+            setImageError("Total image size too large (max ~50MB). Remove some images.");
+            return prev;
+          }
+          return next;
+        });
       } catch (err) {
         setImageError(err instanceof Error ? err.message : "Failed to process image");
       }
@@ -111,7 +123,11 @@ export function PromptInput({
     const json = editor.getJSON();
     const hasMentions = JSON.stringify(json).includes('"fileMention"');
 
-    if (onSendContent && (hasMentions || hasImages)) {
+    if (hasMentions || hasImages) {
+      if (!onSendContent) {
+        setImageError("Image sending is not available in this context.");
+        return;
+      }
       const content = serializeTiptapDoc(json, sessionCwd);
       // Append pending images
       for (const img of pendingImages) {
