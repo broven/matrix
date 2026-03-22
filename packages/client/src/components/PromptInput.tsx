@@ -61,10 +61,16 @@ export function PromptInput({
   );
   fetchFilesRef.current = fetchFiles ?? null;
 
+  const [imageError, setImageError] = useState<string | null>(null);
+
   const handleImageFiles = useCallback(async (files: FileList | File[]) => {
     const fileArr = Array.from(files);
     for (const file of fileArr) {
-      if (!isSupportedImageType(file.type)) continue;
+      if (!file.type.startsWith("image/")) continue;
+      if (!isSupportedImageType(file.type)) {
+        setImageError(`Unsupported format: ${file.type}. Use PNG, JPEG, GIF, or WebP.`);
+        continue;
+      }
       try {
         const compressed = await compressImage(file);
         const previewUrl = URL.createObjectURL(
@@ -77,8 +83,8 @@ export function PromptInput({
           ...prev,
           { id: nanoid(), ...compressed, previewUrl },
         ]);
-      } catch {
-        // Silently skip images that fail compression (too large, etc.)
+      } catch (err) {
+        setImageError(err instanceof Error ? err.message : "Failed to process image");
       }
     }
   }, []);
@@ -290,6 +296,14 @@ export function PromptInput({
               }
             }}
           >
+            {imageError && (
+              <div className="flex items-center justify-between gap-2 px-3 pt-2 text-xs text-destructive">
+                <span>{imageError}</span>
+                <button type="button" onClick={() => setImageError(null)} className="shrink-0 text-muted-foreground hover:text-foreground">
+                  <X className="size-3" />
+                </button>
+              </div>
+            )}
             {pendingImages.length > 0 && (
               <div
                 className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1"
@@ -369,12 +383,7 @@ export function PromptInput({
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={
-                    disabled ||
-                    isEmpty ||
-                    noAgentAvailable ||
-                    (!selectedAgentId && !agentLocked)
-                  }
+                  disabled={!canSend}
                   className={cn(
                     "flex size-8 items-center justify-center rounded-full transition-all",
                     canSend
