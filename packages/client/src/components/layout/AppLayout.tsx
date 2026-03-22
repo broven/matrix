@@ -16,6 +16,7 @@ import { NewWorktreeDialog } from "@/components/worktree/NewWorktreeDialog";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Settings } from "lucide-react";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 
 const SESSION_STATUS_ORDER: Record<SessionInfo["status"], number> = {
   active: 0,
@@ -474,6 +475,28 @@ export function AppLayout() {
       throw error;
     }
   };
+
+  const shortcutHandlers = useMemo(() => ({
+    "create-session": () => {
+      const firstRepo = repositories[0];
+      if (firstRepo && client) {
+        void handleCreateSession("", firstRepo.path);
+      }
+    },
+    "close-session": () => {
+      if (selectedSessionId) {
+        void handleDeleteSession(selectedSessionId);
+      }
+    },
+    "open-settings": () => setShowSettings(true),
+    "toggle-sidebar": () => setMobileSidebarOpen((prev) => !prev),
+    "focus-prompt": () => {
+      const el = document.querySelector('[data-testid="chat-input"]') as HTMLElement;
+      el?.focus();
+    },
+  }), [repositories, client, selectedSessionId]);
+
+  useGlobalShortcuts(shortcutHandlers);
 
   // Build server-grouped data for Sidebar
   const { servers: savedServers } = useServerStore();
