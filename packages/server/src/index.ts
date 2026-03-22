@@ -187,12 +187,18 @@ async function handlePrompt(sessionId: string, prompt: PromptContent[]) {
 
   // Build a combined user message text including any file mentions
   const textParts: string[] = [];
+  let imageCount = 0;
   for (const item of prompt) {
     if (item.type === "text") {
       textParts.push(item.text);
     } else if (item.type === "resource_link") {
       textParts.push(`@${item.name}`);
+    } else if (item.type === "image") {
+      imageCount++;
     }
+  }
+  if (imageCount > 0) {
+    textParts.push(` [${imageCount} image${imageCount > 1 ? "s" : ""}]`);
   }
   if (textParts.length > 0) {
     store.appendHistory(sessionId, "user", textParts.join(""));

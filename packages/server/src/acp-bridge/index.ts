@@ -130,11 +130,21 @@ export class AcpBridge {
     // Use the agent's internal session ID, not Matrix's session ID
     const agentSid = this.agentSessionId || sessionId;
     const id = this.nextId++;
+
+    // Map Matrix PromptContent to ACP-native content blocks.
+    // Image blocks become ACP ImageContent; others pass through as-is.
+    const acpPrompt = prompt.map((block) => {
+      if (block.type === "image") {
+        return { type: "image", data: block.data, mimeType: block.mimeType };
+      }
+      return block;
+    });
+
     const message: JsonRpcMessage = {
       jsonrpc: "2.0",
       id,
       method: "session/prompt",
-      params: { sessionId: agentSid, prompt },
+      params: { sessionId: agentSid, prompt: acpPrompt },
     };
 
     this.promptRequests.set(id, { sessionId, agentSessionId: agentSid, sawCompleted: false });
