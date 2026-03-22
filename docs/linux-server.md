@@ -54,6 +54,9 @@ sudo systemctl restart matrix-server
 | `MATRIX_HOST` | `0.0.0.0` | Bind address |
 | `MATRIX_DB_PATH` | `/var/lib/matrix/matrix.db` | SQLite database path |
 | `MATRIX_WEB_DIR` | `/var/lib/matrix/web` | Web UI assets directory |
+| `MATRIX_LOG_LEVEL` | `info` | Log level (`trace`, `debug`, `info`, `warn`, `error`) |
+
+For detailed logging documentation, see [Logging](./logging.md).
 
 ## Managing the Service
 
@@ -61,8 +64,11 @@ sudo systemctl restart matrix-server
 # Check status
 systemctl status matrix-server
 
-# View logs
+# View logs (systemd)
 journalctl -u matrix-server -f
+
+# View logs (structured JSON)
+tail -f ~/.matrix/logs/matrix.log | jq .
 
 # Restart
 sudo systemctl restart matrix-server
