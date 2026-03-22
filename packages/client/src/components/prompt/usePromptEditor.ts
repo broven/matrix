@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import { useEditor, ReactRenderer } from "@tiptap/react";
+import { useEditor, ReactRenderer, Extension } from "@tiptap/react";
 import type { Editor, Range } from "@tiptap/react";
-import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Document from "@tiptap/extension-document";
 import Paragraph from "@tiptap/extension-paragraph";
