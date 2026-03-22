@@ -23,6 +23,7 @@ export type StopReason = "end_turn" | "cancelled";
 /** Prompt content can be text, a resource, or a resource link */
 export type PromptContent =
   | { type: "text"; text: string; agentId?: string; profileId?: string }
+  | { type: "image"; data: string; mimeType: string; name?: string }
   | { type: "resource"; resource: PromptResource }
   | { type: "resource_link"; name: string; uri: string; mimeType?: string };
 
