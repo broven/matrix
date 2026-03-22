@@ -10,6 +10,7 @@ import {
   connectBridgeWebSocket,
 } from "./automation/bridge";
 import { getLocalServerUrl, hasLocalServer, isMobilePlatform } from "./lib/platform";
+import { logger } from "./lib/logger";
 
 installAutomationBridge();
 
@@ -39,7 +40,7 @@ if (shouldInstallBridge()) {
       // Fetch auth token
       const authRes = await fetch(`${serverUrl}/api/auth-info`);
       if (!authRes.ok) {
-        console.warn("[bridge-ws] Could not fetch auth-info, skipping bridge WebSocket");
+        logger.warn("[bridge-ws] Could not fetch auth-info, skipping bridge WebSocket");
         return;
       }
       const { token } = (await authRes.json()) as { token: string };
@@ -47,7 +48,7 @@ if (shouldInstallBridge()) {
       const platform = isMobilePlatform() ? "ios" : "macos";
       connectBridgeWebSocket(serverUrl, token, platform, "main");
     } catch (err) {
-      console.error("[bridge-ws] Failed to connect:", err);
+      logger.error(`[bridge-ws] Failed to connect: ${err}`);
     }
   })();
 }
