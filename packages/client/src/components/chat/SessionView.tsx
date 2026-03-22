@@ -339,7 +339,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
 
       // Build display text for the user message bubble
       const displayText = content
-        .map((b) => (b.type === "text" ? b.text : `@${b.name}`))
+        .map((b) => (b.type === "text" ? b.text : b.type === "resource_link" ? `@${b.name}` : ""))
         .join("");
 
       addEvent("message", {
@@ -424,7 +424,7 @@ export function SessionView({ serverId, sessionInfo, agents, onSessionInfoChange
         ? "working"
         : "idle";
   const queuedTexts = useMemo(() => new Set(messageQueue.map((m) =>
-    m.content.map((b) => (b.type === "text" ? b.text : `@${b.type === "resource_link" ? b.name : ""}`)).join("")
+    m.content.map((b) => (b.type === "text" ? b.text : b.type === "resource_link" ? `@${b.name}` : "")).join("")
   )), [messageQueue]);
   const inputDisabled = viewStatus === "closed";
 
