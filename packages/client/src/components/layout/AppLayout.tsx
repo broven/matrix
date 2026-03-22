@@ -558,6 +558,8 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
+      {/* Global drag region for window dragging (replaces per-component drag regions) */}
+      <div data-tauri-drag-region className="fixed inset-x-0 top-0 z-50 hidden h-10 md:block" />
       {!showSettings && (
         <aside className="hidden h-full w-[260px] shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
           {sidebarContent}
@@ -608,9 +610,9 @@ export function AppLayout() {
           />
         ) : (
         <>
-        {/* Drag region for window dragging when no ChatHeader is visible (empty state) */}
+        {/* Top padding when no ChatHeader is visible (empty state) — for traffic light buttons */}
         {!(selectedSession && allSessions.find(s => s.sessionId === selectedSession.sessionId)) && (
-          <div data-tauri-drag-region className="hidden h-10 shrink-0 md:block" />
+          <div className="hidden h-10 shrink-0 md:block" />
         )}
         <MobileHeader
           selectedSession={selectedSessionInfo}
@@ -708,9 +710,10 @@ export function AppLayout() {
         />
       )}
 
-      {worktreeDialogRepo && (
+      {worktreeDialogRepo && client && (
         <NewWorktreeDialog
           repository={worktreeDialogRepo}
+          client={client}
           onCreateWorktree={handleCreateWorktree}
           onClose={() => setWorktreeDialogRepo(null)}
         />

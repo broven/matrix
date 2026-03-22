@@ -163,3 +163,12 @@ export interface ServerConfig {
   worktreesPath: string;
   defaultAgent?: string;
 }
+
+// ── Branch Listing ────────────────────────────────────────────────
+
+/** Branch info returned by the branches API */
+export interface BranchInfo {
+  name: string;
+  isRemote: boolean;
+  isDefault: boolean;
+}

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PathInput } from "@/components/ui/path-input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { BranchSelect } from "@/components/ui/branch-select";
 import { X, ChevronRight, ChevronDown, Loader2, AlertTriangle, FolderOpen, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatrixClient } from "@matrix/sdk";
@@ -263,11 +264,13 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
                   <label className="mb-1.5 block text-sm font-medium">
                     Branch <span className="text-muted-foreground">(optional)</span>
                   </label>
-                  <Input
+                  <BranchSelect
+                    remoteUrl={url.trim() || undefined}
+                    client={client}
                     value={branch}
-                    onChange={(e) => { setBranch(e.target.value); setValidationState({ type: "idle" }); }}
+                    onChange={(v) => { setBranch(v); setValidationState({ type: "idle" }); }}
                     placeholder="Default branch"
-                    className="rounded-lg"
+                    data-testid="clone-branch-select"
                   />
                 </div>
               </div>
