@@ -1,4 +1,4 @@
-import { Info, RefreshCw } from "lucide-react";
+import { Info, RefreshCw, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isMobilePlatform, isTauri } from "@/lib/platform";
@@ -72,6 +72,27 @@ export function SettingsGeneralTab({
                 {updateError && <p className="text-xs text-destructive">{updateError}</p>}
               </>
             )}
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="view-logs-btn"
+                onClick={async () => {
+                  try {
+                    const { Command } = await import("@tauri-apps/plugin-shell");
+                    const { homeDir, join } = await import("@tauri-apps/api/path");
+                    const home = await homeDir();
+                    const logFile = await join(home, "Library", "Logs", "com.matrix.client", "Matrix.log");
+                    await Command.create("open", ["-a", "Console", logFile]).execute();
+                  } catch (e) {
+                    console.error("Failed to open Console.app:", e);
+                  }
+                }}
+              >
+                <ScrollText className="mr-1.5 size-3.5" />
+                View Logs
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

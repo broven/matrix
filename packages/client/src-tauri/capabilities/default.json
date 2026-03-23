@@ -11,6 +11,17 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "open",
+          "cmd": "/usr/bin/open",
+          "args": true
+        }
+      ]
+    },
+    "shell:allow-open",
     "shell:allow-spawn",
     "shell:allow-kill",
     "store:default",
