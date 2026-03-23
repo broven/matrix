@@ -35,12 +35,12 @@ function useAutoReconnect() {
   const didAutoReconnect = useRef(false);
 
   // Parse deep-link URL params: ?serverUrl=...&token=...&autoConnect=1
-  // iOS dev mode: auto-connect using VITE_MATRIX_PORT + VITE_MATRIX_TOKEN from .env.local
+  // iOS dev mode: auto-connect using VITE_MATRIX_URL + VITE_MATRIX_TOKEN from .env.local
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    // On mobile dev: auto-connect using VITE_MATRIX_PORT + VITE_MATRIX_TOKEN
-    const devServerUrl = !hasLocalServer() && import.meta.env.VITE_MATRIX_PORT
-      ? `http://127.0.0.1:${import.meta.env.VITE_MATRIX_PORT}`
+    // On mobile dev: auto-connect using VITE_MATRIX_URL (portless proxy) or VITE_MATRIX_PORT (legacy)
+    const devServerUrl = !hasLocalServer() && (import.meta.env.VITE_MATRIX_URL || import.meta.env.VITE_MATRIX_PORT)
+      ? (import.meta.env.VITE_MATRIX_URL || `http://127.0.0.1:${import.meta.env.VITE_MATRIX_PORT}`)
       : undefined;
     const paramUrl = params.get("serverUrl") || devServerUrl;
     const paramToken = params.get("token") || (devServerUrl ? import.meta.env.VITE_MATRIX_TOKEN : undefined);

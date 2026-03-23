@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -7,11 +8,19 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 let mockAgentId: string | null = null;
 
 function getServerInfo() {
-  const port = process.env.MATRIX_PORT;
-  if (!port) throw new Error("MATRIX_PORT env var is required");
+  let baseUrl = process.env.MATRIX_URL;
+  if (!baseUrl) {
+    try {
+      baseUrl = execSync(`portless get ${process.env.MATRIX_PORTLESS_NAME || "api.matrix"}`, { encoding: "utf-8" }).trim();
+    } catch {
+      const port = process.env.MATRIX_PORT;
+      if (!port) throw new Error("MATRIX_URL, portless route, or MATRIX_PORT env var is required");
+      baseUrl = `http://127.0.0.1:${port}`;
+    }
+  }
   const token = process.env.MATRIX_TOKEN;
   if (!token) throw new Error("MATRIX_TOKEN env var is required");
-  return { baseUrl: `http://127.0.0.1:${port}`, token };
+  return { baseUrl, token };
 }
 
 async function serverRequest(method: string, path: string, body?: unknown): Promise<unknown> {

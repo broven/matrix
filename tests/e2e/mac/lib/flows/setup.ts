@@ -189,19 +189,24 @@ export async function sendMessage(
   for (let attempt = 0; attempt < 3; attempt++) {
     await waitFor('[data-testid="chat-input"]');
 
-    // Set value using React-compatible approach
+    // Set value — handles both <textarea> (legacy) and contenteditable <div> (tiptap)
     await bridge.eval(`
       (() => {
         const el = document.querySelector('[data-testid="chat-input"]');
         if (!el) throw new Error('chat-input not found');
         el.focus();
-        const nativeSetter = Object.getOwnPropertyDescriptor(
-          window.HTMLTextAreaElement.prototype, 'value'
-        ).set;
-        nativeSetter.call(el, ${JSON.stringify(text)});
-        const tracker = el._valueTracker;
-        if (tracker) tracker.setValue('');
-        el.dispatchEvent(new Event('input', { bubbles: true }));
+        if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+          const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+          setter.call(el, ${JSON.stringify(text)});
+          const tracker = el._valueTracker;
+          if (tracker) tracker.setValue('');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          // contenteditable (tiptap): select-all then insertText goes through ProseMirror
+          document.execCommand('selectAll');
+          document.execCommand('insertText', false, ${JSON.stringify(text)});
+        }
       })()
     `);
 
@@ -225,7 +230,13 @@ export async function sendMessage(
     const sent = await bridge.eval(`
       (() => {
         const el = document.querySelector('[data-testid="chat-input"]');
-        return el && (el.value === '' || el.disabled);
+        if (!el) return false;
+        // contenteditable (tiptap): check textContent
+        if (el.getAttribute('contenteditable') === 'true') {
+          return el.textContent?.trim() === '';
+        }
+        // legacy textarea/input
+        return el.value === '' || el.disabled;
       })()
     `);
 
@@ -244,13 +255,17 @@ export async function spawnAgentViaMessage(
   bridge: BridgeClient,
   opts?: { timeoutMs?: number },
 ): Promise<void> {
-  // Wait for an agent to be selected (placeholder changes from "Select an agent...")
+  // Wait for an agent to be selected.
+  // Check agent-selector-btn text directly (more reliable than tiptap placeholder).
   await bridge.wait(
     {
       kind: "webview.eval",
-      script: `!document.querySelector('[data-testid="chat-input"]')?.placeholder?.includes("Select an agent")`,
+      script: `(() => {
+        const btn = document.querySelector('[data-testid="agent-selector-btn"]');
+        return btn && !btn.textContent?.includes('Select agent');
+      })()`,
     },
-    { timeoutMs: 10_000, intervalMs: 500 },
+    { timeoutMs: 30_000, intervalMs: 500 },
   );
 
   // Assert Mock Agent is selected (unless using real agents)

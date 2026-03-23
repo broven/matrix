@@ -28,12 +28,18 @@ export async function click(selector: string): Promise<void> {
   `);
 }
 
-/** Type text into an input/textarea matching the given CSS selector. */
+/** Type text into an input/textarea/contenteditable matching the given CSS selector. */
 export async function type(selector: string, text: string): Promise<void> {
   await bridge().eval(`
     (() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('type: element not found: ' + ${JSON.stringify(selector)});
+      el.focus();
+      if (el.getAttribute('contenteditable') === 'true') {
+        document.execCommand('selectAll');
+        document.execCommand('insertText', false, ${JSON.stringify(text)});
+        return;
+      }
       const proto = el instanceof HTMLTextAreaElement
         ? window.HTMLTextAreaElement.prototype
         : window.HTMLInputElement.prototype;
@@ -98,12 +104,13 @@ export async function isVisible(selector: string): Promise<boolean> {
   return result as boolean;
 }
 
-/** Get the value of an input/textarea matching the selector. */
+/** Get the value of an input/textarea/contenteditable matching the selector. */
 export async function getValue(selector: string): Promise<string> {
   const result = await bridge().eval(`
     (() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('getValue: element not found: ' + ${JSON.stringify(selector)});
+      if (el.getAttribute('contenteditable') === 'true') return el.textContent || '';
       return el.value || '';
     })()
   `);
@@ -117,6 +124,10 @@ export async function typeChar(selector: string, char: string): Promise<void> {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error('typeChar: element not found: ' + ${JSON.stringify(selector)});
       el.focus();
+      if (el.getAttribute('contenteditable') === 'true') {
+        document.execCommand('insertText', false, ${JSON.stringify(char)});
+        return;
+      }
       const nativeSetter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype, 'value'
       )?.set || Object.getOwnPropertyDescriptor(

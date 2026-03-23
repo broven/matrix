@@ -1,3 +1,5 @@
+import { execSync } from "node:child_process";
+
 export interface BridgeClient {
   baseUrl: string;
   token: string;
@@ -68,15 +70,21 @@ async function request(
 
 /**
  * Create a bridge client that talks to the matrix server's /bridge/* endpoints.
- * Reads MATRIX_PORT and MATRIX_TOKEN from environment variables.
+ * Reads MATRIX_URL (portless proxy) or MATRIX_PORT from environment variables.
  */
 export function createBridgeClient(): BridgeClient {
-  const port = process.env.MATRIX_PORT;
-  if (!port) throw new Error("MATRIX_PORT env var is required");
+  let baseUrl = process.env.MATRIX_URL;
+  if (!baseUrl) {
+    try {
+      baseUrl = execSync(`portless get ${process.env.MATRIX_PORTLESS_NAME || "api.matrix"}`, { encoding: "utf-8" }).trim();
+    } catch {
+      const port = process.env.MATRIX_PORT;
+      if (!port) throw new Error("MATRIX_URL, portless route, or MATRIX_PORT env var is required");
+      baseUrl = `http://127.0.0.1:${port}`;
+    }
+  }
   const token = process.env.MATRIX_TOKEN;
   if (!token) throw new Error("MATRIX_TOKEN env var is required");
-
-  const baseUrl = `http://127.0.0.1:${port}`;
 
   const client: BridgeClient = {
     baseUrl,

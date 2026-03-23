@@ -34,7 +34,7 @@ export function loadConfig(): ServerConfig {
   const args = parseArgs();
   const localMode = args.local === "true" || process.env.MATRIX_LOCAL === "true" || false;
   return {
-    port: parseInt(args.port || process.env.MATRIX_PORT || "8080", 10),
+    port: parseInt(args.port || process.env.PORT || process.env.MATRIX_PORT || "8080", 10),
     host: args.host || process.env.MATRIX_HOST || "0.0.0.0",
     dbPath: args.db || process.env.MATRIX_DB_PATH || getDefaultDbPath(localMode),
     webDir: args.web || process.env.MATRIX_WEB_DIR || null,

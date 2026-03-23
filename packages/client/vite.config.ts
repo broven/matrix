@@ -5,7 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 
 const tauriDevHost = process.env.TAURI_DEV_HOST;
-const clientPort = parseInt(process.env.CLIENT_PORT || "5173", 10);
+const clientPort = parseInt(process.env.PORT || process.env.CLIENT_PORT || "5173", 10);
 const hmrPort = parseInt(process.env.HMR_PORT || "1421", 10);
 
 const tauriConf = JSON.parse(

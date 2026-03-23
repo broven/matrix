@@ -25,9 +25,8 @@ if (shouldInstallBridge()) {
       } else {
         // iOS / web: derive from URL params, Vite env vars, or current origin
         const params = new URLSearchParams(window.location.search);
-        const devServerUrl = import.meta.env.VITE_MATRIX_PORT
-          ? `http://127.0.0.1:${import.meta.env.VITE_MATRIX_PORT}`
-          : undefined;
+        const devServerUrl = import.meta.env.VITE_MATRIX_URL
+          || (import.meta.env.VITE_MATRIX_PORT ? `http://127.0.0.1:${import.meta.env.VITE_MATRIX_PORT}` : undefined);
         const paramUrl = params.get("serverUrl") || devServerUrl;
         if (paramUrl) {
           serverUrl = paramUrl;

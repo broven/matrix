@@ -5,7 +5,7 @@
   "main": "./src/index.ts",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "bun --watch --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts",
+    "dev": "portless run --name ${MATRIX_PORTLESS_NAME:-api.matrix} -- bun --watch --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts",
     "dev:mac": "wireit",
     "start": "bun --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts",
     "test": "bun test",
@@ -13,7 +13,7 @@
   },
   "wireit": {
     "dev:mac": {
-      "command": "bun --watch --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts -- --local true --db ${MATRIX_DB:-./data/dev.db}",
+      "command": "portless run --name ${MATRIX_PORTLESS_NAME:-api.matrix} -- bun --watch --env-file=../../.env --env-file=../../${ENV_FILE:-.env.local} src/index.ts -- --local true --db ${MATRIX_DB:-./data/dev.db}",
       "service": true,
       "dependencies": [
         "../protocol:dev"

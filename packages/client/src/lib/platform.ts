@@ -18,8 +18,8 @@ export function isMacOS(): boolean {
 let cachedLocalServerUrl: string | null = null;
 
 /**
- * Get the local sidecar server URL. In dev mode the port may be overridden
- * via SIDECAR_PORT env var; in release mode it's always 19880.
+ * Get the local sidecar server URL. In dev mode this is set via SIDECAR_URL
+ * (portless proxy URL); in release mode it's always http://127.0.0.1:19880.
  */
 export async function getLocalServerUrl(): Promise<string> {
   if (cachedLocalServerUrl) return cachedLocalServerUrl;
@@ -31,8 +31,8 @@ export async function getLocalServerUrl(): Promise<string> {
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    const port = await invoke<number>("get_sidecar_port");
-    cachedLocalServerUrl = `http://127.0.0.1:${port}`;
+    const url = await invoke<string>("get_sidecar_url");
+    cachedLocalServerUrl = url;
     return cachedLocalServerUrl;
   } catch {
     // Don't cache on failure — allow retry on next call

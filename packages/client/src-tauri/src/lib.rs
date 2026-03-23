@@ -43,28 +43,40 @@ fn screenshot() -> Result<String, String> {
     screenshot_impl::capture()
 }
 
-/// Resolve sidecar port: in dev mode read SIDECAR_PORT env var, fallback to 19880.
-/// In release mode always returns 19880.
+/// Resolve sidecar URL: in dev mode read SIDECAR_URL env var (portless proxy URL),
+/// fallback to http://127.0.0.1:19880. In release mode always returns http://127.0.0.1:19880.
 #[cfg(desktop)]
-fn resolve_sidecar_port() -> u16 {
+fn resolve_sidecar_url() -> String {
     #[cfg(any(test, debug_assertions))]
     {
+        if let Ok(url) = std::env::var("SIDECAR_URL") {
+            return url.trim_end_matches('/').to_string();
+        }
         if let Ok(port_str) = std::env::var("SIDECAR_PORT") {
             if let Ok(port) = port_str.parse::<u16>() {
-                return port;
+                return format!("http://127.0.0.1:{port}");
             }
         }
     }
-    19880
+    "http://127.0.0.1:19880".to_string()
+}
+
+/// Extract port from a sidecar URL for TCP-level operations (health checks, orphan killing).
+/// Returns None for URLs where we can't determine the port (e.g. portless proxy).
+#[cfg(desktop)]
+fn extract_port_from_url(url: &str) -> Option<u16> {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.port())
 }
 
 #[cfg(desktop)]
-struct SidecarPortState(u16);
+struct SidecarUrlState(String);
 
 #[tauri::command]
 #[cfg(desktop)]
-fn get_sidecar_port(state: tauri::State<SidecarPortState>) -> u16 {
-    state.0
+fn get_sidecar_url(state: tauri::State<SidecarUrlState>) -> String {
+    state.0.clone()
 }
 
 /// Mock file dialog state — tests use this to simulate file picker responses.
@@ -116,7 +128,7 @@ pub fn run() {
         updater::check_update,
         updater::download_update,
         updater::install_update,
-        get_sidecar_port,
+        get_sidecar_url,
         mock_file_dialog,
         consume_mock_file_dialog,
         screenshot,
@@ -124,7 +136,7 @@ pub fn run() {
 
     #[cfg(all(desktop, not(target_os = "macos")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
-        get_sidecar_port,
+        get_sidecar_url,
         mock_file_dialog,
         consume_mock_file_dialog,
         screenshot,
@@ -156,17 +168,19 @@ struct SidecarState(std::sync::Mutex<Option<tauri_plugin_shell::process::Command
 fn initialize_desktop_runtime(
     app: &mut tauri::App<tauri::Wry>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let sidecar_port = resolve_sidecar_port();
+    let sidecar_url = resolve_sidecar_url();
 
     let skip_sidecar = std::env::var("SKIP_SIDECAR")
         .map(|v| v == "true" || v == "1")
         .unwrap_or(false);
 
     if skip_sidecar {
-        log::info!("SKIP_SIDECAR=true, skipping sidecar spawn (using external dev server on port {sidecar_port})");
+        log::info!("SKIP_SIDECAR=true, skipping sidecar spawn (using external server at {sidecar_url})");
         app.manage(SidecarState(std::sync::Mutex::new(None)));
-        app.manage(SidecarPortState(sidecar_port));
+        app.manage(SidecarUrlState(sidecar_url.clone()));
     } else {
+        // In release mode, sidecar always runs on port 19880
+        let sidecar_port: u16 = extract_port_from_url(&sidecar_url).unwrap_or(19880);
         let port_str = sidecar_port.to_string();
 
         // Kill any orphaned sidecar processes from previous launches
@@ -209,7 +223,7 @@ fn initialize_desktop_runtime(
             .spawn()?;
 
         app.manage(SidecarState(std::sync::Mutex::new(Some(child))));
-        app.manage(SidecarPortState(sidecar_port));
+        app.manage(SidecarUrlState(sidecar_url.clone()));
 
         // Log sidecar output for debugging
         tauri::async_runtime::spawn(async move {
@@ -251,34 +265,39 @@ fn initialize_desktop_runtime(
     #[cfg(any(test, debug_assertions))]
     {
         let worktree_name = get_worktree_name();
-        set_dev_window_title(&main_window, &worktree_name, sidecar_port);
-        inject_dev_banner(&main_window, &worktree_name, sidecar_port);
+        set_dev_window_title(&main_window, &worktree_name, &sidecar_url);
+        inject_dev_banner(&main_window, &worktree_name, &sidecar_url);
     }
 
     // In release mode, redirect webview to sidecar URL (which serves embedded frontend).
     // In dev mode, webview stays on Vite dev server and connects to sidecar via invoke/fetch.
     #[cfg(not(any(test, debug_assertions)))]
-    std::thread::spawn(move || {
-        use std::net::TcpStream;
-        use std::time::Duration;
+    {
+        let redirect_url = sidecar_url.clone();
+        if let Some(port) = extract_port_from_url(&sidecar_url) {
+            std::thread::spawn(move || {
+                use std::net::TcpStream;
+                use std::time::Duration;
 
-        let addr = format!("127.0.0.1:{sidecar_port}");
-        for _ in 0..60 {
-            if TcpStream::connect_timeout(
-                &addr.parse().unwrap(),
-                Duration::from_millis(200),
-            )
-            .is_ok()
-            {
-                std::thread::sleep(Duration::from_millis(300));
-                let _ = main_window.eval(&format!(
-                    "window.location.replace('http://127.0.0.1:{sidecar_port}')"
-                ));
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(250));
+                let addr = format!("127.0.0.1:{port}");
+                for _ in 0..60 {
+                    if TcpStream::connect_timeout(
+                        &addr.parse().unwrap(),
+                        Duration::from_millis(200),
+                    )
+                    .is_ok()
+                    {
+                        std::thread::sleep(Duration::from_millis(300));
+                        let _ = main_window.eval(&format!(
+                            "window.location.replace('{redirect_url}')"
+                        ));
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+            });
         }
-    });
+    }
 
     Ok(())
 }
@@ -303,22 +322,22 @@ fn get_worktree_name() -> String {
         .unwrap_or_else(|| "dev".to_string())
 }
 
-/// Set window title to "Matrix [DEV - <worktree-name> :<port>]" in dev mode.
+/// Set window title to "Matrix [DEV - <worktree-name> <url>]" in dev mode.
 #[cfg(all(desktop, any(test, debug_assertions)))]
-fn set_dev_window_title(window: &tauri::WebviewWindow, worktree_name: &str, port: u16) {
-    let title = format!("Matrix [DEV - {worktree_name} :{port}]");
+fn set_dev_window_title(window: &tauri::WebviewWindow, worktree_name: &str, sidecar_url: &str) {
+    let title = format!("Matrix [DEV - {worktree_name} {sidecar_url}]");
     let _ = window.set_title(&title);
 }
 
 /// Inject a dev banner into the webview.
 #[cfg(all(desktop, any(test, debug_assertions)))]
-fn inject_dev_banner(window: &tauri::WebviewWindow, worktree_name: &str, port: u16) {
+fn inject_dev_banner(window: &tauri::WebviewWindow, worktree_name: &str, sidecar_url: &str) {
     let js = format!(
         r#"(function() {{
   if (document.getElementById('__matrix_dev_banner')) return;
   var b = document.createElement('div');
   b.id = '__matrix_dev_banner';
-  b.textContent = 'DEV — {worktree_name} :{port}';
+  b.textContent = 'DEV — {worktree_name} {sidecar_url}';
   b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#e67e22;color:#fff;text-align:center;font:bold 11px system-ui;padding:2px 0;pointer-events:none;opacity:0.9;';
   document.body.prepend(b);
   document.body.style.paddingTop = '20px';
