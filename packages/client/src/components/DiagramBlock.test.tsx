@@ -62,7 +62,7 @@ describe("DiagramBlock", () => {
     expect(view.getByTestId("diagram-container")).toBeInTheDocument();
   });
 
-  it("does not switch to source mode on render failure", async () => {
+  it("shows error and source fallback on render failure with no prior SVG", async () => {
     const { renderMermaid } = await import("@/lib/diagram");
     vi.mocked(renderMermaid).mockRejectedValueOnce(new Error("Parse error"));
 
@@ -74,11 +74,13 @@ describe("DiagramBlock", () => {
       vi.advanceTimersByTime(400);
     });
 
-    // Should stay in diagram mode, not switch to source
-    // Error should NOT be visible in diagram mode
-    expect(view.queryByTestId("diagram-error")).not.toBeInTheDocument();
-    // Should not show source code
-    expect(view.queryByTestId("diagram-source")).not.toBeInTheDocument();
+    // Error should be visible since there's no SVG to show
+    expect(view.getByTestId("diagram-error")).toBeInTheDocument();
+    expect(view.getByTestId("diagram-error")).toHaveTextContent("Parse error");
+    // Source code should be shown as fallback
+    expect(view.getByTestId("diagram-source")).toBeInTheDocument();
+    // Toggle should not be disabled — user can still switch modes
+    expect(view.getByTestId("diagram-toggle")).not.toBeDisabled();
   });
 
   it("shows zoom controls when diagram is rendered", async () => {

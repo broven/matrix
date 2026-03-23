@@ -25,7 +25,7 @@ export function DiagramBlock({ language, source }: Props) {
   // Pan/zoom state
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
-  const isPanning = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -101,21 +101,21 @@ export function DiagramBlock({ language, source }: Props) {
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    isPanning.current = true;
+    setIsPanning(true);
     panStart.current = { x: e.clientX - translate.x, y: e.clientY - translate.y };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   }, [translate]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isPanning.current) return;
+    if (!isPanning) return;
     setTranslate({
       x: e.clientX - panStart.current.x,
       y: e.clientY - panStart.current.y,
     });
-  }, []);
+  }, [isPanning]);
 
   const handlePointerUp = useCallback(() => {
-    isPanning.current = false;
+    setIsPanning(false);
   }, []);
 
   const handleDoubleClick = useCallback(() => {
@@ -184,15 +184,15 @@ export function DiagramBlock({ language, source }: Props) {
             className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
             data-testid="diagram-toggle"
             aria-label={mode === "diagram" ? "View source" : "View diagram"}
-            disabled={!svg}
+            disabled={!svg && !error && !rendering}
           >
             {mode === "diagram" ? <Code className="size-3.5" /> : <Image className="size-3.5" />}
           </button>
         </div>
       </div>
 
-      {/* Only show error when user is viewing source, not during streaming */}
-      {error && mode === "source" && (
+      {/* Show error banner: always in source mode, or in diagram mode when there's no SVG to show */}
+      {error && (mode === "source" || !svg) && (
         <div
           className="border-b border-destructive/20 bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
           data-testid="diagram-error"
@@ -201,20 +201,20 @@ export function DiagramBlock({ language, source }: Props) {
         </div>
       )}
 
-      {mode === "source" ? (
+      {mode === "source" || (mode === "diagram" && !svg && error && !rendering) ? (
         <pre
           className="overflow-x-auto p-3 font-mono text-[0.825rem] leading-relaxed"
           data-testid="diagram-source"
         >
           <code>{source}</code>
         </pre>
-      ) : svg ? (
+      ) : svg && mode === "diagram" ? (
         <div
           ref={containerRef}
           className={cn(
             "overflow-hidden p-3",
             language !== "mermaid" && "dark:invert dark:hue-rotate-180",
-            isPanning.current ? "cursor-grabbing" : "cursor-grab",
+            isPanning ? "cursor-grabbing" : "cursor-grab",
           )}
           data-testid="diagram-container"
           onWheel={handleWheel}
@@ -227,7 +227,7 @@ export function DiagramBlock({ language, source }: Props) {
             style={{
               transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
               transformOrigin: "center center",
-              transition: isPanning.current ? "none" : "transform 0.15s ease-out",
+              transition: isPanning ? "none" : "transform 0.15s ease-out",
             }}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
