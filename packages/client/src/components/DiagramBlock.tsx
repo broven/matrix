@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Code, Image } from "lucide-react";
-import { renderMermaid, renderGraphviz } from "@/lib/diagram";
+import { renderMermaid, renderGraphviz, resetMermaidTheme } from "@/lib/diagram";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -40,6 +40,32 @@ export function DiagramBlock({ language, source }: Props) {
     }
 
     render();
+  }, [language, source, instanceId]);
+
+  // Re-render mermaid when dark mode changes
+  useEffect(() => {
+    if (language !== "mermaid" || !source) return;
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.attributeName === "class") {
+          resetMermaidTheme();
+          const currentRender = ++renderCountRef.current;
+          renderMermaid(`diagram-${instanceId}-${currentRender}`, source).then(
+            (result) => {
+              if (currentRender === renderCountRef.current) {
+                setSvg(result);
+                setError(null);
+              }
+            },
+            () => {} // ignore errors on theme re-render
+          );
+        }
+      }
+    });
+
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
   }, [language, source, instanceId]);
 
   return (
