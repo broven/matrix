@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { Code, Image } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Code, Image, ZoomIn, ZoomOut, Maximize } from "lucide-react";
 import { renderMermaid, renderGraphviz, resetMermaidTheme } from "@/lib/diagram";
 import { cn } from "@/lib/utils";
 
@@ -8,38 +8,62 @@ interface Props {
   source: string;
 }
 
+const RENDER_DEBOUNCE_MS = 300;
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 5;
+const ZOOM_STEP = 0.2;
+
 export function DiagramBlock({ language, source }: Props) {
   const [mode, setMode] = useState<"diagram" | "source">("diagram");
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rendering, setRendering] = useState(false);
   const instanceId = useId().replace(/:/g, "-");
   const renderCountRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Pan/zoom state
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Debounced render — suppresses errors during streaming
   useEffect(() => {
-    const currentRender = ++renderCountRef.current;
+    clearTimeout(debounceRef.current);
+    setRendering(true);
 
-    async function render() {
-      try {
-        let result: string;
-        if (language === "mermaid") {
-          result = await renderMermaid(`diagram-${instanceId}-${currentRender}`, source);
-        } else {
-          result = await renderGraphviz(source);
-        }
-        if (currentRender === renderCountRef.current) {
-          setSvg(result);
-          setError(null);
-        }
-      } catch (err) {
-        if (currentRender === renderCountRef.current) {
-          setError(err instanceof Error ? err.message : "Failed to render diagram");
-          setSvg(null);
-          setMode("source");
+    debounceRef.current = setTimeout(() => {
+      const currentRender = ++renderCountRef.current;
+
+      async function doRender() {
+        try {
+          let result: string;
+          if (language === "mermaid") {
+            result = await renderMermaid(`diagram-${instanceId}-${currentRender}`, source);
+          } else {
+            result = await renderGraphviz(source);
+          }
+          if (currentRender === renderCountRef.current) {
+            setSvg(result);
+            setError(null);
+            setRendering(false);
+          }
+        } catch (err) {
+          if (currentRender === renderCountRef.current) {
+            // Don't clear previous SVG — keep stale diagram over showing error
+            // Don't switch mode — user controls that
+            setError(err instanceof Error ? err.message : "Failed to render diagram");
+            setRendering(false);
+          }
         }
       }
-    }
 
-    render();
+      doRender();
+    }, RENDER_DEBOUNCE_MS);
+
+    return () => clearTimeout(debounceRef.current);
   }, [language, source, instanceId]);
 
   // Re-render mermaid when dark mode changes
@@ -68,25 +92,107 @@ export function DiagramBlock({ language, source }: Props) {
     return () => observer.disconnect();
   }, [language, source, instanceId]);
 
+  // Pan/zoom handlers
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+    setScale((s) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s + delta)));
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    isPanning.current = true;
+    panStart.current = { x: e.clientX - translate.x, y: e.clientY - translate.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [translate]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanning.current) return;
+    setTranslate({
+      x: e.clientX - panStart.current.x,
+      y: e.clientY - panStart.current.y,
+    });
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    isPanning.current = false;
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    setScale((s) => Math.min(MAX_SCALE, s + ZOOM_STEP));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setScale((s) => Math.max(MIN_SCALE, s - ZOOM_STEP));
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, []);
+
+  const isZoomed = scale !== 1 || translate.x !== 0 || translate.y !== 0;
+
   return (
     <div className="not-prose my-3 rounded-lg border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="text-xs font-medium text-muted-foreground">
           {language === "mermaid" ? "Mermaid" : "Graphviz"}
         </span>
-        <button
-          type="button"
-          onClick={() => setMode(mode === "diagram" ? "source" : "diagram")}
-          className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
-          data-testid="diagram-toggle"
-          aria-label={mode === "diagram" ? "View source" : "View diagram"}
-          disabled={!svg}
-        >
-          {mode === "diagram" ? <Code className="size-3.5" /> : <Image className="size-3.5" />}
-        </button>
+        <div className="flex items-center gap-0.5">
+          {svg && mode === "diagram" && (
+            <>
+              <button
+                type="button"
+                onClick={zoomOut}
+                className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
+                aria-label="Zoom out"
+                data-testid="diagram-zoom-out"
+              >
+                <ZoomOut className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={zoomIn}
+                className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
+                aria-label="Zoom in"
+                data-testid="diagram-zoom-in"
+              >
+                <ZoomIn className="size-3.5" />
+              </button>
+              {isZoomed && (
+                <button
+                  type="button"
+                  onClick={resetZoom}
+                  className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
+                  aria-label="Reset zoom"
+                  data-testid="diagram-zoom-reset"
+                >
+                  <Maximize className="size-3.5" />
+                </button>
+              )}
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setMode(mode === "diagram" ? "source" : "diagram")}
+            className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
+            data-testid="diagram-toggle"
+            aria-label={mode === "diagram" ? "View source" : "View diagram"}
+            disabled={!svg}
+          >
+            {mode === "diagram" ? <Code className="size-3.5" /> : <Image className="size-3.5" />}
+          </button>
+        </div>
       </div>
 
-      {error && (
+      {/* Only show error when user is viewing source, not during streaming */}
+      {error && mode === "source" && (
         <div
           className="border-b border-destructive/20 bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
           data-testid="diagram-error"
@@ -95,22 +201,41 @@ export function DiagramBlock({ language, source }: Props) {
         </div>
       )}
 
-      {mode === "source" || !svg ? (
+      {mode === "source" ? (
         <pre
           className="overflow-x-auto p-3 font-mono text-[0.825rem] leading-relaxed"
           data-testid="diagram-source"
         >
           <code>{source}</code>
         </pre>
-      ) : (
+      ) : svg ? (
         <div
+          ref={containerRef}
           className={cn(
-            "overflow-x-auto p-3",
+            "overflow-hidden p-3",
             language !== "mermaid" && "dark:invert dark:hue-rotate-180",
+            isPanning.current ? "cursor-grabbing" : "cursor-grab",
           )}
           data-testid="diagram-container"
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onDoubleClick={handleDoubleClick}
+        >
+          <div
+            style={{
+              transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+              transformOrigin: "center center",
+              transition: isPanning.current ? "none" : "transform 0.15s ease-out",
+            }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        </div>
+      ) : (
+        <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
+          {rendering ? "Rendering…" : ""}
+        </div>
       )}
     </div>
   );

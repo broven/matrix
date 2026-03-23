@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DiagramBlock } from "@/components/DiagramBlock";
 
@@ -11,22 +11,38 @@ vi.mock("@/lib/diagram", () => ({
   resetMermaidTheme: vi.fn(),
 }));
 
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
+
 describe("DiagramBlock", () => {
-  it("renders mermaid diagram as SVG", async () => {
+  it("renders mermaid diagram as SVG after debounce", async () => {
     const { container } = render(<DiagramBlock language="mermaid" source="graph TD\n  A --> B" />);
     const view = within(container);
+
+    // Advance past debounce timer
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+
     const svg = await view.findByTestId("diagram-container");
     expect(svg.innerHTML).toContain("mock-svg");
   });
 
-  it("renders graphviz diagram as SVG", async () => {
+  it("renders graphviz diagram as SVG after debounce", async () => {
     const { container } = render(<DiagramBlock language="dot" source="digraph { A -> B }" />);
     const view = within(container);
+
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+
     const svg = await view.findByTestId("diagram-container");
     expect(svg.innerHTML).toContain("mock-svg");
   });
 
   it("toggles between diagram and source view", async () => {
+    vi.useRealTimers();
     const user = userEvent.setup();
     const { container } = render(<DiagramBlock language="mermaid" source="graph TD\n  A --> B" />);
     const view = within(container);
@@ -46,16 +62,36 @@ describe("DiagramBlock", () => {
     expect(view.getByTestId("diagram-container")).toBeInTheDocument();
   });
 
-  it("shows error state with source on render failure", async () => {
+  it("does not switch to source mode on render failure", async () => {
     const { renderMermaid } = await import("@/lib/diagram");
     vi.mocked(renderMermaid).mockRejectedValueOnce(new Error("Parse error"));
 
     const { container } = render(<DiagramBlock language="mermaid" source="invalid{{{" />);
     const view = within(container);
 
-    const error = await view.findByTestId("diagram-error");
-    expect(error).toBeInTheDocument();
-    // Source should be shown on error
-    expect(view.getByTestId("diagram-source")).toBeInTheDocument();
+    // Advance past debounce
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+
+    // Should stay in diagram mode, not switch to source
+    // Error should NOT be visible in diagram mode
+    expect(view.queryByTestId("diagram-error")).not.toBeInTheDocument();
+    // Should not show source code
+    expect(view.queryByTestId("diagram-source")).not.toBeInTheDocument();
+  });
+
+  it("shows zoom controls when diagram is rendered", async () => {
+    const { container } = render(<DiagramBlock language="mermaid" source="graph TD\n  A --> B" />);
+    const view = within(container);
+
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+
+    await view.findByTestId("diagram-container");
+
+    expect(view.getByTestId("diagram-zoom-in")).toBeInTheDocument();
+    expect(view.getByTestId("diagram-zoom-out")).toBeInTheDocument();
   });
 });
