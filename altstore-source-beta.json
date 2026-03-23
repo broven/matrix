@@ -20,6 +20,14 @@
       },
       "versions": [
         {
+          "version": "0.11.2-beta.5",
+          "buildVersion": "0.11.2",
+          "date": "2026-03-23",
+          "downloadURL": "https://github.com/broven/matrix/releases/download/v0.11.2-beta.5/Matrix_v0.11.2-beta.5.ipa",
+          "size": 3420026,
+          "minOSVersion": "16.0"
+        },
+        {
           "version": "0.11.2-beta.4",
           "buildVersion": "0.11.2",
           "date": "2026-03-22",
