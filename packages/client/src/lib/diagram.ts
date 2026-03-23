@@ -45,7 +45,49 @@ async function getGraphviz() {
   return graphvizInstance;
 }
 
+/**
+ * Strip dangerous content from rendered SVG to prevent XSS.
+ * Removes script elements, javascript:/data: URIs, and event-handler attributes.
+ */
+function sanitizeSvg(raw: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(raw, "image/svg+xml");
+
+  // Remove <script> elements
+  for (const el of Array.from(doc.querySelectorAll("script"))) {
+    el.remove();
+  }
+
+  // Remove <foreignObject> (can embed arbitrary HTML)
+  for (const el of Array.from(doc.querySelectorAll("foreignObject"))) {
+    el.remove();
+  }
+
+  const dangerous = /^\s*(javascript|data)\s*:/i;
+
+  for (const el of Array.from(doc.querySelectorAll("*"))) {
+    const attrs = Array.from(el.attributes);
+    for (const attr of attrs) {
+      // Strip event handlers (onclick, onload, etc.)
+      if (attr.name.startsWith("on")) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      // Strip dangerous URIs from href / xlink:href / src / action / formaction
+      if (/^(href|xlink:href|src|action|formaction)$/i.test(attr.name)) {
+        if (dangerous.test(attr.value)) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    }
+  }
+
+  const svg = doc.querySelector("svg");
+  return svg ? svg.outerHTML : "";
+}
+
 export async function renderGraphviz(source: string): Promise<string> {
   const graphviz = await getGraphviz();
-  return graphviz.dot(source);
+  const raw = graphviz.dot(source);
+  return sanitizeSvg(raw);
 }

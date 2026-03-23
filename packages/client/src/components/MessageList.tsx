@@ -223,17 +223,20 @@ function ToolCallCluster({ items, allItems }: { items: RenderItem[]; allItems: R
   );
 }
 
-function CodeBlock({ className, children, ...props }: React.ComponentPropsWithoutRef<"code">) {
-  const match = className?.match(/language-(\w+)/);
-  const language = match?.[1];
-  const isInline = !className;
-
-  if (!isInline && isDiagramLanguage(language)) {
-    const source = String(children).replace(/\n$/, "");
-    return <DiagramBlock language={language!} source={source} />;
+function PreBlock({ children, ...props }: React.ComponentPropsWithoutRef<"pre">) {
+  // ReactMarkdown renders fenced code as <pre><code className="language-x">...</code></pre>
+  // Intercept here so DiagramBlock replaces the entire <pre>, avoiding invalid nesting.
+  const child = Array.isArray(children) ? children[0] : children;
+  if (child && typeof child === "object" && "props" in child) {
+    const codeProps = child.props as { className?: string; children?: React.ReactNode };
+    const match = codeProps.className?.match(/language-(\w+)/);
+    const language = match?.[1];
+    if (isDiagramLanguage(language)) {
+      const source = String(codeProps.children).replace(/\n$/, "");
+      return <DiagramBlock language={language!} source={source} />;
+    }
   }
-
-  return <code className={className} {...props}>{children}</code>;
+  return <pre {...props}>{children}</pre>;
 }
 
 export function MessageList({ events, onApprove, onReject, queuedTexts }: Props) {
@@ -294,7 +297,7 @@ export function MessageList({ events, onApprove, onReject, queuedTexts }: Props)
             return (
               <div key={item.key} className="group/msg animate-message-in" data-testid="assistant-message">
                 <div className="markdown-content max-w-none text-[0.9375rem] leading-[1.7]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{item.text}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ pre: PreBlock }}>{item.text}</ReactMarkdown>
                 </div>
                 <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
                   {item.timestamp && (
