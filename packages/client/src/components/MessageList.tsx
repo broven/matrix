@@ -6,6 +6,8 @@ import { ChevronRight, Copy, Check, RotateCcw } from "lucide-react";
 import { PlanView } from "@/components/PlanView";
 import { PermissionCard } from "@/components/PermissionCard";
 import { ToolCallCard } from "@/components/ToolCallCard";
+import { DiagramBlock } from "@/components/DiagramBlock";
+import { isDiagramLanguage } from "@/lib/diagram";
 import { cn } from "@/lib/utils";
 
 export interface SessionEvent {
@@ -221,6 +223,19 @@ function ToolCallCluster({ items, allItems }: { items: RenderItem[]; allItems: R
   );
 }
 
+function CodeBlock({ className, children, ...props }: React.ComponentPropsWithoutRef<"code">) {
+  const match = className?.match(/language-(\w+)/);
+  const language = match?.[1];
+  const isInline = !className;
+
+  if (!isInline && isDiagramLanguage(language)) {
+    const source = String(children).replace(/\n$/, "");
+    return <DiagramBlock language={language!} source={source} />;
+  }
+
+  return <code className={className} {...props}>{children}</code>;
+}
+
 export function MessageList({ events, onApprove, onReject, queuedTexts }: Props) {
   const renderItems = buildRenderItems(events);
 
@@ -279,7 +294,7 @@ export function MessageList({ events, onApprove, onReject, queuedTexts }: Props)
             return (
               <div key={item.key} className="group/msg animate-message-in" data-testid="assistant-message">
                 <div className="markdown-content max-w-none text-[0.9375rem] leading-[1.7]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{item.text}</ReactMarkdown>
                 </div>
                 <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
                   {item.timestamp && (
