@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateToken, validateToken } from "../auth/token.js";
+import { generateToken, validateToken, maskToken } from "../auth/token.js";
 
 describe("auth/token", () => {
   it("generates a token string", () => {
@@ -16,5 +16,20 @@ describe("auth/token", () => {
   it("rejects an incorrect token", () => {
     const token = generateToken();
     expect(validateToken("wrong-token", token)).toBe(false);
+  });
+
+  it("masks a token", () => {
+    const token = "1234567890abcdef1234567890abcdef1234567890abcdef";
+    const masked = "1234...cdef";
+    expect(maskToken(token)).toBe(masked);
+  });
+
+  it("masks short tokens to ****", () => {
+    expect(maskToken("short")).toBe("****");
+  });
+
+  it("returns empty string for null/undefined", () => {
+    expect(maskToken(null)).toBe("");
+    expect(maskToken(undefined)).toBe("");
   });
 });

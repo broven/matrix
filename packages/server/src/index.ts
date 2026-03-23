@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
-import { generateToken } from "./auth/token.js";
+import { generateToken, maskToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
@@ -395,10 +395,15 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const isLoopback = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  if (!isLoopback) return false;
+
+  // For sensitive loopback endpoints, we also require a special header to prevent
+  // cross-origin browser access even when the server is on loopback.
+  return c.req.header("X-Matrix-Internal") === "true";
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
