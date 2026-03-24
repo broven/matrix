@@ -107,6 +107,7 @@ export function DiagramBlock({ language, source }: Props) {
 
   // Pan/zoom handlers
   const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
     const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
     setScale((s) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s + delta)));
