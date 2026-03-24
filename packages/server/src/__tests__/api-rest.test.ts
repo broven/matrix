@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Hono } from "hono";
 import { createRestRoutes } from "../api/rest/index.js";
 import { AgentManager } from "../agent-manager/index.js";
@@ -8,6 +8,7 @@ import { WorktreeManager } from "../worktree-manager/index.js";
 import { CloneManager } from "../clone-manager/index.js";
 import { ConnectionManager } from "../api/ws/connection-manager.js";
 import { unlinkSync, mkdirSync, rmSync } from "node:fs";
+import { $ } from "bun";
 
 const DB_PATH = "/tmp/matrix-rest-test.db";
 
@@ -143,6 +144,154 @@ describe("REST API", () => {
         body: JSON.stringify({}),
       });
       expect(res.status).toBe(400);
+    });
+  });
+
+  // ── Worktree Creation Validation ────────────────────────────────
+
+  describe("POST /repositories/:repoId/worktrees validation", () => {
+    const REPO_PATH = "/tmp/matrix-test-repo-worktree";
+
+    function buildAppWithWorktreeManager(wm: Partial<WorktreeManager>) {
+      const agentManager = new AgentManager();
+      agentManager.register({ id: "test-agent", name: "Test Agent", command: "echo", args: [] });
+      const s = new Store(DB_PATH);
+      const sm = new SessionManager();
+      const cm = new ConnectionManager();
+      const a = new Hono();
+      a.route("/", createRestRoutes({
+        agentManager,
+        store: s,
+        sessionManager: sm,
+        worktreeManager: wm as WorktreeManager,
+        cloneManager: new CloneManager(),
+        connectionManager: cm,
+        createSessionForWorktree: async () => ({ sessionId: "sess_wt_test", modes: { currentModeId: "code", availableModes: [] } }),
+      }));
+      return { app: a, store: s };
+    }
+
+    beforeEach(async () => {
+      // Create a real git repo so git show-ref commands work
+      rmSync(REPO_PATH, { recursive: true, force: true });
+      mkdirSync(REPO_PATH, { recursive: true });
+      await $`git init ${REPO_PATH}`.quiet();
+      await $`git -C ${REPO_PATH} commit --allow-empty -m "init"`.quiet();
+    });
+
+    afterEach(() => {
+      rmSync(REPO_PATH, { recursive: true, force: true });
+    });
+
+    it("returns 404 when repository does not exist", async () => {
+      const { app: a, store: s } = buildAppWithWorktreeManager({});
+      try {
+        const res = await a.request("/repositories/nonexistent/worktrees", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch: "new-branch", baseBranch: "main" }),
+        });
+        expect(res.status).toBe(404);
+      } finally {
+        s.close();
+      }
+    });
+
+    it("returns 400 when branch name is missing", async () => {
+      const { app: a, store: s } = buildAppWithWorktreeManager({});
+      try {
+        const repo = s.createRepository("test-repo", REPO_PATH, {});
+        const res = await a.request(`/repositories/${repo.id}/worktrees`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ baseBranch: "main" }),
+        });
+        expect(res.status).toBe(400);
+      } finally {
+        s.close();
+      }
+    });
+
+    it("returns 400 when branch name is invalid", async () => {
+      const { app: a, store: s } = buildAppWithWorktreeManager({});
+      try {
+        const repo = s.createRepository("test-repo", REPO_PATH, {});
+        const res = await a.request(`/repositories/${repo.id}/worktrees`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch: "bad..name", baseBranch: "main" }),
+        });
+        expect(res.status).toBe(400);
+      } finally {
+        s.close();
+      }
+    });
+
+    it("returns 409 when branch already exists locally", async () => {
+      // Create the branch in the real git repo
+      await $`git -C ${REPO_PATH} checkout -b existing-branch`.quiet();
+      await $`git -C ${REPO_PATH} checkout -`.quiet();
+
+      const { app: a, store: s } = buildAppWithWorktreeManager({});
+      try {
+        const repo = s.createRepository("test-repo", REPO_PATH, {});
+        const res = await a.request(`/repositories/${repo.id}/worktrees`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch: "existing-branch", baseBranch: "main" }),
+        });
+        expect(res.status).toBe(409);
+        const body = await res.json() as { error: string };
+        expect(body.error).toContain("existing-branch");
+        expect(body.error).toContain("already exists");
+      } finally {
+        s.close();
+      }
+    });
+
+    it("returns 409 when worktree directory already exists on disk", async () => {
+      const candidatePath = "/tmp/matrix-test-repo-worktree-my-feature";
+      mkdirSync(candidatePath, { recursive: true });
+      try {
+        const { app: a, store: s } = buildAppWithWorktreeManager({});
+        try {
+          const repo = s.createRepository("test-repo", REPO_PATH, {});
+          const res = await a.request(`/repositories/${repo.id}/worktrees`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ branch: "my-feature", baseBranch: "main" }),
+          });
+          expect(res.status).toBe(409);
+          const body = await res.json() as { error: string };
+          expect(body.error).toContain("my-feature");
+          expect(body.error).toContain("already exists");
+        } finally {
+          s.close();
+        }
+      } finally {
+        rmSync(candidatePath, { recursive: true, force: true });
+      }
+    });
+
+    it("returns 201 when branch and directory are both free", async () => {
+      const mockWm = {
+        createWorktree: vi.fn().mockResolvedValue("/tmp/matrix-test-repo-worktree-fresh"),
+        listWorktrees: vi.fn().mockResolvedValue([]),
+        removeWorktree: vi.fn().mockResolvedValue(undefined),
+      };
+      const { app: a, store: s } = buildAppWithWorktreeManager(mockWm);
+      try {
+        const repo = s.createRepository("test-repo", REPO_PATH, {});
+        const res = await a.request(`/repositories/${repo.id}/worktrees`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch: "fresh-branch", baseBranch: "main" }),
+        });
+        expect(res.status).toBe(201);
+        expect(mockWm.createWorktree).toHaveBeenCalledWith(REPO_PATH, "fresh-branch", "main");
+      } finally {
+        s.close();
+      }
     });
   });
 });

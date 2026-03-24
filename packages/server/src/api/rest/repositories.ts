@@ -1,5 +1,8 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
+import fs from "node:fs";
+import path from "node:path";
+import { $ } from "bun";
 import type { Store } from "../../store/index.js";
 import type { SessionManager } from "../../session-manager/index.js";
 import type { WorktreeManager } from "../../worktree-manager/index.js";
@@ -152,6 +155,19 @@ export function repositoryRoutes(deps: RepositoryRouteDeps) {
     const invalidBranchPattern = /[\x00-\x1f\x7f ~^:?*\[\\]|\.{2}|@\{|\/\/|\.$|\.lock$|^\/|\/$/;
     if (invalidBranchPattern.test(body.branch) || body.branch.startsWith("-")) {
       return c.json({ error: "Invalid git branch name" }, 400);
+    }
+
+    // Check if branch already exists locally
+    const refCheck = await $`git -C ${repo.path} show-ref --verify refs/heads/${body.branch}`.quiet().nothrow();
+    if (refCheck.exitCode === 0) {
+      return c.json({ error: `Branch '${body.branch}' already exists. Please choose a different name.` }, 409);
+    }
+
+    // Check if worktree directory would collide with an existing path
+    const safeBranch = body.branch.replace(/\//g, "-");
+    const candidatePath = path.join(path.dirname(repo.path), `${path.basename(repo.path)}-${safeBranch}`);
+    if (fs.existsSync(candidatePath)) {
+      return c.json({ error: `Directory for worktree '${body.branch}' already exists. Please choose a different name.` }, 409);
     }
 
     let worktreePath: string | null = null;
