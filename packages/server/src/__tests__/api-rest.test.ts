@@ -176,7 +176,7 @@ describe("REST API", () => {
       rmSync(REPO_PATH, { recursive: true, force: true });
       mkdirSync(REPO_PATH, { recursive: true });
       await $`git init ${REPO_PATH}`.quiet();
-      await $`git -C ${REPO_PATH} commit --allow-empty -m "init"`.quiet();
+      await $`git -C ${REPO_PATH} -c user.email="test@test.com" -c user.name="Test" commit --allow-empty -m "init"`.quiet();
     });
 
     afterEach(() => {
