@@ -21,3 +21,4 @@
 | delete-repo-with-files | 验证删除仓库时勾选删除文件，执行后物理文件也被删除，不会误删 repo 外的文件 |
 | session-resume | 关闭 session 后点击 Resume 按钮恢复会话，验证 chat-input 重新可用 |
 | multi-server | 启动第二个 Matrix 服务器，通过 Settings 添加并连接，验证展示在 sidebar，在远程服务器上创建仓库和 session，验证能正常对话 |
+| add-repo-server-select | 单 server 时 Add Repository 不展示 server 选择；连接两个 server 后展示 server-select；选择远程 server 并添加 repo，验证 repo 出现在远程服务器上 |

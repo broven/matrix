@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentListItem, SessionInfo, RepositoryInfo, WorktreeInfo } from "@matrix/protocol";
+import type { MatrixClient } from "@matrix/sdk";
 import { MessageSquarePlus, AlertCircle, X } from "lucide-react";
 import { useMatrixClient } from "@/hooks/useMatrixClient";
 import { useAllServersData } from "@/hooks/useAllServersData";
@@ -366,9 +367,10 @@ export function AppLayout() {
     return sessionId;
   };
 
-  const handleAddRepository = async (path: string, name?: string) => {
-    if (!client) return;
-    const repo = await client.addRepository({ path, name });
+  const handleAddRepository = async (path: string, name?: string, targetClient?: MatrixClient) => {
+    const c = targetClient ?? client;
+    if (!c) return;
+    const repo = await c.addRepository({ path, name });
     setRepositories((prev) => {
       if (prev.some((r) => r.id === repo.id)) return prev;
       return [repo, ...prev];

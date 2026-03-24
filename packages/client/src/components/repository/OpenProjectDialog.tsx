@@ -2,17 +2,21 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PathInput } from "@/components/ui/path-input";
+import { ServerSelect } from "@/components/ui/server-select";
 import { X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatrixClient } from "@matrix/sdk";
+import { useAddRepoServerSelect } from "@/hooks/useAddRepoServerSelect";
 
 interface OpenProjectDialogProps {
   client: MatrixClient;
-  onAdd: (path: string, name?: string) => Promise<void>;
+  onAdd: (path: string, name?: string, client?: MatrixClient) => Promise<void>;
   onClose: () => void;
 }
 
-export function OpenProjectDialog({ client, onAdd, onClose }: OpenProjectDialogProps) {
+export function OpenProjectDialog({ client: fallbackClient, onAdd, onClose }: OpenProjectDialogProps) {
+  const { servers, selectedServerId, setSelectedServerId, selectedClient, showSelector } = useAddRepoServerSelect();
+  const activeClient = selectedClient ?? fallbackClient;
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
@@ -33,7 +37,7 @@ export function OpenProjectDialog({ client, onAdd, onClose }: OpenProjectDialogP
     setAdding(true);
     setError(null);
     try {
-      await onAdd(path.trim(), name.trim() || undefined);
+      await onAdd(path.trim(), name.trim() || undefined, activeClient);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open project");
@@ -60,6 +64,14 @@ export function OpenProjectDialog({ client, onAdd, onClose }: OpenProjectDialogP
         </div>
 
         <div className="space-y-3">
+          {showSelector && (
+            <ServerSelect
+              servers={servers}
+              value={selectedServerId}
+              onChange={setSelectedServerId}
+            />
+          )}
+
           <div>
             <label className="mb-1.5 block text-sm font-medium">
               Project path
@@ -68,7 +80,7 @@ export function OpenProjectDialog({ client, onAdd, onClose }: OpenProjectDialogP
               value={path}
               onChange={setPath}
               onBrowseSelect={handleBrowseSelect}
-              client={client}
+              client={activeClient}
               placeholder="/path/to/your/project"
               data-testid="path-input"
             />

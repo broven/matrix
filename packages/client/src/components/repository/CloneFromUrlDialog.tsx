@@ -4,11 +4,13 @@ import { Input } from "@/components/ui/input";
 import { PathInput } from "@/components/ui/path-input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BranchSelect } from "@/components/ui/branch-select";
+import { ServerSelect } from "@/components/ui/server-select";
 import { X, ChevronRight, ChevronDown, Loader2, AlertTriangle, FolderOpen, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatrixClient } from "@matrix/sdk";
 import { parseRepoName } from "@matrix/protocol";
 import type { CloneWarning, CloneConflict } from "@matrix/protocol";
+import { useAddRepoServerSelect } from "@/hooks/useAddRepoServerSelect";
 
 interface CloneFromUrlDialogProps {
   client: MatrixClient;
@@ -23,7 +25,9 @@ type ValidationState =
   | { type: "warning"; warning: CloneWarning }
   | { type: "conflict"; conflict: CloneConflict };
 
-export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, onClose }: CloneFromUrlDialogProps) {
+export function CloneFromUrlDialog({ client: fallbackClient, onCloneStarted, onOpenRepository, onClose }: CloneFromUrlDialogProps) {
+  const { servers, selectedServerId, setSelectedServerId, selectedClient, showSelector } = useAddRepoServerSelect();
+  const activeClient = selectedClient ?? fallbackClient;
   const [url, setUrl] = useState("");
   const [targetDir, setTargetDir] = useState("");
   const [branch, setBranch] = useState("");
@@ -51,7 +55,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
     setCloning(true);
     setError(null);
     try {
-      const { jobId } = await client.cloneRepository(buildRequest());
+      const { jobId } = await activeClient.cloneRepository(buildRequest());
       onCloneStarted(jobId, targetDir.trim() || parseRepoName(url.trim()));
       onClose();
     } catch (err) {
@@ -74,7 +78,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
     setError(null);
 
     try {
-      const result = await client.validateCloneRepository(buildRequest());
+      const result = await activeClient.validateCloneRepository(buildRequest());
 
       // Conflict takes priority
       if (result.conflicts.length > 0) {
@@ -101,7 +105,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
     setCloning(true);
     setError(null);
     try {
-      const repo = await client.addRepository({ path: conflict.targetDir });
+      const repo = await activeClient.addRepository({ path: conflict.targetDir });
       onOpenRepository?.(repo.id);
       onClose();
     } catch (err) {
@@ -221,6 +225,14 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
         </div>
 
         <div className="space-y-3">
+          {showSelector && (
+            <ServerSelect
+              servers={servers}
+              value={selectedServerId}
+              onChange={setSelectedServerId}
+            />
+          )}
+
           <div>
             <label className="mb-1.5 block text-sm font-medium">
               Repository URL
@@ -254,7 +266,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
                     value={targetDir}
                     onChange={(v) => { setTargetDir(v); setDirManuallyEdited(true); setValidationState({ type: "idle" }); }}
                     onBrowseSelect={() => { setDirManuallyEdited(true); }}
-                    client={client}
+                    client={activeClient}
                     placeholder="repo"
                     data-testid="clone-target-dir-input"
                   />
@@ -266,7 +278,7 @@ export function CloneFromUrlDialog({ client, onCloneStarted, onOpenRepository, o
                   </label>
                   <BranchSelect
                     remoteUrl={url.trim() || undefined}
-                    client={client}
+                    client={activeClient}
                     value={branch}
                     onChange={(v) => { setBranch(v); setValidationState({ type: "idle" }); }}
                     placeholder="Default branch"
