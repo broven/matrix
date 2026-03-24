@@ -69,9 +69,14 @@ describe("DiagramBlock", () => {
     const { container } = render(<DiagramBlock language="mermaid" source="invalid{{{" />);
     const view = within(container);
 
-    // Advance past debounce
+    // Advance past debounce (300ms) — this fires the render attempt.
+    // act() flushes the async rejection microtask, which schedules the error display timer.
     await act(async () => {
       vi.advanceTimersByTime(400);
+    });
+    // Now advance past the error display delay (700ms) to make the error visible.
+    await act(async () => {
+      vi.advanceTimersByTime(800);
     });
 
     // Error should be visible since there's no SVG to show

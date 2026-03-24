@@ -9,6 +9,9 @@ interface Props {
 }
 
 const RENDER_DEBOUNCE_MS = 300;
+// Errors are delayed so transient failures during streaming don't flash to the user.
+// Source must be stable for at least this long before an error is shown.
+const ERROR_DISPLAY_DELAY_MS = 700;
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 5;
 const ZOOM_STEP = 0.2;
@@ -21,6 +24,7 @@ export function DiagramBlock({ language, source }: Props) {
   const instanceId = useId().replace(/:/g, "-");
   const renderCountRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Pan/zoom state
   const [scale, setScale] = useState(1);
@@ -32,11 +36,12 @@ export function DiagramBlock({ language, source }: Props) {
   // Debounced render — suppresses errors during streaming
   useEffect(() => {
     clearTimeout(debounceRef.current);
+    clearTimeout(errorTimerRef.current);
     setRendering(true);
+    setError(null); // Clear visible error immediately so stale errors don't flash during streaming
+    const currentRender = ++renderCountRef.current; // Increment here to invalidate any in-flight async render
 
     debounceRef.current = setTimeout(() => {
-      const currentRender = ++renderCountRef.current;
-
       async function doRender() {
         try {
           let result: string;
@@ -52,10 +57,15 @@ export function DiagramBlock({ language, source }: Props) {
           }
         } catch (err) {
           if (currentRender === renderCountRef.current) {
-            // Don't clear previous SVG — keep stale diagram over showing error
-            // Don't switch mode — user controls that
-            setError(err instanceof Error ? err.message : "Failed to render diagram");
-            setRendering(false);
+            const errMsg = err instanceof Error ? err.message : "Failed to render diagram";
+            // Delay showing the error: if streaming resumes within this window the timer is
+            // cancelled and the error never surfaces, preventing error flashes mid-stream.
+            errorTimerRef.current = setTimeout(() => {
+              if (currentRender === renderCountRef.current) {
+                setError(errMsg);
+                setRendering(false);
+              }
+            }, ERROR_DISPLAY_DELAY_MS);
           }
         }
       }
@@ -63,7 +73,10 @@ export function DiagramBlock({ language, source }: Props) {
       doRender();
     }, RENDER_DEBOUNCE_MS);
 
-    return () => clearTimeout(debounceRef.current);
+    return () => {
+      clearTimeout(debounceRef.current);
+      clearTimeout(errorTimerRef.current);
+    };
   }, [language, source, instanceId]);
 
   // Re-render mermaid when dark mode changes
