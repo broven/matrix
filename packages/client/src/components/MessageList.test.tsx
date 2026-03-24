@@ -108,4 +108,25 @@ describe("buildRenderItems", () => {
       },
     });
   });
+
+  it("preserves diagram code blocks as message items for rendering", () => {
+    const events: SessionEvent[] = [
+      {
+        id: "msg-diagram",
+        type: "message",
+        timestamp: 1,
+        data: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "```mermaid\ngraph TD\n  A --> B\n```" },
+        },
+      },
+    ];
+
+    const items = buildRenderItems(events);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "message",
+      text: "```mermaid\ngraph TD\n  A --> B\n```",
+    });
+  });
 });
