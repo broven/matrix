@@ -11,3 +11,13 @@ export function validateToken(provided: string, expected: string): boolean {
   const b = Buffer.from(expected);
   return timingSafeEqual(a, b);
 }
+
+/**
+ * Obfuscates a token for safe logging, keeping only the first and last four characters.
+ * Returns "null" or "undefined" if the input is not a string.
+ */
+export function maskToken(token: string | null | undefined): string {
+  if (!token || typeof token !== "string") return String(token);
+  if (token.length <= 8) return "****";
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+}
