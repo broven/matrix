@@ -11,3 +11,13 @@ export function validateToken(provided: string, expected: string): boolean {
   const b = Buffer.from(expected);
   return timingSafeEqual(a, b);
 }
+
+/**
+ * Obfuscate a token for safe logging while preserving enough for identification.
+ * Keeps the first and last 4 characters, e.g. "abcd...wxyz".
+ */
+export function maskToken(token: string | null | undefined): string {
+  if (!token) return "null";
+  if (token.length <= 8) return "****";
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+}
