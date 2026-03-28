@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
-import { generateToken } from "./auth/token.js";
+import { generateToken, maskToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
@@ -375,8 +375,13 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 
 const app = new Hono();
 
-// CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+// CORS for web client — allow any origin since access is gated by bearer token.
+// Explicitly whitelist allowHeaders to prevent browsers from including custom
+// headers like X-Matrix-Internal in cross-origin preflights, protecting against CSRF.
+app.use("/*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["Content-Type", "Authorization"],
+}));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,10 +400,15 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
+  // 1. IP validation
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
-  if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const isLoopbackIp = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  if (!isLoopbackIp) return false;
+
+  // 2. Custom header validation to prevent DNS rebinding / Localhost CSRF.
+  // Browsers won't allow cross-origin requests to include this header due to CORS preflight.
+  return c.req.header("X-Matrix-Internal") === "true";
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
@@ -583,6 +593,7 @@ log.info({ agents: discoveredAgents.map(a => a.name) }, "discovered agents");
 
 // Startup info to stdout (not structured log) — contains secrets
 console.log(`\n  Auth token: ${serverToken}`);
+log.info({ token: maskToken(serverToken) }, "server token");
 console.log(`\n  Connect URI: ${connectionUri}`);
 console.log("\n  Scan QR:");
 qrcode.generate(connectionUri, { small: true });
