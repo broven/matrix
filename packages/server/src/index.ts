@@ -375,8 +375,16 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 
 const app = new Hono();
 
-// CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+// CORS for web client — allow any origin since access is gated by bearer token.
+// We use an explicit allowHeaders whitelist to exclude X-Matrix-Internal,
+// which prevents malicious websites from bypassing loopback security checks.
+app.use(
+  "/*",
+  cors({
+    origin: (origin) => origin || "*",
+    allowHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,10 +403,12 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const isLoopback = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const isInternal = c.req.header("X-Matrix-Internal") === "true";
+  return isLoopback && isInternal;
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
