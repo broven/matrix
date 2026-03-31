@@ -375,8 +375,12 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 
 const app = new Hono();
 
-// CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+// CORS for web client — allow any origin since access is gated by bearer token.
+// Use an explicit whitelist for allowHeaders to exclude X-Matrix-Internal and prevent CSRF.
+app.use("/*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["Content-Type", "Authorization"],
+}));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,7 +399,11 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
+  // Require custom header to prevent cross-origin browser access even when on loopback
+  if (c.req.header("X-Matrix-Internal") !== "true") {
+    return false;
+  }
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
