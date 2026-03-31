@@ -1,0 +1,4 @@
+## 2026-03-31 - Localhost CSRF and Information Disclosure
+**Vulnerability:** Sensitive loopback endpoints (`/api/auth-info`, `/api/local-ip`) were accessible to cross-origin browser requests from any origin when the server was running on localhost. This allowed malicious websites visited by the user to steal the server's authentication token and LAN IP.
+**Learning:** Checking for loopback IP addresses (`127.0.0.1`, `::1`) is insufficient for protecting local servers from malicious websites. Browsers allow cross-origin GET requests to localhost by default, and these requests appear to come from the loopback interface.
+**Prevention:** Require a custom non-standard header (e.g., `X-Matrix-Internal: true`) for all sensitive loopback-only endpoints. Additionally, ensure the CORS configuration uses an explicit `allowHeaders` whitelist that *excludes* this custom header, forcing a preflight failure for cross-origin browser requests.
