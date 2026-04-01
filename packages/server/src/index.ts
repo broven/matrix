@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
-import { generateToken } from "./auth/token.js";
+import { generateToken, maskToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
@@ -34,6 +34,7 @@ const log = logger.child({ target: "server" });
 const config = loadConfig();
 validateDataDir();
 const serverToken = process.env.MATRIX_TOKEN || getPersistedToken();
+log.info({ token: maskToken(serverToken) }, "server token loaded");
 const agentManager = new AgentManager();
 const store = new Store(config.dbPath);
 store.normalizeSessionsOnStartup();
@@ -375,8 +376,12 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 
 const app = new Hono();
 
-// CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+// CORS for web client — allow any origin since access is gated by bearer token.
+// Explicitly whitelist allowed headers to exclude X-Matrix-Internal and prevent CSRF/DNS rebinding.
+app.use("/*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["Content-Type", "Authorization"],
+}));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,7 +400,10 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
+  // Require custom header to prevent CSRF/DNS rebinding from malicious websites.
+  if (c.req.header("X-Matrix-Internal") !== "true") return false;
+
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
