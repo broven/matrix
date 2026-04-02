@@ -1,0 +1,4 @@
+## 2025-05-22 - Localhost CSRF / DNS Rebinding Protection
+**Vulnerability:** Malicious websites can use a user's browser to make requests to services running on 'localhost' (127.0.0.1). Since the browser attaches the loopback IP as the remote address, simple IP-based authentication is bypassed.
+**Learning:** Even internal/loopback-only endpoints must be protected. A simple IP check is insufficient against modern browser-based cross-site attacks.
+**Prevention:** Require a custom non-standard header (e.g., 'X-Matrix-Internal: true') for all sensitive loopback endpoints. Browser-based fetch() cannot set custom headers without a preflight check, and modern browser policies (like Private Network Access) further restrict these cross-origin requests. Whitelisting the header in CORS 'allowHeaders' is necessary for legitimate cross-origin clients (like a Tauri app on a different port) but still maintains the preflight requirement for all browsers.
