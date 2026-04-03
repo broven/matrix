@@ -1,0 +1,4 @@
+## 2025-05-14 - [Localhost CSRF / DNS Rebinding Mitigation]
+**Vulnerability:** Malicious websites could use a user's browser to make requests to sensitive endpoints on `localhost` (e.g., `/api/auth-info`) and steal authentication tokens because the server had a permissive CORS policy (`origin: "*"`) and only protected these endpoints with a loopback IP check.
+**Learning:** Relying solely on IP-based authentication for local services is insufficient in a web context. A custom non-standard header (`X-Matrix-Internal: true`) should be required for sensitive loopback-only endpoints to force a CORS preflight and prevent unauthorized access from untrusted origins.
+**Prevention:** Always require a custom header for sensitive local-only endpoints and ensure that this header is explicitly included in the CORS `allowHeaders` list to maintain authorized access while blocking malicious cross-origin requests.
