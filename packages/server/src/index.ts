@@ -376,7 +376,33 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 const app = new Hono();
 
 // CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+app.use("/*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["Authorization", "Content-Type", "X-Matrix-Internal"],
+}));
+
+// Specialized CORS check for loopback endpoints to prevent DNS rebinding / CSRF
+app.use("/api/auth-info", async (c, next) => {
+  const origin = c.req.header("Origin");
+  if (origin) {
+    const isLocalOrigin = origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+    if (!isLocalOrigin) {
+      return c.json({ error: "Forbidden origin" }, 403);
+    }
+  }
+  await next();
+});
+
+app.use("/api/local-ip", async (c, next) => {
+  const origin = c.req.header("Origin");
+  if (origin) {
+    const isLocalOrigin = origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+    if (!isLocalOrigin) {
+      return c.json({ error: "Forbidden origin" }, 403);
+    }
+  }
+  await next();
+});
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,10 +421,12 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
+  const isInternal = c.req.header("X-Matrix-Internal") === "true";
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
-  if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  if (!addr) return false; // Fail securely if we can't determine the address
+  const isLoopback = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  return isLoopback && isInternal;
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
