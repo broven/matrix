@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createMiddleware } from "hono/factory";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
@@ -376,7 +377,10 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 const app = new Hono();
 
 // CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+app.use("/*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["Authorization", "Content-Type", "X-Matrix-Internal"],
+}));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,10 +399,16 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const isLoopbackIp = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  if (!isLoopbackIp) return false;
+
+  // Localhost CSRF protection: require a custom header that cannot be sent cross-origin
+  // without a preflight (which will fail if the origin is not trusted).
+  const internalHeader = c.req.header("X-Matrix-Internal");
+  return internalHeader === "true";
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
@@ -406,19 +416,35 @@ app.get("/api/ping", authMiddleware(serverToken), (c) => {
   return c.json({ ok: true });
 });
 
-// Auth info endpoint — loopback only, lets desktop app fetch its token
-app.get("/api/auth-info", (c) => {
+/**
+ * Middleware to restrict access to loopback only AND validate the Origin header.
+ * Even though we use X-Matrix-Internal to force a preflight, we also explicitly
+ * check the Origin header as defense-in-depth to prevent any CSRF or DNS rebinding.
+ */
+const loopbackOnly = createMiddleware(async (c, next) => {
   if (!isLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
+
+  const origin = c.req.header("Origin");
+  if (origin) {
+    const isLocalOrigin = origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+    if (!isLocalOrigin) {
+      log.warn({ origin }, "rejected loopback request from external origin");
+      return c.json({ error: "Forbidden" }, 403);
+    }
+  }
+
+  await next();
+});
+
+// Auth info endpoint — loopback only, lets desktop app fetch its token
+app.get("/api/auth-info", loopbackOnly, (c) => {
   return c.json({ token: serverToken });
 });
 
 // Local IP endpoint — loopback only, for sidecar QR code generation
-app.get("/api/local-ip", (c) => {
-  if (!isLoopbackRequest(c)) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
+app.get("/api/local-ip", loopbackOnly, (c) => {
   const ip = getLocalIp();
   if (!ip) {
     return c.json({ error: "No LAN address found" }, 404);
