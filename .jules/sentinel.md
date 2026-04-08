@@ -1,0 +1,4 @@
+## 2025-05-15 - Localhost CSRF / CORS Bypass for Sensitive Endpoints
+**Vulnerability:** Sensitive loopback-only endpoints (`/api/auth-info`, `/api/local-ip`) were susceptible to CORS bypass. A malicious website visited by a user could read the server token because the server used a permissive CORS policy and only verified the remote IP address.
+**Learning:** IP-based access control (127.0.0.1) is insufficient for local-first servers exposed to browsers. Browsers will successfully connect to 127.0.0.1 from any origin.
+**Prevention:** 1. Require a custom non-standard header (e.g., `X-Matrix-Internal: true`) which forces a CORS preflight and cannot be set by simple cross-origin forms. 2. Explicitly validate the `Origin` header against a local allowlist (localhost/127.0.0.1) in server-side middleware.
