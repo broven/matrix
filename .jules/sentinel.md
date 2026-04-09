@@ -1,0 +1,4 @@
+## 2026-04-09 - Localhost CSRF & DNS Rebinding Protection
+**Vulnerability:** Malicious websites could perform cross-origin fetches to sensitive loopback endpoints (/api/auth-info, /api/local-ip) on the local server to steal the auth token or LAN IP.
+**Learning:** Browser Same-Origin Policy (SOP) allows simple cross-origin requests, and even if they are blocked by CORS, the request still reaches the server. If the server only checks the remote IP (127.0.0.1), it can be tricked by requests initiated by the browser on behalf of a malicious site.
+**Prevention:** 1. Require a non-standard custom header (e.g., X-Matrix-Internal) which forces a CORS preflight. 2. Explicitly validate the 'Origin' header against a local allowlist (localhost, 127.0.0.1, [::1]) if present. 3. Mask sensitive tokens in all structured logs.
