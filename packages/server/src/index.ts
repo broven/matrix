@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import path from "node:path";
 import { loadConfig } from "./config.js";
-import { generateToken } from "./auth/token.js";
+import { generateToken, maskToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
 import { AgentManager } from "./agent-manager/index.js";
@@ -395,10 +395,12 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
+  const isInternal = c.req.header("X-Matrix-Internal") === "true";
   if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  const isLoopback = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  return isLoopback && isInternal;
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
@@ -408,6 +410,10 @@ app.get("/api/ping", authMiddleware(serverToken), (c) => {
 
 // Auth info endpoint — loopback only, lets desktop app fetch its token
 app.get("/api/auth-info", (c) => {
+  const origin = c.req.header("Origin");
+  if (origin && !origin.startsWith("http://localhost:") && !origin.startsWith("http://127.0.0.1:") && !origin.startsWith("http://[::1]:")) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   if (!isLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
@@ -416,6 +422,10 @@ app.get("/api/auth-info", (c) => {
 
 // Local IP endpoint — loopback only, for sidecar QR code generation
 app.get("/api/local-ip", (c) => {
+  const origin = c.req.header("Origin");
+  if (origin && !origin.startsWith("http://localhost:") && !origin.startsWith("http://127.0.0.1:") && !origin.startsWith("http://[::1]:")) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   if (!isLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
@@ -576,7 +586,7 @@ const idleSuspendSweepTimer = setInterval(() => {
 }, IDLE_SUSPEND_SWEEP_INTERVAL_MS);
 idleSuspendSweepTimer.unref();
 
-log.info({ host: config.host, port: config.port }, "Matrix Server started");
+log.info({ host: config.host, port: config.port, token: maskToken(serverToken) }, "Matrix Server started");
 const advertisedHost = config.host === "0.0.0.0" ? "127.0.0.1" : config.host;
 const connectionUri = buildConnectionUri(`http://${advertisedHost}:${config.port}`, serverToken);
 log.info({ agents: discoveredAgents.map(a => a.name) }, "discovered agents");
