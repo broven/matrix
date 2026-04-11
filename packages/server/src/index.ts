@@ -376,7 +376,10 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 const app = new Hono();
 
 // CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+app.use("/*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["Content-Type", "Authorization", "X-Matrix-Internal"],
+}));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -398,7 +401,25 @@ app.use("/agent-profiles/*", authMiddleware(serverToken));
 function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+
+  const isLocal = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  if (!isLocal) return false;
+
+  // Additional check to prevent Localhost CSRF
+  // 1. Must include X-Matrix-Internal header (forces CORS preflight)
+  if (c.req.header("X-Matrix-Internal") !== "true") return false;
+
+  // 2. If Origin is present, it must be a trusted local origin
+  const origin = c.req.header("Origin");
+  if (origin) {
+    const isTrustedOrigin =
+      origin.startsWith("http://localhost:") ||
+      origin.startsWith("http://127.0.0.1:") ||
+      origin.startsWith("http://[::1]:");
+    if (!isTrustedOrigin) return false;
+  }
+
+  return true;
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
