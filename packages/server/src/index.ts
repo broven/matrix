@@ -376,7 +376,10 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 const app = new Hono();
 
 // CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+app.use("/*", cors({
+  origin: (origin) => origin || "*",
+  allowHeaders: ["X-Matrix-Internal", "Content-Type", "Authorization"],
+}));
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,10 +398,28 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
+export function isLoopbackRequest(c: any): boolean {
   const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
   if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+
+  const isLoopbackIp = addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+  if (!isLoopbackIp) return false;
+
+  // DNS Rebinding / CSRF Protection for sensitive loopback endpoints:
+  // 1. Require a custom header that cannot be sent cross-origin without a preflight.
+  if (c.req.header("X-Matrix-Internal") !== "true") return false;
+
+  // 2. If an Origin header is present, ensure it's from a trusted local source.
+  const origin = c.req.header("Origin");
+  if (origin) {
+    const isLocalOrigin =
+      origin.startsWith("http://localhost:") ||
+      origin.startsWith("http://127.0.0.1:") ||
+      origin.startsWith("http://[::1]:");
+    if (!isLocalOrigin) return false;
+  }
+
+  return true;
 }
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing

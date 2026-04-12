@@ -56,7 +56,11 @@ export function ShareServerModal({
     let cancelled = false;
 
     // Fetch LAN IP from local server
-    fetch(`${serverUrl}/api/local-ip`)
+    fetch(`${serverUrl}/api/local-ip`, {
+      headers: {
+        "X-Matrix-Internal": "true",
+      },
+    })
       .then((res) => res.json())
       .then((data: { ip?: string }) => {
         if (cancelled) return;
