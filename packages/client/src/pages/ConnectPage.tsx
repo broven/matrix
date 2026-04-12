@@ -154,7 +154,11 @@ export function ConnectPage() {
                 onClick={async () => {
                   // Fetch the real token from the local server
                   try {
-                    const res = await fetch(`${localServerUrl}/api/auth-info`);
+                    const res = await fetch(`${localServerUrl}/api/auth-info`, {
+                      headers: {
+                        "X-Matrix-Internal": "true",
+                      },
+                    });
                     const { token: realToken } = await res.json() as { token: string };
                     setShareServer({
                       serverUrl: localServerUrl,

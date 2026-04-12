@@ -37,7 +37,11 @@ if (shouldInstallBridge()) {
       }
 
       // Fetch auth token
-      const authRes = await fetch(`${serverUrl}/api/auth-info`);
+      const authRes = await fetch(`${serverUrl}/api/auth-info`, {
+        headers: {
+          "X-Matrix-Internal": "true",
+        },
+      });
       if (!authRes.ok) {
         logger.warn("[bridge-ws] Could not fetch auth-info, skipping bridge WebSocket");
         return;
