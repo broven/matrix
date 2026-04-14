@@ -1,0 +1,4 @@
+## 2025-05-15 - Localhost CSRF and Information Leakage in Logs
+**Vulnerability:** Localhost CSRF and DNS Rebinding on sensitive loopback endpoints; Information leakage of authentication tokens in structured logs.
+**Learning:** Browser-based AI agents running on localhost are vulnerable to CSRF from malicious websites. Relying solely on IP-based checks (127.0.0.1) is insufficient as malicious origins can still make requests. Structured logs often capture entire configuration objects, leading to accidental leakage of secrets.
+**Prevention:** Use custom non-standard headers (e.g., 'X-Matrix-Internal') to force CORS preflights and validate the 'Origin' header against a local allowlist for all sensitive loopback endpoints. Implement token masking for all structured logging of authentication credentials.
