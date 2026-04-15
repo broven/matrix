@@ -1,0 +1,4 @@
+## 2025-05-14 - Localhost CSRF & DNS Rebinding Protection
+**Vulnerability:** Sensitive loopback endpoints (`/api/auth-info`, `/api/local-ip`) were accessible via cross-origin browser requests because they only checked the source IP address. A malicious website could fetch the server's auth token if the user had the Matrix server running locally.
+**Learning:** IP-based access control is insufficient for local services accessed via a browser. Browsers can make cross-origin requests to `localhost`, and while CORS usually blocks reading the response, it doesn't prevent the request from being made, and DNS Rebinding can bypass CORS entirely.
+**Prevention:** 1. Require a custom non-standard header (e.g., `X-Matrix-Internal: true`) which forces a CORS preflight. 2. Explicitly validate the `Origin` header against a local allowlist (localhost/127.0.0.1) on the server side to prevent DNS Rebinding.
