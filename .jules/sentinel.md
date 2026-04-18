@@ -1,0 +1,4 @@
+## 2025-05-15 - Localhost CSRF & DNS Rebinding Protection
+**Vulnerability:** Malicious websites can potentially access sensitive loopback-only endpoints (like `/api/auth-info`) if the server only checks the remote IP address. An attacker can use DNS Rebinding to make a browser think a malicious domain is 127.0.0.1, or use simple CSRF if no custom headers are required.
+**Learning:** IP-based loopback restrictions (127.0.0.1) are insufficient against DNS Rebinding. Browsers do not protect "localhost" from other origins unless specific security measures are in place. Requiring a non-standard custom header (e.g., `X-Matrix-Internal`) forces a CORS preflight, and validating the `Origin` header against a trusted local list (localhost, tauri://, etc.) provides defense-in-depth.
+**Prevention:** Always require a custom header and validate the `Origin` header for sensitive endpoints that are restricted to loopback access.
