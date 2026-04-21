@@ -1,0 +1,4 @@
+## 2025-05-15 - Localhost CSRF and DNS Rebinding Protection
+**Vulnerability:** Malicious websites could fetch the sensitive server auth token from the loopback-only `/api/auth-info` endpoint because loopback IP checks alone don't prevent browsers from sending cross-origin requests, especially if CORS is overly permissive.
+**Learning:** Defense-in-depth for local sidecar APIs requires both network-level (IP) checks AND application-level (custom header + Origin validation) checks. Requiring a non-standard header (e.g., `X-Matrix-Internal`) forces a CORS preflight, which the server can then reject if the `Origin` is not a trusted local source.
+**Prevention:** Always require a custom non-standard header for sensitive internal endpoints. Implement middleware to validate the `Origin` header against a whitelist of local schemes/hosts (localhost, 127.0.0.1, tauri://) for all loopback-restricted routes.

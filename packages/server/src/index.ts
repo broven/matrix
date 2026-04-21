@@ -7,6 +7,7 @@ import { loadConfig } from "./config.js";
 import { generateToken } from "./auth/token.js";
 import { getPersistedToken } from "./persistent-config.js";
 import { authMiddleware } from "./auth/middleware.js";
+import { isLoopbackRequest, localOriginMiddleware } from "./auth/security.js";
 import { AgentManager } from "./agent-manager/index.js";
 import { discoverAgents } from "./agent-manager/discovery.js";
 import { Store } from "./store/index.js";
@@ -376,7 +377,14 @@ function pushCachedCommands(sessionId: string, worktreeId: string | undefined, a
 const app = new Hono();
 
 // CORS for web client — allow any origin since access is gated by bearer token
-app.use("/*", cors({ origin: (origin) => origin || "*" }));
+app.use(
+  "/*",
+  cors({
+    origin: (origin) => origin || "*",
+    // We allow X-Matrix-Internal for loopback-specific preflights
+    allowHeaders: ["Authorization", "Content-Type", "X-Matrix-Internal"],
+  }),
+);
 
 // Auth middleware for REST (WebSocket handles auth separately)
 app.use("/agents", authMiddleware(serverToken));
@@ -395,11 +403,6 @@ app.use("/agent-profiles", authMiddleware(serverToken));
 app.use("/agent-profiles/*", authMiddleware(serverToken));
 // Note: /bridge/* auth is handled inside setupBridge (WebSocket uses query param auth)
 
-function isLoopbackRequest(c: any): boolean {
-  const addr: string | undefined = c.env?.incoming?.socket?.remoteAddress;
-  if (!addr) return false;
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
-}
 
 // Ping endpoint — auth-protected, externally accessible, for connection testing
 app.get("/api/ping", authMiddleware(serverToken), (c) => {
@@ -407,7 +410,7 @@ app.get("/api/ping", authMiddleware(serverToken), (c) => {
 });
 
 // Auth info endpoint — loopback only, lets desktop app fetch its token
-app.get("/api/auth-info", (c) => {
+app.get("/api/auth-info", localOriginMiddleware, (c) => {
   if (!isLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
@@ -415,7 +418,7 @@ app.get("/api/auth-info", (c) => {
 });
 
 // Local IP endpoint — loopback only, for sidecar QR code generation
-app.get("/api/local-ip", (c) => {
+app.get("/api/local-ip", localOriginMiddleware, (c) => {
   if (!isLoopbackRequest(c)) {
     return c.json({ error: "Forbidden" }, 403);
   }
